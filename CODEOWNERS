@@ -1,0 +1,18 @@
+# CODEOWNERS ファイルの文法や意味は以下を参照
+# https://docs.github.com/ja/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# デフォルトのオーナー
+# 別に定めがないファイルに対するオーナーを設定する。
+* @uchan-nos
+
+# 順序は重要
+# 最後にマッチしたパターンが最優先となる。
+
+# コンポーネントオーナー
+# 各コンポーネントのメンテナをオーナーとする。
+/cpu/       @uchan-nos
+/os/        @uchan-nos
+/linker/    @uchan-nos
+/assember/  @uchan-nos
+/compiler/  @kozos
+/libc/      @kozos
