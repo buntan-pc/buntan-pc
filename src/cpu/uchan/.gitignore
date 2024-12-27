@@ -1,0 +1,5 @@
+/board/*/impl/gao
+/board/*/impl/gwsynthesis
+/board/*/impl/pnr
+/board/*/impl/temp
+/board/*/*.gprj.user

@@ -1,0 +1,129 @@
+IO_LOC "sys_clk" 52;
+IO_PORT "sys_clk" PULL_MODE=NONE IO_TYPE=LVCMOS33;
+IO_LOC "rst_n_raw" 4;
+IO_PORT "rst_n_raw" PULL_MODE=UP IO_TYPE=LVCMOS18;
+
+IO_LOC "onboard_led[0]" 10;
+IO_LOC "onboard_led[1]" 11;
+IO_LOC "onboard_led[2]" 13;
+IO_LOC "onboard_led[3]" 14;
+IO_LOC "onboard_led[4]" 15;
+IO_LOC "onboard_led[5]" 16;
+IO_PORT "onboard_led[0]" IO_TYPE=LVCMOS18;
+IO_PORT "onboard_led[1]" IO_TYPE=LVCMOS18;
+IO_PORT "onboard_led[2]" IO_TYPE=LVCMOS18;
+IO_PORT "onboard_led[3]" IO_TYPE=LVCMOS18;
+IO_PORT "onboard_led[4]" IO_TYPE=LVCMOS18;
+IO_PORT "onboard_led[5]" IO_TYPE=LVCMOS18;
+
+IO_LOC "uart_rx" 54;
+IO_PORT "uart_rx" IO_TYPE=LVCMOS33 PULL_MODE=UP;
+IO_LOC "uart_tx" 53;
+IO_PORT "uart_tx" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+
+IO_LOC "uart2_rx" 42;
+IO_PORT "uart2_rx" IO_TYPE=LVCMOS33 PULL_MODE=UP;
+IO_LOC "uart2_tx" 41;
+IO_PORT "uart2_tx" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+
+IO_LOC "uart3_rx" 18;
+IO_PORT "uart3_rx" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC "uart3_tx" 17;
+IO_PORT "uart3_tx" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+
+IO_LOC "key_col_n[0]" 79;
+IO_LOC "key_col_n[1]" 80;
+IO_LOC "key_col_n[2]" 81;
+IO_LOC "key_col_n[3]" 82;
+IO_LOC "key_col_n[4]" 83;
+IO_LOC "key_col_n[5]" 84;
+IO_LOC "key_col_n[6]" 85;
+IO_LOC "key_col_n[7]" 86;
+IO_PORT "key_col_n[0]" IO_TYPE=LVCMOS18 PULL_MODE=UP;
+IO_PORT "key_col_n[1]" IO_TYPE=LVCMOS18 PULL_MODE=UP;
+IO_PORT "key_col_n[2]" IO_TYPE=LVCMOS18 PULL_MODE=UP;
+IO_PORT "key_col_n[3]" IO_TYPE=LVCMOS18 PULL_MODE=UP;
+IO_PORT "key_col_n[4]" IO_TYPE=LVCMOS18 PULL_MODE=UP;
+IO_PORT "key_col_n[5]" IO_TYPE=LVCMOS18 PULL_MODE=UP;
+IO_PORT "key_col_n[6]" IO_TYPE=LVCMOS18 PULL_MODE=UP;
+IO_PORT "key_col_n[7]" IO_TYPE=LVCMOS18 PULL_MODE=UP;
+
+IO_LOC "key_row[0]" 25;
+IO_LOC "key_row[1]" 26;
+IO_LOC "key_row[2]" 27;
+IO_LOC "key_row[3]" 28;
+IO_LOC "key_row[4]" 29;
+IO_LOC "key_row[5]" 30;
+IO_LOC "key_row[6]" 33;
+IO_LOC "key_row[7]" 34;
+IO_PORT "key_row[0]" IO_TYPE=LVCMOS33 PULL_MODE=NONE OPEN_DRAIN=ON;
+IO_PORT "key_row[1]" IO_TYPE=LVCMOS33 PULL_MODE=NONE OPEN_DRAIN=ON;
+IO_PORT "key_row[2]" IO_TYPE=LVCMOS33 PULL_MODE=NONE OPEN_DRAIN=ON;
+IO_PORT "key_row[3]" IO_TYPE=LVCMOS33 PULL_MODE=NONE OPEN_DRAIN=ON;
+IO_PORT "key_row[4]" IO_TYPE=LVCMOS33 PULL_MODE=NONE OPEN_DRAIN=ON;
+IO_PORT "key_row[5]" IO_TYPE=LVCMOS33 PULL_MODE=NONE OPEN_DRAIN=ON;
+IO_PORT "key_row[6]" IO_TYPE=LVCMOS33 PULL_MODE=NONE OPEN_DRAIN=ON;
+IO_PORT "key_row[7]" IO_TYPE=LVCMOS33 PULL_MODE=NONE OPEN_DRAIN=ON;
+
+IO_LOC "tf_cs"   38;
+IO_LOC "tf_sclk" 36;
+IO_LOC "tf_mosi" 37;
+IO_LOC "tf_miso" 39;
+IO_PORT "tf_cs"   IO_TYPE=LVCMOS33;
+IO_PORT "tf_sclk" IO_TYPE=LVCMOS33;
+IO_PORT "tf_mosi" IO_TYPE=LVCMOS33;
+IO_PORT "tf_miso" IO_TYPE=LVCMOS33;
+
+IO_LOC "lcd_e"     76;
+IO_LOC "lcd_rw"    77;
+IO_LOC "lcd_rs"    63;
+IO_LOC "lcd_db[7]" 32;
+IO_LOC "lcd_db[6]" 31;
+IO_LOC "lcd_db[5]" 49;
+IO_LOC "lcd_db[4]" 48;
+IO_PORT "lcd_e"     IO_TYPE=LVCMOS33;
+IO_PORT "lcd_rw"    IO_TYPE=LVCMOS33;
+IO_PORT "lcd_rs"    IO_TYPE=LVCMOS33;
+IO_PORT "lcd_db[7]" IO_TYPE=LVCMOS33;
+IO_PORT "lcd_db[6]" IO_TYPE=LVCMOS33;
+IO_PORT "lcd_db[5]" IO_TYPE=LVCMOS33;
+IO_PORT "lcd_db[4]" IO_TYPE=LVCMOS33;
+
+IO_LOC "adc_cmp"     55;
+IO_LOC "adc_sh_ctl"  56;
+IO_LOC "adc_dac_pwm" 57;
+IO_PORT "adc_cmp"     IO_TYPE=LVCMOS33;
+IO_PORT "adc_sh_ctl"  IO_TYPE=LVCMOS33;
+IO_PORT "adc_dac_pwm" IO_TYPE=LVCMOS33;
+
+IO_LOC "scl" 40;
+IO_LOC "sda" 35;
+IO_PORT "scl" IO_TYPE=LVCMOS33 PULL_MODE=UP OPEN_DRAIN=ON;
+IO_PORT "sda" IO_TYPE=LVCMOS33 PULL_MODE=UP OPEN_DRAIN=ON;
+
+IO_LOC  "gpio[0]" 68;
+IO_LOC  "gpio[1]" 69;
+IO_LOC  "gpio[2]" 70;
+IO_LOC  "gpio[3]" 71;
+IO_LOC  "gpio[4]" 72;
+IO_LOC  "gpio[5]" 73;
+IO_LOC  "gpio[6]" 74; // Speaker
+IO_LOC  "gpio[7]" 75; // LCD Backlight
+IO_PORT "gpio[0]" IO_TYPE=LVCMOS33;
+IO_PORT "gpio[1]" IO_TYPE=LVCMOS33;
+IO_PORT "gpio[2]" IO_TYPE=LVCMOS33;
+IO_PORT "gpio[3]" IO_TYPE=LVCMOS33;
+IO_PORT "gpio[4]" IO_TYPE=LVCMOS33;
+IO_PORT "gpio[5]" IO_TYPE=LVCMOS33;
+IO_PORT "gpio[6]" IO_TYPE=LVCMOS33;
+IO_PORT "gpio[7]" IO_TYPE=LVCMOS33;
+
+IO_LOC  "stop_n_raw" 3;
+IO_PORT "stop_n_raw" PULL_MODE=UP IO_TYPE=LVCMOS18;
+
+//IO_LOC  "dbgio[0]" 41;
+//IO_LOC  "dbgio[1]" 42;
+//IO_LOC  "dbgio[2]" 51;
+//IO_PORT "dbgio[0]" IO_TYPE=LVCMOS33;
+//IO_PORT "dbgio[1]" IO_TYPE=LVCMOS33;
+//IO_PORT "dbgio[2]" IO_TYPE=LVCMOS33;
