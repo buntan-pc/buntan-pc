@@ -1,4 +1,4 @@
-/dos.s
-/dos.exe
-/dos.pmem.hex
-/dos.dmem.hex
+*.s
+*.exe
+*.pmem.hex
+*.dmem.hex

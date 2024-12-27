@@ -927,6 +927,28 @@ int syscall(int funcnum, int *args) {
       }
     }
     break;
+  case 2: // get string from the standard input
+    {
+      char *s = args[0];
+      int len = args[1] - 1;
+      int i = 0;
+      while (1) {
+        int c = uart_getc();
+        uart_putc(c);
+        if (c == '\n') {
+          s[i] = '\0';
+          break;
+        } else if (c == '\b') {
+          if (i > 0) {
+            --i;
+            uart_del_char();
+          }
+        } else if (i < len) {
+          s[i++] = c;
+        }
+      }
+    }
+    break;
   }
   return ret;
 }
