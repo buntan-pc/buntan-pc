@@ -1,5 +1,5 @@
-CC = ../../compiler/uchan/cc
-ASM = ../../assembler/uchan/as
+CC = ../ucc/cc
+ASM = ../uas/as
 
 all: Makefile
 	make -r dos.exe
@@ -17,6 +17,6 @@ dos.pmem.hex: dos.hexfile
 
 .PHONY: run clean
 run: dos.pmem.hex dos.dmem.hex
-	../../tool/uart.py --pmem dos.pmem.hex --dmem dos.dmem.hex --nowait
+	../scripts/uart.py --pmem dos.pmem.hex --dmem dos.dmem.hex --nowait
 clean:
 	rm -f dos.s dos.exe dos.pmem.hex dos.dmem.hex dos.map

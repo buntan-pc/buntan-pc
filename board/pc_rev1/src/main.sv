@@ -2,7 +2,7 @@
 /*
  * Copyright (c) 2024 Kota UCHIDA
  */
-`include "../../../../cpu/uchan/common.sv"
+`include "../../../cpu/common.sv"
 
 module main(
   input sys_clk,

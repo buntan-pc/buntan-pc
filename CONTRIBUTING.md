@@ -5,15 +5,20 @@ BuntanPC はいくつかのコンポーネントから構成されていて、�
 ## コンポーネントとメンテナ
 現在のメンテナ割り当ては次表の通りです。
 
-| コンポーネント   | メンテナ                |
-|------------------|-------------------------|
-| CPU              | uchan-nos (Kota UCHIDA) |
-| MCU              | uchan-nos (Kota UCHIDA) |
-| OS               | uchan-nos (Kota UCHIDA) |
-| リンカ           | uchan-nos (Kota UCHIDA) |
-| アセンブラ       | uchan-nos (Kota UCHIDA) |
-| C コンパイラ     | kozos (Hiroaki SAKAI)   |
-| C 標準ライブラリ | kozos (Hiroaki SAKAI)   |
+| コンポーネント名 | メンテナ                | 説明                                       |
+|------------------|-------------------------|--------------------------------------------|
+| cpu              | uchan-nos (Kota UCHIDA) | uchan 製 CPU/MCU                           |
+| board            | uchan-nos (Kota UCHIDA) | uchan 製マザーボード                       |
+| dos              | uchan-nos (Kota UCHIDA) | uchan 製 DOS                               |
+| uas              | uchan-nos (Kota UCHIDA) | uchan 製アセンブラ                         |
+| ucc              | uchan-nos (Kota UCHIDA) | uchan 製 C コンパイラ                      |
+| scripts          | BuntanPC Authors        | どのコンポーネントにも属さない小物ツール群 |
+| doc              | BuntanPC Authors        | どのコンポーネントにも属さないドキュメント |
+
+### 新たなコンポーネントの追加
+
+既存のコンポーネントと被らない適切な名前を与え、上記の表に追記してください。
+例えば C コンパイラを追加する場合、「Xcc」とするのでもいいですし、cc が語尾に付かない名前にしても良いです。
 
 ## 開発の方針
 根本となる方針は「最小限のものを作る」です。

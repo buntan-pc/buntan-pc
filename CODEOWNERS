@@ -10,9 +10,10 @@
 
 # コンポーネントオーナー
 # 各コンポーネントのメンテナをオーナーとする。
-#/cpu/       @uchan-nos
-#/os/        @uchan-nos
-#/linker/    @uchan-nos
-#/assember/  @uchan-nos
-#/compiler/  @kozos
-#/libc/      @kozos
+/cpu/       @uchan-nos
+/board/     @uchan-nos
+/dos/       @uchan-nos
+/uas/       @uchan-nos
+/ucc/       @uchan-nos
+/scripts/   @uchan-nos @hikalium
+/doc/       @uchan-nos @hikalium
