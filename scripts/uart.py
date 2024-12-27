@@ -1,4 +1,6 @@
 #!/usr/bin/python3
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2024 Kota UCHIDA
 
 import argparse
 import os.path

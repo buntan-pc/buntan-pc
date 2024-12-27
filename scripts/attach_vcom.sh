@@ -1,4 +1,6 @@
 #!/bin/sh
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2024 Kota UCHIDA
 
 attach_dev() {
   cmd.exe /C usbipd attach --busid $1 --wsl
