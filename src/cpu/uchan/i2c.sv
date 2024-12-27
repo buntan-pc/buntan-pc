@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * Copyright (c) 2024 Kota UCHIDA
+ */
 // I2C driver
 module i2c#(
   parameter CLOCK_HZ=27_000_000,

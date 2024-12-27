@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * Copyright (c) 2024 Kota UCHIDA
+ */
 module i2c_tb();
 
 logic rst, clk;

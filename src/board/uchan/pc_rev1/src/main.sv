@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * Copyright (c) 2024 Kota UCHIDA
+ */
 `include "../../../../cpu/uchan/common.sv"
 
 module main(

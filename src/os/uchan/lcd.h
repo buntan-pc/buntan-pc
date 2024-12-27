@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * Copyright (c) 2024 Kota UCHIDA
+ */
 void lcd_out4(int rs, int val) {
   lcd_port = (val << 4) | rs | 1;
   delay_ms(2);

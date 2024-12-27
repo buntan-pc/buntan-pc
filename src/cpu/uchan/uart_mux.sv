@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * Copyright (c) 2024 Kota UCHIDA
+ */
 module uart_mux#(
   parameter CLOCK_HZ=27_000_000,
   parameter BAUD=9600,

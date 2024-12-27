@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * Copyright (c) 2024 Kota UCHIDA
+ */
 module simple_timer#(
   parameter PERIOD=27_000_000/9600,
   parameter BITS=24

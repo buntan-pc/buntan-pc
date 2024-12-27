@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * Copyright (c) 2024 Kota UCHIDA
+ */
 module signalizer_tb;
 
 logic rst, clk, phase_decode, phase_exec, phase_rdmem, phase_fetch;

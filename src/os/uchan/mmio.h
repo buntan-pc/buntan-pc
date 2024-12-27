@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+/*
+ * Copyright (c) 2024 Kota UCHIDA
+ */
 unsigned int timer_cnt  __attribute__((at(0x02)));
 unsigned int uart_data  __attribute__((at(0x06)));
 unsigned int uart_flag  __attribute__((at(0x08)));
