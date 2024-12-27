@@ -3,3 +3,4 @@
 /board/*/impl/pnr
 /board/*/impl/temp
 /board/*/*.gprj.user
+/sim.exe
