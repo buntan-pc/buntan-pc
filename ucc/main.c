@@ -613,7 +613,7 @@ unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass val
         Locate(node->lhs->token->raw);
         exit(1);
       }
-      if (value_class == VC_NO_NEED) {
+      if (node->type->kind != kTypeVoid && value_class == VC_NO_NEED) {
         Insn(ctx, "pop");
       }
     }
