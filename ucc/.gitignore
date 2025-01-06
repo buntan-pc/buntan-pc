@@ -1,1 +1,5 @@
 /cc
+/testcase.*
+/dump.vcd
+/uart_in.hex
+/uart_out.hex

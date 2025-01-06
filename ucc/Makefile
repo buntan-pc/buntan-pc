@@ -11,9 +11,12 @@ cc: $(OBJS)
 clean:
 	rm -f $(OBJS)
 
-.PHONY: test
+.PHONY: test e2etest
 test: cc
 	./test.sh
+
+e2etest: cc ../uas/as ../cpu/sim.exe
+	./e2etest.sh
 
 DEPENDS = $(join $(dir $(OBJS)),$(addprefix .,$(notdir $(OBJS:.o=.d))))
 
