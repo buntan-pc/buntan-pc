@@ -1,5 +1,9 @@
 CC = ../../ucc/cc
 ASM = ../../uas/as
+SRCS = $(wildcard *.c)
+EXES = $(SRCS:.c=.exe)
+
+all: $(EXES) Makefile
 
 %.pmem.hex: %.s Makefile
 	$(ASM) --pmem $@ $<

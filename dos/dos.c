@@ -388,14 +388,16 @@ int sd_set_block_len_512() {
   return 0;
 }
 
+int sd_ccs;
+
 // buf へ 1 ブロック読み込み
-int sd_read_block(unsigned char *buf, int block_addr, int ccs) {
+int sd_read_block(unsigned char *buf, int block_addr) {
   int i;
   int r1;
 
   int addr_hi;
   int addr_lo;
-  if (ccs) {
+  if (sd_ccs) {
     addr_lo = block_addr;
     addr_hi = 0;
   } else {
@@ -459,13 +461,13 @@ unsigned int clus_to_sec(unsigned int clus) {
   return FirstDataSector + (clus - 2)*BPB_SecPerClus;
 }
 
-int load_exe(unsigned int pmem_addr, unsigned int dmem_addr, unsigned int exe_lba, int ccs) {
+int load_exe(unsigned int pmem_addr, unsigned int dmem_addr, unsigned int exe_lba) {
   int i;
   char buf[5];
   int *head = dmem_addr;
   char *block_buf = dmem_addr + 512;
 
-  if (sd_read_block(head, exe_lba, ccs) < 0) {
+  if (sd_read_block(head, exe_lba) < 0) {
     return -1;
   }
   int pmem_len = head[0]; // # of words
@@ -479,7 +481,7 @@ int load_exe(unsigned int pmem_addr, unsigned int dmem_addr, unsigned int exe_lb
     if (byte_index >= 510) { // のこり 3 バイト未満なので、次のクラスタを読む
       char insn_buf0 = block_buf[510];
       char insn_buf1 = block_buf[511];
-      if (sd_read_block(block_buf, pmem_lba++, ccs) < 0) {
+      if (sd_read_block(block_buf, pmem_lba++) < 0) {
         return -1;
       }
       if (byte_index == 512) {
@@ -504,7 +506,7 @@ int load_exe(unsigned int pmem_addr, unsigned int dmem_addr, unsigned int exe_lb
   }
 
   for (i = 1; i < num_dmem_block; ++i) {
-    if (sd_read_block(block_buf, exe_lba + i, ccs) < 0) {
+    if (sd_read_block(block_buf, exe_lba + i) < 0) {
       return -1;
     }
     block_buf += 512;
@@ -569,10 +571,10 @@ int toupper(int c) {
 
 unsigned int rootdir_sec;
 
-int foreach_dir_entry(char *block_buf, int ccs, int (*proc_entry)(), void *arg) {
+int foreach_dir_entry(char *block_buf, int (*proc_entry)(), void *arg) {
   int find_loop;
   for (find_loop = 0; find_loop < BPB_RootEntCnt >> 4; ++find_loop) {
-    if (sd_read_block(block_buf, rootdir_sec + find_loop, ccs) < 0) {
+    if (sd_read_block(block_buf, rootdir_sec + find_loop) < 0) {
       uart_puts("failed to read block");
       return 0;
     }
@@ -680,16 +682,16 @@ void filename_to_fn83(char *filename, char *fn83) {
   }
 }
 
-int load_exe_by_filename(int (*app_main)(), char *block_buf, char *filename, int ccs) {
+int load_exe_by_filename(int (*app_main)(), char *block_buf, char *filename) {
   char fn83[11];
   filename_to_fn83(filename, fn83);
 
-  char *file_entry = foreach_dir_entry(block_buf, ccs, find_file, fn83);
+  char *file_entry = foreach_dir_entry(block_buf, find_file, fn83);
   if (file_entry == 0 && fn83[8] == ' ') {
     fn83[8]  = 'E';
     fn83[9]  = 'X';
     fn83[10] = 'E';
-    file_entry = foreach_dir_entry(block_buf, ccs, find_file, fn83);
+    file_entry = foreach_dir_entry(block_buf, find_file, fn83);
   }
 
   if (file_entry == 0) {
@@ -698,7 +700,7 @@ int load_exe_by_filename(int (*app_main)(), char *block_buf, char *filename, int
   } else {
     unsigned int exe_clus = read16(file_entry + 26);
     unsigned int exe_lba = clus_to_sec(exe_clus);
-    if (load_exe(app_main, block_buf, exe_lba, ccs) < 0) {
+    if (load_exe(app_main, block_buf, exe_lba) < 0) {
       uart_puts("failed to load app\n");
       return -1;
     }
@@ -750,10 +752,10 @@ void print_sdinfo() {
   uart_puts("MB\n");
 }
 
-void cat_file(char *filename, char *block_buf, int ccs) {
+void cat_file(char *filename, char *block_buf) {
   char fn83[11];
   filename_to_fn83(filename, fn83);
-  char *file_entry = foreach_dir_entry(block_buf, ccs, find_file, fn83);
+  char *file_entry = foreach_dir_entry(block_buf, find_file, fn83);
 
   if (file_entry == 0) {
     uart_puts("no such file");
@@ -764,7 +766,7 @@ void cat_file(char *filename, char *block_buf, int ccs) {
 
   unsigned int clus = read16(file_entry + 26);
   unsigned int lba = clus_to_sec(clus);
-  if (sd_read_block(block_buf, lba, ccs) < 0) {
+  if (sd_read_block(block_buf, lba) < 0) {
     uart_puts("failed to load file\n");
     return;
   }
@@ -776,20 +778,19 @@ void cat_file(char *filename, char *block_buf, int ccs) {
   uart_putsn(block_buf, len);
 }
 
-void proc_cmd(char *cmd, int (*app_main)(), char *block_buf, int ccs) {
-  char buf[5];
+void proc_cmd(char *cmd, int (*app_main)(), char *block_buf) {
   if (strncmp(cmd, "ls", 3) == 0) {
-    foreach_dir_entry(block_buf, ccs, print_file_name, 0);
+    foreach_dir_entry(block_buf, print_file_name, 0);
   } else if (strncmp(cmd, "ld ", 3) == 0) {
-    load_exe_by_filename(app_main, block_buf, cmd + 3, ccs);
+    load_exe_by_filename(app_main, block_buf, cmd + 3);
   } else if (strncmp(cmd, "run", 4) == 0) {
     run_app(app_main, block_buf);
   } else if (strncmp(cmd, "sdinfo", 4) == 0) {
     print_sdinfo();
   } else if (strncmp(cmd, "cat ", 4) == 0) {
-    cat_file(cmd + 4, block_buf, ccs);
+    cat_file(cmd + 4, block_buf);
   } else {
-    if (load_exe_by_filename(app_main, block_buf, cmd, ccs) >= 0) {
+    if (load_exe_by_filename(app_main, block_buf, cmd) >= 0) {
       run_app(app_main, block_buf);
     }
   }
@@ -822,8 +823,8 @@ int main() {
   }
 
   // sdinfo bit1 が CCS
-  int ccs = (sdinfo & 2) != 0;
-  if (sd_read_block(block_buf, 0, ccs) < 0) {
+  sd_ccs = (sdinfo & 2) != 0;
+  if (sd_read_block(block_buf, 0) < 0) {
     return 1;
   }
 
@@ -848,7 +849,7 @@ int main() {
       // LBA Start は 4 バイトだが、上位 16 ビットは無視
       // （32MiB までにあるパーティションのみ正常に読める）
 
-      if (sd_read_block(block_buf, PartitionSector, ccs) < 0) {
+      if (sd_read_block(block_buf, PartitionSector) < 0) {
         return 1;
       }
       break;
@@ -888,7 +889,7 @@ int main() {
     if (key == '\n') { // Enter
       if (cmd_i > 0) {
         cmd[cmd_i] = '\0';
-        proc_cmd(cmd, app_main, block_buf, ccs);
+        proc_cmd(cmd, app_main, block_buf);
       }
       cmd_i = 0;
     } else if (key == '\b') {
@@ -905,6 +906,8 @@ int main() {
 }
 
 int syscall(int funcnum, int *args) {
+  __builtin_set_gp(0x0100);
+
   int ret = -1;
   switch (funcnum) {
   case 0: // get OS version
@@ -949,6 +952,50 @@ int syscall(int funcnum, int *args) {
       }
     }
     break;
+  case 3: // open a file in FAT filesystem on the main SD card
+    {
+      char *filename = args[0];
+      unsigned int *file_entry = args[1];
+
+      char block_buf[512];
+      char fn83[11];
+      filename_to_fn83(filename, fn83);
+      unsigned int *ent = foreach_dir_entry(block_buf, find_file, fn83);
+      if (ent != 0) {
+        int i;
+        for (i = 0; i < 16; ++i) {
+          *file_entry++ = *ent++;
+        }
+        ret = 0;
+      }
+    }
+    break;
+  case 4: // read a block
+    {
+      char *file_entry = args[0];
+      char *block_buf = args[1];  // read buffer (512 バイトの倍数の大きさ)
+      unsigned int off = args[2]; // offset in blocks
+      unsigned int len = args[3]; // length in blocks
+
+      unsigned int clus = read16(file_entry + 26);
+      unsigned int sec = clus_to_sec(clus); // セクタ番号
+
+      if (off + len > BPB_SecPerClus) {
+        // 1 クラスタを超える場所の読み込みは未実装
+        ret = -2;
+        break;
+      }
+
+      if (sd_read_block(block_buf, sec + off) < 0) {
+        // 読み込みでエラー
+        ret = -1;
+        break;
+      }
+
+      ret = 0;
+    }
+    break;
   }
+  __builtin_set_gp(0x2000);
   return ret;
 }
