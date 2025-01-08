@@ -361,6 +361,16 @@ void GenNodeId(struct GenContext *ctx, struct Symbol *sym, enum ValueClass value
   }
 }
 
+// 整数を加算する際の倍率を計算する
+size_t CalcAddScale(struct Type *inc_target_type) {
+  size_t amount = 1;
+  if (inc_target_type->kind == kTypePtr ||
+      inc_target_type->kind == kTypeArray) {
+    amount = SizeofType(inc_target_type->base);
+  }
+  return amount;
+}
+
 // 生成された値が boolean value なら true、それ以外は false を返す。
 // req_onstack: 演算スタック上に値が必要（インタプリタ上ではダメ）であれば 1
 unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass value_class, int req_onstack) {
@@ -519,12 +529,13 @@ unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass val
     if (node->lhs) { // 後置インクリメント 'exp ++'
       PRINT_NODE_COMMENT(ctx, node, "Inc/Dec (postfix))");
       Generate(ctx, node->lhs, VC_RVAL, 1);
+      size_t scale = CalcAddScale(node->lhs->type);
       if (value_class == VC_NO_NEED) {
-        InsnInt(ctx, "push", 1);
+        InsnInt(ctx, "push", scale);
         node->type = NewType(kTypeVoid);
       } else {
         InsnInt(ctx, "dup", 0);
-        InsnInt(ctx, "push", 1);
+        InsnInt(ctx, "push", scale);
       }
       Insn(ctx, node->kind == kNodeInc ? "add" : "sub");
       Generate(ctx, node->lhs, VC_LVAL, 1);
@@ -532,7 +543,8 @@ unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass val
     } else { // 前置インクリメント '++ exp'
       PRINT_NODE_COMMENT(ctx, node, "Inc/Dec (prefix))");
       Generate(ctx, node->rhs, VC_RVAL, 1);
-      InsnInt(ctx, "push", 1);
+      int scale = CalcAddScale(node->rhs->type);
+      InsnInt(ctx, "push", scale);
       Insn(ctx, node->kind == kNodeInc ? "add" : "sub");
       Generate(ctx, node->rhs, VC_LVAL, 1);
       int byt = SizeofType(node->rhs->type) == 1;
@@ -697,13 +709,10 @@ unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass val
   // standard binary expression
   case kNodeAdd:
     PRINT_NODE_COMMENT(ctx, node, "Add");
-    if (node->lhs->type->kind == kTypePtr ||
-        node->lhs->type->kind == kTypeArray) {
-      size_t element_size = SizeofType(node->lhs->type->base);
-      if (element_size > 1) {
-        InsnInt(ctx, "push", (int)element_size);
-        Insn(ctx, "mul");
-      }
+    size_t scale = CalcAddScale(node->lhs->type);
+    if (scale > 1) {
+      InsnInt(ctx, "push", (int)scale);
+      Insn(ctx, "mul");
     }
     Insn(ctx, "add");
     break;

@@ -204,3 +204,4 @@ test_value 02 'int main() {int d=0; switch(1){case 0:return 5; case 1:++d; case 
 test_value 01 'int main() {int d=0; switch(1){case 1:++d;} return d;}'
 test_value 00 'int main() {int d=0; switch(2){case 1:++d;} return d;}'
 test_value 0f 'int f(){int i; for (i=0; i<2; ++i); return i;} int main() {return 13 + f();}'
+test_value 02 'int main() {int a[2]; int *p=a; for (int i=0; i<2; ++i) { *p++ = i+1; } return a[1]; }'
