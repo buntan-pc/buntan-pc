@@ -407,10 +407,11 @@ int sd_read_block(unsigned char *buf, int block_addr) {
   }
 
   assert_cs();
-  send_sd_cmd(17, addr_hi, addr_lo, 0); // CMD17 (SEND_SINGLE_BLOCK)
+  send_sd_cmd(17, addr_hi, addr_lo, 0); // CMD17 (READ_SINGLE_BLOCK)
   r1 = wait_sd_r1();
   if (r1 != 0) {
     show_sd_cmd_error(17, r1, "FAILED");
+    deassert_cs();
     return -1;
   }
 
@@ -422,6 +423,73 @@ int sd_read_block(unsigned char *buf, int block_addr) {
     buf[i] = spi_dat;
   }
   deassert_cs();
+  return 0;
+}
+
+// SD へ 1 ブロック書き込み
+int sd_write_block(unsigned char *buf, int block_addr) {
+  int i;
+  int r1;
+
+  int addr_hi;
+  int addr_lo;
+  if (sd_ccs) {
+    addr_lo = block_addr;
+    addr_hi = 0;
+  } else {
+    // バイトアドレスに変換
+    addr_lo = block_addr << 9;
+    addr_hi = block_addr >> (16 - 9);
+  }
+
+  assert_cs();
+  send_sd_cmd(24, addr_hi, addr_lo, 0); // CMD24 (WRITE_BLOCK)
+  r1 = wait_sd_r1();
+  if (r1 != 0) {
+    show_sd_cmd_error(24, r1, "FAILED");
+    deassert_cs();
+    return -1;
+  }
+
+  // 1 バイト以上空ける
+  send_spi(0xff);
+
+  // Start Block トークン
+  send_spi(0xfe);
+
+  // データ本体を送る
+  for (i = 0; i < 512; i++) {
+    send_spi(buf[i]);
+  }
+
+  // ダミーの CRC（2 バイト）
+  send_spi(0x00);
+  send_spi(0x00);
+
+  // ステータスを受け取る
+  send_spi(0xff);
+  deassert_cs();
+
+  int data_resp = spi_dat & 0x1f;
+  if ((data_resp & 1) == 0) {
+    show_sd_cmd_error(24, r1, "RESP INVALID");
+    return -1;
+  } else if (data_resp == 0x0b) {
+    show_sd_cmd_error(24, r1, "CRC ERROR");
+    return -1;
+  } else if (data_resp == 0x0d) {
+    show_sd_cmd_error(24, r1, "WRITE ERROR");
+    return -1;
+  } else if (data_resp == 0x05) {
+    // ビジー状態が解除されるのを待つ
+    assert_cs();
+    send_spi(0xff);
+    while (spi_dat == 0) {
+      send_spi(0xff);
+    }
+    deassert_cs();
+    return 0;
+  }
   return 0;
 }
 
@@ -988,6 +1056,31 @@ int syscall(int funcnum, int *args) {
 
       if (sd_read_block(block_buf, sec + off) < 0) {
         // 読み込みでエラー
+        ret = -1;
+        break;
+      }
+
+      ret = 0;
+    }
+    break;
+  case 5: // write a block
+    {
+      char *file_entry = args[0];
+      char *block_buf = args[1];  // read buffer (512 バイトの倍数の大きさ)
+      unsigned int off = args[2]; // offset in blocks
+      unsigned int len = args[3]; // length in blocks
+
+      unsigned int clus = read16(file_entry + 26);
+      unsigned int sec = clus_to_sec(clus); // セクタ番号
+
+      if (off + len > BPB_SecPerClus) {
+        // 1 クラスタを超える場所の書き込みは未実装
+        ret = -2;
+        break;
+      }
+
+      if (sd_write_block(block_buf, sec + off) < 0) {
+        // 書き込みエラー
         ret = -1;
         break;
       }
