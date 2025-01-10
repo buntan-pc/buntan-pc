@@ -1028,30 +1028,31 @@ int main() {
   }
 
   RootEntSector = PartitionSector + BPB_ResvdSecCnt + BPB_NumFATs * BPB_FATSz16;
-  char cmd[21];
+  char cmd[64];
   int cmd_i = 0;
+
+  uart_puts("> ");
 
   while (1) {
     int key = uart_getc();
-    if (key == 0x1b) { // ESC
-      uart_puts("^[");
-    } else {
-      uart_putc(key);
-    }
 
     if (key == '\n') { // Enter
+      uart_putc('\n');
       if (cmd_i > 0) {
         cmd[cmd_i] = '\0';
         proc_cmd(cmd, app_main, block_buf);
       }
       cmd_i = 0;
+      uart_puts("> ");
     } else if (key == '\b') {
       if (cmd_i > 0) {
         cmd_i--;
+        uart_putc('\b');
         uart_del_char();
       }
-    } else if (0x20 <= key & key < 0x80 & cmd_i < 20) {
+    } else if (0x20 <= key & key < 0x80 & cmd_i < 63) {
       cmd[cmd_i++] = key;
+      uart_putc(key);
     }
   }
 
