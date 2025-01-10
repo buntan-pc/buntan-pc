@@ -508,6 +508,7 @@ unsigned int BPB_ResvdSecCnt;
 unsigned int BPB_NumFATs;
 unsigned int BPB_RootEntCnt;
 unsigned int BPB_FATSz16;
+unsigned int RootEntSector;
 unsigned int FirstDataSector;
 unsigned int PartitionSector;
 
@@ -637,13 +638,23 @@ int toupper(int c) {
   }
 }
 
-unsigned int rootdir_sec;
-
-int foreach_dir_entry(char *block_buf, int (*proc_entry)(), void *arg) {
+/*
+ * ルートディレクトリエントリを走査する。
+ *
+ * @param block_buf  作業用バッファ（セクタサイズ以上のメモリ領域）
+ * @param entry_sec  最後に処理したエントリが存在するセクタ番号
+ * @param proc_entry ディレクトリエントリを受け取って処理する関数
+ * @param arg        proc_entry の引数に渡す値
+ */
+int foreach_dir_entry(char *block_buf, unsigned int *entry_sec,
+                      int (*proc_entry)(), void *arg) {
   int find_loop;
   for (find_loop = 0; find_loop < BPB_RootEntCnt >> 4; ++find_loop) {
-    if (sd_read_block(block_buf, rootdir_sec + find_loop) < 0) {
-      uart_puts("failed to read block");
+    if (entry_sec) {
+      *entry_sec = RootEntSector + find_loop;
+    }
+    if (sd_read_block(block_buf, RootEntSector + find_loop) < 0) {
+      uart_puts("failed to read block\n");
       return 0;
     }
     for (int i = 0; i < 16; ++i) {
@@ -754,12 +765,12 @@ int load_exe_by_filename(int (*app_main)(), char *block_buf, char *filename) {
   char fn83[11];
   filename_to_fn83(filename, fn83);
 
-  char *file_entry = foreach_dir_entry(block_buf, find_file, fn83);
+  char *file_entry = foreach_dir_entry(block_buf, 0, find_file, fn83);
   if (file_entry == 0 && fn83[8] == ' ') {
     fn83[8]  = 'E';
     fn83[9]  = 'X';
     fn83[10] = 'E';
-    file_entry = foreach_dir_entry(block_buf, find_file, fn83);
+    file_entry = foreach_dir_entry(block_buf, 0, find_file, fn83);
   }
 
   if (file_entry == 0) {
@@ -799,6 +810,15 @@ void run_app(int (*app_main)(), char *block_buf) {
 unsigned int sdinfo;
 unsigned int cap_mib;
 
+void print_msg_dec(char *msg, int val) {
+  char buf[5];
+  uart_puts(msg);
+  uart_puts(": ");
+  int nzero = int2dec(val, buf, 5);
+  uart_putsn(buf + nzero, 5 - nzero);
+  uart_putc('\n');
+}
+
 void print_sdinfo() {
   char buf[5];
   uart_puts("SDv");
@@ -820,10 +840,21 @@ void print_sdinfo() {
   uart_puts("MB\n");
 }
 
+void print_partinfo() {
+  print_msg_dec("BPB_BytsPerSec ", BPB_BytsPerSec);
+  print_msg_dec("BPB_SecPerClus ", BPB_SecPerClus);
+  print_msg_dec("BPB_ResvdSecCnt", BPB_ResvdSecCnt);
+  print_msg_dec("BPB_NumFATs    ", BPB_NumFATs);
+  print_msg_dec("BPB_RootEntCnt ", BPB_RootEntCnt);
+  print_msg_dec("BPB_FATSz16    ", BPB_FATSz16);
+  print_msg_dec("FirstDataSector", FirstDataSector);
+  print_msg_dec("PartitionSector", PartitionSector);
+}
+
 void cat_file(char *filename, char *block_buf) {
   char fn83[11];
   filename_to_fn83(filename, fn83);
-  char *file_entry = foreach_dir_entry(block_buf, find_file, fn83);
+  char *file_entry = foreach_dir_entry(block_buf, 0, find_file, fn83);
 
   if (file_entry == 0) {
     uart_puts("no such file");
@@ -848,13 +879,15 @@ void cat_file(char *filename, char *block_buf) {
 
 void proc_cmd(char *cmd, int (*app_main)(), char *block_buf) {
   if (strncmp(cmd, "ls", 3) == 0) {
-    foreach_dir_entry(block_buf, print_file_name, 0);
+    foreach_dir_entry(block_buf, 0, print_file_name, 0);
   } else if (strncmp(cmd, "ld ", 3) == 0) {
     load_exe_by_filename(app_main, block_buf, cmd + 3);
   } else if (strncmp(cmd, "run", 4) == 0) {
     run_app(app_main, block_buf);
   } else if (strncmp(cmd, "sdinfo", 4) == 0) {
     print_sdinfo();
+  } else if (strncmp(cmd, "partinfo", 4) == 0) {
+    print_partinfo();
   } else if (strncmp(cmd, "cat ", 4) == 0) {
     cat_file(cmd + 4, block_buf);
   } else {
@@ -862,6 +895,26 @@ void proc_cmd(char *cmd, int (*app_main)(), char *block_buf) {
       run_app(app_main, block_buf);
     }
   }
+}
+
+// 空クラスタを探し、そのクラスタ番号を返す。
+//
+// @retval 0 空クラスタが見つからなかった
+// @retval 1 空クラスタの検索中に何らかのエラーが発生した
+unsigned int find_free_cluster(unsigned int *block_buf) {
+  for (int fat_sec_off = 0; fat_sec_off < BPB_FATSz16; ++fat_sec_off) {
+    unsigned int fat_sec = PartitionSector + BPB_ResvdSecCnt + fat_sec_off;
+    if (sd_read_block(block_buf, fat_sec) < 0) {
+      return 1;
+    }
+
+    for (int i = 0; i < 256; ++i) {
+      if (block_buf[i] == 0) {
+        return (fat_sec_off << 8) + i;
+      }
+    }
+  }
+  return 0;
 }
 
 int main() {
@@ -942,7 +995,7 @@ int main() {
     return 1;
   }
 
-  rootdir_sec = PartitionSector + BPB_ResvdSecCnt + BPB_NumFATs * BPB_FATSz16;
+  RootEntSector = PartitionSector + BPB_ResvdSecCnt + BPB_NumFATs * BPB_FATSz16;
   char cmd[21];
   int cmd_i = 0;
 
@@ -1024,11 +1077,11 @@ int syscall(int funcnum, int *args) {
     {
       char *filename = args[0];
       unsigned int *file_entry = args[1];
-
       char block_buf[512];
-      char fn83[11];
-      filename_to_fn83(filename, fn83);
-      unsigned int *ent = foreach_dir_entry(block_buf, find_file, fn83);
+
+      // file_entry の先頭 11 バイトを fn83 用バッファとして使う
+      filename_to_fn83(filename, file_entry);
+      unsigned int *ent = foreach_dir_entry(block_buf, 0, find_file, file_entry);
       if (ent != 0) {
         int i;
         for (i = 0; i < 16; ++i) {
@@ -1085,6 +1138,70 @@ int syscall(int funcnum, int *args) {
         break;
       }
 
+      ret = 0;
+    }
+    break;
+  case 6: // write a file entry
+    // 同名ファイルのエントリを上書きするか、新規に作る
+    {
+      unsigned int *file_entry = args[0];
+
+      /* mode flags
+       * 1: 同名ファイルを上書き
+       * 2: 新規作成
+       */
+      unsigned int mode = args[1];
+
+      char block_buf[512];
+      unsigned int ent_sec;
+      unsigned int *ent = foreach_dir_entry(block_buf, &ent_sec, find_file, file_entry);
+      if (ent) {
+        if ((mode & 1) == 0) {
+          // 上書きフラグが指定されていないのでエラー
+          break;
+        }
+      } else { // 同名のエントリがない
+        // このとき、block_buf には必ず 1 つ以上の空エントリがあるはず。
+        // なぜなら find_file が「ファイルが無い」ことを確定させるために
+        // ent[0] == 0 なエントリに出会うまで検索し続けるから。
+
+        if ((mode & 2) == 0) {
+          // 新規作成フラグが指定されていないのでエラー
+          break;
+        }
+
+        // 空クラスタを探して割り当てる
+        unsigned int clus = find_free_cluster(block_buf);
+        if (clus <= 1) {
+          break;
+        }
+        *((unsigned int *)block_buf + (clus & 255)) = 0xFFFF;
+        if (sd_write_block(block_buf, PartitionSector + BPB_ResvdSecCnt + (clus >> 8)) < 0) {
+          break;
+        }
+
+        file_entry[10] = 0;    // First cluster high
+        file_entry[13] = clus; // First cluster low
+
+        // 改めて空エントリを含むブロックを読み出し、この後の SD 書き込みに備える
+        if (sd_read_block(block_buf, ent_sec) < 0) {
+          break;
+        }
+        for (int i = 0; i < 16; ++i) {
+          ent = block_buf + (i << 5);
+          if (*ent == 0x00) { // 空エントリ
+            break;
+          }
+        }
+      }
+
+      // ファイルエントリを更新し、ディスクに書き戻す
+      for (int i = 0; i < 16; ++i) {
+        *ent++ = *file_entry++;
+      }
+      if (sd_write_block(block_buf, ent_sec) < 0) {
+        break;
+      }
       ret = 0;
     }
     break;
