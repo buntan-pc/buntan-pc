@@ -47,7 +47,7 @@ function test_prog() {
     exit
   fi
 
-  ../uas/as --pmem testcase.pmem.hex --dmem testcase.dmem.hex testcase.s
+  ../uas/as --pmem testcase.pmem.hex --dmem testcase.dmem.hex testcase.s 2>/dev/null
 
   case $target in
     sim)

@@ -723,6 +723,9 @@ int main(int argc, char **argv) {
                                   labels, &num_labels);
   }
 
+  fprintf(stderr, "size of .data: %d bytes\n", dmem_size);
+  fprintf(stderr, "size of .text: %d instructions\n", num_insn);
+
   if (dmem_file) {
     for (int i = 0; i < dmem_size; i += 2) {
       fprintf(dmem_file, "%02X%02X\n", dmem[i + 1], dmem[i]);

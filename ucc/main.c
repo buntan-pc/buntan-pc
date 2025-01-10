@@ -514,14 +514,27 @@ unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass val
     break;
   case kNodeString:
     if (value_class != VC_NO_NEED) {
-      if (ctx->num_strings == MAX_STRING) {
+      // 既存の文字列定数を探す
+      int i;
+      for (i = 0; i < ctx->num_strings; ++i) {
+        if (strncmp(node->token->raw, ctx->strings[i]->raw, node->token->len) == 0) {
+          break;
+        }
+      }
+
+      if (i < ctx->num_strings) {
+        // 同じ値の文字列定数があるので、それを使う
+        InsnLabelAutoS(ctx, "push", "gp", i);
+      } else if (i == MAX_STRING) {
         fprintf(stderr, "too many string constants\n");
         Locate(node->token->raw);
         exit(1);
+      } else {
+        // 同じ値の文字列定数はないので、新たに登録する
+        ctx->strings[i] = node->token;
+        InsnLabelAutoS(ctx, "push", "gp", i);
+        ++ctx->num_strings;
       }
-      ctx->strings[ctx->num_strings] = node->token;
-      InsnLabelAutoS(ctx, "push", "gp", ctx->num_strings);
-      ctx->num_strings++;
     }
     break;
   case kNodeInc:
