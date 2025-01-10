@@ -37,3 +37,13 @@ int sys_write_entry_fatsd(char *file_entry, unsigned int mode) {
   int args[2] = {file_entry, mode};
   return syscall(6, args);
 }
+
+int sys_int2hex(int val, char *s, int n) {
+  int args[3] = {val, s, n};
+  return syscall(7, args);
+}
+
+int sys_int2dec(int val, char *s, int n) {
+  int args[3] = {val, s, n};
+  return syscall(8, args);
+}

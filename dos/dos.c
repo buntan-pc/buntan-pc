@@ -108,7 +108,8 @@ int wait_sd_r1_32(int *high, int *low) {
   return r1;
 }
 
-void int2hex(int val, char *s, int n) {
+// 先頭 0 の数を返す
+int int2hex(int val, char *s, int n) {
   int i;
   for (i = 0; i < n; i++) {
     int v = val & 0xf;
@@ -120,9 +121,17 @@ void int2hex(int val, char *s, int n) {
     }
     s[n - 1 - i] = v;
   }
+  for (i = 0; s[i] == '0'; ++i);
+  return i;
 }
 
-// 先頭 0 の数を返す
+/* 整数を長さ n の 10 進数文字列へ変換する。先頭の 0 は空白文字で埋められる。
+ *
+ * @param val 文字列へ変換する整数
+ * @param s   文字列バッファ
+ * @param n   s の文字数
+ * @return 先頭の 0 の数。val=0 の場合は n-1 を返す。
+ */
 int int2dec(int val, char *s, int n) {
   int i;
   int dec_arr[6];
@@ -141,7 +150,7 @@ int int2dec(int val, char *s, int n) {
     }
     s[i] = digit + '0';
   }
-  for (i = 0; s[i] == '0'; ++i) {
+  for (i = 0; i < n - 1 & s[i] == '0'; ++i) {
     s[i] = ' ';
   }
   return i;
@@ -789,11 +798,36 @@ int load_exe_by_filename(int (*app_main)(), char *block_buf, char *filename) {
   return 0;
 }
 
-void run_app(int (*app_main)(), char *block_buf) {
+int build_argv(char *cmd, char **argv, int n) {
+  int argc = 0;
+
+  while (1) {
+    while (*cmd == ' ') {
+      ++cmd;
+    }
+    if (*cmd == '\0') {
+      return argc;
+    }
+    *argv++ = cmd;
+    ++argc;
+    while (*cmd != ' ') {
+      if (*cmd == '\0') {
+        return argc;
+      }
+      ++cmd;
+    }
+    *cmd++ = '\0';
+  }
+  return argc;
+}
+
+void run_app(int (*app_main)(), char *block_buf, int argc, char **argv) {
   char buf[5];
-  int appinfo[2] = { // アプリに渡す構成情報
+  int appinfo[4] = { // アプリに渡す構成情報
     (int)app_main, // 0: .text の開始アドレス
     (int)syscall,  // 1: システムコールのエントリアドレス
+    argc,          // 2: argc
+    (int)argv,     // 3: argv
   };
 
   __builtin_set_gp(block_buf);
@@ -880,19 +914,17 @@ void cat_file(char *filename, char *block_buf) {
 void proc_cmd(char *cmd, int (*app_main)(), char *block_buf) {
   if (strncmp(cmd, "ls", 3) == 0) {
     foreach_dir_entry(block_buf, 0, print_file_name, 0);
-  } else if (strncmp(cmd, "ld ", 3) == 0) {
-    load_exe_by_filename(app_main, block_buf, cmd + 3);
-  } else if (strncmp(cmd, "run", 4) == 0) {
-    run_app(app_main, block_buf);
-  } else if (strncmp(cmd, "sdinfo", 4) == 0) {
+  } else if (strncmp(cmd, "sdinfo", 7) == 0) {
     print_sdinfo();
-  } else if (strncmp(cmd, "partinfo", 4) == 0) {
+  } else if (strncmp(cmd, "partinfo", 9) == 0) {
     print_partinfo();
   } else if (strncmp(cmd, "cat ", 4) == 0) {
     cat_file(cmd + 4, block_buf);
   } else {
-    if (load_exe_by_filename(app_main, block_buf, cmd) >= 0) {
-      run_app(app_main, block_buf);
+    char *argv[8];
+    int argc = build_argv(cmd, argv, 8);
+    if (load_exe_by_filename(app_main, block_buf, argv[0]) >= 0) {
+      run_app(app_main, block_buf, argc, argv);
     }
   }
 }
@@ -1204,6 +1236,12 @@ int syscall(int funcnum, int *args) {
       }
       ret = 0;
     }
+    break;
+  case 7:
+    ret = int2hex(args[0], args[1], args[2]);
+    break;
+  case 8:
+    ret = int2dec(args[0], args[1], args[2]);
     break;
   }
   __builtin_set_gp(0x2000);
