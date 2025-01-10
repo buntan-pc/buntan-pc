@@ -1,6 +1,7 @@
 #include "mmio.h"
 #include "delay.h"
 #include "lcd.h"
+#include "syscall.h"
 
 void play_bootsound() {
   int i;
@@ -27,55 +28,39 @@ void int2hex(int val, char *s, int n) {
   }
 }
 
-int (*syscall)();
-
-int syscall_get_os_version() {
-  return syscall(0, 0);
-}
-
-int syscall_put_string(char *s, int n) {
-  int args[2] = {s, n};
-  return syscall(1, args);
-}
-
-int syscall_get_string(char *s, int n) {
-  int args[2] = {s, n};
-  return syscall(2, args);
-}
-
 int main(int *info) {
   char buf[5];
   led_port = 0;
 
-  syscall = info[1];
+  init_syscall(info);
   lcd_init();
 
   play_bootsound();
 
-  syscall_put_string("info: ", -1);
+  sys_put_string("info: ", -1);
   buf[4] = 0;
   int2hex(info[0], buf, 4);
-  syscall_put_string(buf, -1);
-  syscall_put_string(" ", -1);
+  sys_put_string(buf, -1);
+  sys_put_string(" ", -1);
   int2hex(info[1], buf, 4);
-  syscall_put_string(buf, -1);
-  syscall_put_string("\n", -1);
+  sys_put_string(buf, -1);
+  sys_put_string("\n", -1);
 
-  syscall_put_string("os version: ", -1);
-  int2hex(syscall_get_os_version(), buf, 4);
-  syscall_put_string(buf, -1);
-  syscall_put_string("\n", -1);
+  sys_put_string("os version: ", -1);
+  int2hex(sys_get_os_version(), buf, 4);
+  sys_put_string(buf, -1);
+  sys_put_string("\n", -1);
 
-  syscall_put_string("waiting value...", -1);
+  sys_put_string("waiting value...", -1);
 
-  syscall_get_string(buf, 5);
+  sys_get_string(buf, 5);
   int value = 0;
   for (int i = 0; buf[i]; ++i) {
     value = value * 10 + (buf[i] - '0');
   }
 
-  syscall_put_string("got value: ", -1);
-  syscall_put_string(buf, -1);
-  syscall_put_string("\n", -1);
+  sys_put_string("got value: ", -1);
+  sys_put_string(buf, -1);
+  sys_put_string("\n", -1);
   return value;
 }
