@@ -556,7 +556,7 @@ int load_exe(unsigned int pmem_addr, unsigned int dmem_addr, unsigned int exe_lb
 
   int byte_index = 512;
   for (i = 0; i < pmem_len; ++i) { // insn[0]=0~2, insn[169]=507~509
-    if (byte_index >= 510) { // のこり 3 バイト未満なので、次のクラスタを読む
+    if (byte_index >= 510) { // のこり 3 バイト未満なので、次のブロックを読む
       char insn_buf0 = block_buf[510];
       char insn_buf1 = block_buf[511];
       if (sd_read_block(block_buf, pmem_lba++) < 0) {
@@ -841,6 +841,50 @@ void run_app(int (*app_main)(), char *block_buf, int argc, char **argv) {
   uart_putc('\n');
 }
 
+char uart1_recv_byte() {
+  while ((uart_flag & 0x01) == 0);
+  return uart_data;
+}
+
+unsigned int uart1_recv_word() {
+  unsigned int v = uart1_recv_byte();
+  return (v << 8) | uart1_recv_byte();
+}
+
+// UART からプログラムを受信して app_main と dmem が指すメモリに配置する
+void recv_program(int (*app_main)(), unsigned int *dmem) {
+  char buf[4];
+
+  // 受信バッファを空にする
+  while ((uart_flag & 0x01) != 0) {
+    uart_data;
+  }
+
+  uart_puts("receiving a program from UART1\n");
+  unsigned int pmem_len = uart1_recv_word();
+  unsigned int dmem_bytes = uart1_recv_word();
+  // 受信中に文字列表示などの重たい処理をするとデータを取りこぼす
+  unsigned int i;
+  unsigned int pmem_addr = app_main;
+  for (i = 0; i < pmem_len; ++i) {
+    char insn_hi = uart1_recv_byte();
+    __builtin_write_pmem(pmem_addr++, insn_hi, uart1_recv_word());
+  }
+
+  for (i = 0; i < dmem_bytes; i += 2) {
+    *dmem++ = uart1_recv_word();
+  }
+
+  // ので、表示処理は後でやる
+  int2hex(pmem_len, buf, 4);
+  uart_puts("pmem_len:   ");
+  uart_putsn(buf, 4);
+  int2hex(dmem_bytes, buf, 4);
+  uart_puts("\ndmem_bytes: ");
+  uart_putsn(buf, 4);
+  uart_putc('\n');
+}
+
 unsigned int sdinfo;
 unsigned int cap_mib;
 
@@ -920,6 +964,12 @@ void proc_cmd(char *cmd, int (*app_main)(), char *block_buf) {
     print_partinfo();
   } else if (strncmp(cmd, "cat ", 4) == 0) {
     cat_file(cmd + 4, block_buf);
+  } else if (strncmp(cmd, "recv", 5) == 0) {
+    recv_program(app_main, block_buf);
+  } else if (strncmp(cmd, "run", 3) == 0 && (cmd[3] == '\0' | cmd[3] == ' ')) {
+    char *argv[8];
+    int argc = build_argv(cmd, argv, 8);
+    run_app(app_main, block_buf, argc, argv);
   } else {
     char *argv[8];
     int argc = build_argv(cmd, argv, 8);

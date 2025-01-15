@@ -42,12 +42,13 @@ def receive_stdout(filename, ser):
     return (num, b)
 
 
-def send_program_and_data(ser, pmem_list, dmem_list, mode):
-    ser.write(b'\x55')
-    ser.flush()
-    time.sleep(0.005)
-    ser.write(b'\xAA')
-    ser.flush()
+def send_program_and_data(ser, pmem_list, dmem_list, mode, send_delim):
+    if send_delim:
+        ser.write(b'\x55')
+        ser.flush()
+        time.sleep(0.005)
+        ser.write(b'\xAA')
+        ser.flush()
 
     pmem_size = len(pmem_list)
     dmem_size = len(dmem_list) * 2
@@ -81,6 +82,9 @@ def main():
                    help='program transfer mode with given program memory hex file')
     p.add_argument('--dmem',
                    help='data memory hex file (used with --pmem)')
+    p.add_argument('--exe', help='exe file (insted of pmem&dmem hex)')
+    p.add_argument('--nodelim', action='store_true',
+                   help='do not send 55AA prior to sending program')
     p.add_argument('hex', nargs='*',
                    help='list of hex values to send')
 
@@ -106,7 +110,32 @@ def main():
                 file_data = f.read()
             dmem_list = [int(c, 16) for c in file_data.split()]
 
-        send_program_and_data(ser, pmem_list, dmem_list, 'program_simple')
+        send_delim = not args.nodelim
+        send_program_and_data(ser, pmem_list, dmem_list, 'program_simple', send_delim)
+    elif args.exe:
+        with open(args.exe, 'rb') as f:
+            file_data = f.read()
+        pmem_len = int.from_bytes(file_data[0:2], 'little')
+        dmem_bytes = int.from_bytes(file_data[2:4], 'little')
+        print(f'sending {pmem_len} =0x{pmem_len:04x} instructions and {dmem_bytes} =0x{dmem_bytes:04x} bytes of data')
+
+        def align_512(v):
+            return (v + 0x1ff) & 0xfe00
+
+        dmem_len_512 = align_512(dmem_bytes)
+        if (dmem_len_512 + pmem_len*3) != len(file_data):
+            print('file header is not consistent with file length', file=sys.stderr)
+            sys.exit(1)
+
+        dmem_list = []
+        for i in range(0, dmem_bytes, 2):
+            dmem_list.append(int.from_bytes(file_data[i:i+2], 'little'))
+        pmem_list = []
+        for i in range(0, 3*pmem_len, 3):
+            pmem_list.append(int.from_bytes(file_data[dmem_len_512+i:dmem_len_512+i+3], 'little'))
+
+        send_delim = not args.nodelim
+        send_program_and_data(ser, pmem_list, dmem_list, 'program_simple', send_delim)
 
     if args.hex:
         hex_list = [int(c, 16) for c in args.hex]
