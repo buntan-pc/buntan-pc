@@ -327,6 +327,7 @@ int ProcessDataSection(FILE *input_file, FILE *map_file,
           SetLabel(labels + 0, "pmem_len", 0x0000, map_file);
           SetLabel(labels + 1, "dmem_len", 0x0002, map_file);
           *num_labels = 2;
+          size = 4;
         }
         break;
       }
