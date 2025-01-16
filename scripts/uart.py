@@ -42,6 +42,17 @@ def receive_stdout(filename, ser):
     return (num, b)
 
 
+def send_bytes(ser, bs):
+    for i in range(len(bs)):
+        b = bs[i:i+1]
+        ser.write(b)
+        if b == b'\x55':
+            # 55 の送信後、55 AA マーカーの認識を外れるまで + CPU 側の処理時間を確保するため待つ
+            ser.flush()
+            time.sleep(0.05)
+    ser.flush()
+
+
 def send_program_and_data(ser, pmem_list, dmem_list, mode, send_delim):
     if send_delim:
         ser.write(b'\x55')
@@ -54,12 +65,11 @@ def send_program_and_data(ser, pmem_list, dmem_list, mode, send_delim):
     dmem_size = len(dmem_list) * 2
 
     mode_flag = 0x4000 if mode == 'program_packed' else 0x0000
-    ser.write((pmem_size | mode_flag).to_bytes(length=2, byteorder='big'))
-    ser.write(dmem_size.to_bytes(length=2, byteorder='big'))
+    send_bytes(ser, (pmem_size | mode_flag).to_bytes(length=2, byteorder='big'))
+    send_bytes(ser, dmem_size.to_bytes(length=2, byteorder='big'))
 
-    ser.write(hex_to_bytes(pmem_list, mode))
-    ser.write(hex_to_bytes(dmem_list, 'little_2bytes'))
-    ser.flush()
+    send_bytes(ser, hex_to_bytes(pmem_list, mode))
+    send_bytes(ser, hex_to_bytes(dmem_list, 'little_2bytes'))
 
 
 def main():
