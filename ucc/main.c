@@ -312,25 +312,28 @@ void GenVarInit(struct GenContext *ctx, struct Symbol *var) {
   }
 
   const char *base = GetBaseReg(var);
-  const char *insn = "st";
+  const char *insn_st = "st";
   if ((var->type->kind == kTypeArray && SizeofType(var->type->base) == 1) ||
       (SizeofType(var->type) == 1)) {
-    insn = "st1";
+    insn_st = "st1";
   }
 
   if (init->kind != kNodeIList) {
     Generate(ctx, init, VC_RVAL, 1);
-    InsnBaseOff(ctx, insn, base, var->offset);
+    InsnBaseOff(ctx, insn_st, base, var->offset);
   } else {
     assert(var->type->kind == kTypeArray);
-    struct Node *n = init->rhs;
-    uint16_t offset = var->offset;
+    struct Node *init_val = init->rhs;
     int inc = SizeofType(var->type->base);
-    while (n) {
-      Generate(ctx, n, VC_RVAL, 1);
-      InsnBaseOff(ctx, insn, base, offset);
-      offset += inc;
-      n = n->next;
+    int i = 0;
+    for (; init_val; ++i) {
+      Generate(ctx, init_val, VC_RVAL, 1);
+      InsnBaseOff(ctx, insn_st, base, var->offset + inc * i);
+      init_val = init_val->next;
+    }
+    for (; i < var->type->len; ++i) {
+      InsnInt(ctx, "push", 0);
+      InsnBaseOff(ctx, insn_st, base, var->offset + inc * i);
     }
   }
 }

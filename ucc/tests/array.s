@@ -16,6 +16,8 @@ main:
 	st fp+2
 	push 3
 	st fp+4
+	push 0
+	st fp+6
 	push fp+2
 	st fp+8
 	ld1 fp+1
