@@ -770,16 +770,16 @@ void filename_to_fn83(char *filename, char *fn83) {
   }
 }
 
-int load_exe_by_filename(int (*app_main)(), char *block_buf, char *filename) {
+int load_exe_by_filename(int (*app_main)(), char *app_dmem, char *filename) {
   char fn83[11];
   filename_to_fn83(filename, fn83);
 
-  char *file_entry = foreach_dir_entry(block_buf, 0, find_file, fn83);
+  char *file_entry = foreach_dir_entry(app_dmem, 0, find_file, fn83);
   if (file_entry == 0 && fn83[8] == ' ') {
     fn83[8]  = 'E';
     fn83[9]  = 'X';
     fn83[10] = 'E';
-    file_entry = foreach_dir_entry(block_buf, 0, find_file, fn83);
+    file_entry = foreach_dir_entry(app_dmem, 0, find_file, fn83);
   }
 
   if (file_entry == 0) {
@@ -788,7 +788,7 @@ int load_exe_by_filename(int (*app_main)(), char *block_buf, char *filename) {
   } else {
     unsigned int exe_clus = read16(file_entry + 26);
     unsigned int exe_lba = clus_to_sec(exe_clus);
-    if (load_exe(app_main, block_buf, exe_lba) < 0) {
+    if (load_exe(app_main, app_dmem, exe_lba) < 0) {
       uart_puts("failed to load app\n");
       return -1;
     }
@@ -955,7 +955,7 @@ void cat_file(char *filename, char *block_buf) {
   uart_putsn(block_buf, len);
 }
 
-void proc_cmd(char *cmd, int (*app_main)(), char *block_buf) {
+void proc_cmd(char *cmd, char *block_buf, int (*app_main)(), char *app_dmem) {
   if (strncmp(cmd, "ls", 3) == 0) {
     foreach_dir_entry(block_buf, 0, print_file_name, 0);
   } else if (strncmp(cmd, "sdinfo", 7) == 0) {
@@ -965,16 +965,16 @@ void proc_cmd(char *cmd, int (*app_main)(), char *block_buf) {
   } else if (strncmp(cmd, "cat ", 4) == 0) {
     cat_file(cmd + 4, block_buf);
   } else if (strncmp(cmd, "recv", 5) == 0) {
-    recv_program(app_main, block_buf);
+    recv_program(app_main, app_dmem);
   } else if (strncmp(cmd, "run", 3) == 0 && (cmd[3] == '\0' | cmd[3] == ' ')) {
     char *argv[8];
     int argc = build_argv(cmd, argv, 8);
-    run_app(app_main, block_buf, argc, argv);
+    run_app(app_main, app_dmem, argc, argv);
   } else {
     char *argv[8];
     int argc = build_argv(cmd, argv, 8);
-    if (load_exe_by_filename(app_main, block_buf, argv[0]) >= 0) {
-      run_app(app_main, block_buf, argc, argv);
+    if (load_exe_by_filename(app_main, app_dmem, argv[0]) >= 0) {
+      run_app(app_main, app_dmem, argc, argv);
     }
   }
 }
@@ -1005,7 +1005,8 @@ int main() {
   char buf[5];
   unsigned int csd[9]; // 末尾は 16 ビットの CRC
   int (*app_main)() = 0x2000;
-  unsigned char *block_buf = 0x2000;
+  unsigned char *app_dmem = 0x2000;
+  char block_buf[512];
 
   sdinfo = sd_init();
   if (sdinfo < 0) {
@@ -1090,7 +1091,7 @@ int main() {
       uart_putc('\n');
       if (cmd_i > 0) {
         cmd[cmd_i] = '\0';
-        proc_cmd(cmd, app_main, block_buf);
+        proc_cmd(cmd, block_buf, app_main, app_dmem);
       }
       cmd_i = 0;
       uart_puts("> ");
