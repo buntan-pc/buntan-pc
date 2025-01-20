@@ -6,10 +6,7 @@ int main(int *info) {
   sys_put_string("fwrite.exe\n", -1);
   sys_put_string("Reading 'FWRITE.TXT'\n", -1);
 
-  int file_entry[16];
-  for (int i = 0; i < 16; ++i) {
-    file_entry[i] = 0;
-  }
+  int file_entry[16] = {};
 
   if (sys_open_entry_fatsd("FWRITE.TXT", file_entry) < 0) {
     sys_put_string("No such file. Creating 'FWRITE.TXT'\n", -1);

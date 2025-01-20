@@ -47,3 +47,7 @@ int sys_int2dec(int val, char *s, int n) {
   int args[3] = {val, s, n};
   return syscall(8, args);
 }
+
+int sys_getc() {
+  return syscall(9, 0);
+}

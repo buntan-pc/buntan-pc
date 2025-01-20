@@ -1294,6 +1294,9 @@ int syscall(int funcnum, int *args) {
   case 8:
     ret = int2dec(args[0], args[1], args[2]);
     break;
+  case 9:
+    ret = uart_getc();
+    break;
   }
   __builtin_set_gp(0x2000);
   return ret;
