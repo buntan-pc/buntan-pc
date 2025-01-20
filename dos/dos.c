@@ -955,6 +955,41 @@ void cat_file(char *filename, char *block_buf) {
   uart_putsn(block_buf, len);
 }
 
+void rm_file(char *filename, char *block_buf) {
+  char fn83[11];
+  filename_to_fn83(filename, fn83);
+  unsigned int ent_sec;
+  char *file_entry = foreach_dir_entry(block_buf, &ent_sec, find_file, fn83);
+
+  if (file_entry == 0) {
+    uart_puts("no such file");
+    return;
+  }
+  *file_entry = 0xe5;
+  char *next_entry = file_entry + 32;
+  if (next_entry < block_buf + 512 && *next_entry == 0) {
+    *file_entry = 0;
+  }
+
+  if (sd_write_block(block_buf, ent_sec) < 0) {
+    uart_puts("failed to write a file entry\n");
+    return;
+  }
+
+  // FAT からクラスタを消す
+  unsigned int clus = read16(file_entry + 26);
+
+  if (sd_read_block(block_buf, PartitionSector + BPB_ResvdSecCnt + (clus >> 8)) < 0) {
+    uart_puts("failed to read FAT\n");
+    return;
+  }
+  *((unsigned int *)block_buf + (clus & 255)) = 0;
+  if (sd_write_block(block_buf, PartitionSector + BPB_ResvdSecCnt + (clus >> 8)) < 0) {
+    uart_puts("failed to write FAT\n");
+    return;
+  }
+}
+
 void proc_cmd(char *cmd, char *block_buf, int (*app_main)(), char *app_dmem) {
   if (strncmp(cmd, "ls", 3) == 0) {
     foreach_dir_entry(block_buf, 0, print_file_name, 0);
@@ -970,6 +1005,8 @@ void proc_cmd(char *cmd, char *block_buf, int (*app_main)(), char *app_dmem) {
     char *argv[8];
     int argc = build_argv(cmd, argv, 8);
     run_app(app_main, app_dmem, argc, argv);
+  } else if (strncmp(cmd, "rm ", 3) == 0) {
+    rm_file(cmd + 3, block_buf);
   } else {
     char *argv[8];
     int argc = build_argv(cmd, argv, 8);
