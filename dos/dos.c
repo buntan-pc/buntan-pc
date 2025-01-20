@@ -990,6 +990,68 @@ void rm_file(char *filename, char *block_buf) {
   }
 }
 
+int hexdigit_to_int(int hexdigit) {
+  if (hexdigit >= 'a') {
+    return hexdigit - ('a' - 10);
+  } else if (hexdigit >= 'A') {
+    return hexdigit - ('A' - 10);
+  } else {
+    return hexdigit - '0';
+  }
+}
+
+int load_hex_by_filename(unsigned int pmem_addr, char *block_buf, char *filename) {
+  char fn83[11];
+  filename_to_fn83(filename, fn83);
+
+  int *file_entry = foreach_dir_entry(block_buf, 0, find_file, fn83);
+  if (file_entry == 0) {
+    uart_puts("No such file\n");
+    return -1;
+  }
+
+  unsigned int siz_lo = file_entry[14];
+  unsigned int siz_hi = file_entry[15];
+  if (siz_hi > 0 | siz_lo > 512) {
+    siz_lo = 512;
+  }
+
+  unsigned int clus = file_entry[13];
+  unsigned int sec = clus_to_sec(clus);
+
+  if (sd_read_block(block_buf, sec) < 0) {
+    uart_puts("failed to read file\n");
+    return -1;
+  }
+
+  char *src = block_buf;
+  char *end = block_buf + siz_lo;
+  while (src < end) {
+    char *p = src;
+    while (src < end & *src != '\n') {
+      ++src;
+    }
+    unsigned int len = src - p;
+    if (*src == '\n') {
+      *src++ = 0;
+      unsigned int insn_lo = 0;
+      unsigned int insn_hi = 0;
+      for (; len >= 5; --len) {
+        int v = hexdigit_to_int(*p++);
+        insn_hi = (insn_hi << 4) | v;
+      }
+      for (; len > 0; --len) {
+        int v = hexdigit_to_int(*p++);
+        insn_lo = (insn_lo << 4) | v;
+      }
+      __builtin_write_pmem(pmem_addr++, insn_hi, insn_lo);
+    }
+  }
+
+  uart_puts("hex file is loaded on pmem\n");
+  return 0;
+}
+
 void proc_cmd(char *cmd, char *block_buf, int (*app_main)(), char *app_dmem) {
   if (strncmp(cmd, "ls", 3) == 0) {
     foreach_dir_entry(block_buf, 0, print_file_name, 0);
@@ -1007,6 +1069,8 @@ void proc_cmd(char *cmd, char *block_buf, int (*app_main)(), char *app_dmem) {
     run_app(app_main, app_dmem, argc, argv);
   } else if (strncmp(cmd, "rm ", 3) == 0) {
     rm_file(cmd + 3, block_buf);
+  } else if (strncmp(cmd, "hex ", 4) == 0) {
+    load_hex_by_filename(app_main, block_buf, cmd + 4);
   } else {
     char *argv[8];
     int argc = build_argv(cmd, argv, 8);
