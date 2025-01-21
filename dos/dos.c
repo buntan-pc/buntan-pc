@@ -4,6 +4,7 @@
  */
 #include "mmio.h"
 #include "delay.h"
+#include "lcd.h"
 
 char *shift_map = " !\x22#$%&'()*+<=>?" // 0x20: !"#$%&'()*+,-./
                   "0!\x22#$%&'()*+<=>?" // 0x30:0123456789:;<=>?
@@ -1108,6 +1109,11 @@ int main() {
   int (*app_main)() = 0x2000;
   unsigned char *app_dmem = 0x2000;
   char block_buf[512];
+
+  lcd_init();
+  uart_puts("BuntanPC DOS");
+  uart_putc('\n');
+  lcd_puts("BuntanPC DOS");
 
   sdinfo = sd_init();
   if (sdinfo < 0) {
