@@ -84,8 +84,17 @@ void lcd_cursor_set() {
   lcd_cursor_at(lcd_cursor_y, lcd_cursor_x);
 }
 
-void putc(int c) {
-  uart_putc(c);
+void putc(unsigned int c) {
+  if (c <= 0x7e) {
+    uart_putc(c);
+  } else if (c <= 0x7ff) {
+    uart_putc(0xc0 | (c >> 6));
+    uart_putc(0x80 | (c & 0x3f));
+  } else {
+    uart_putc(0xe0 | (c >> 12));
+    uart_putc(0x80 | ((c >> 6) & 0x3f));
+    uart_putc(0x80 | (c & 0x3f));
+  }
 
   switch (c) {
   case '\b':
@@ -130,6 +139,11 @@ void putc(int c) {
     break;
   default:
     if (lcd_cursor_x < 20) {
+      if (c == 0x2192) {
+        c = 0x7e;
+      } else if (c == 0x2190) {
+        c = 0x7f;
+      }
       if (lcd_cursor_y >= 1) {
         lcd_buf[20*(lcd_cursor_y - 1) + lcd_cursor_x++] = c;
       }
@@ -944,7 +958,7 @@ void run_app(int (*app_main)(), char *block_buf, int argc, char **argv) {
 
   int2hex(ret_code, buf, 4);
   buf[4] = 0;
-  puts("\xe2\x86\x92"); // 右矢印
+  putc(0x2192); // 右矢印
   puts(buf);
   putc('\n');
 }
