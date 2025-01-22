@@ -48,7 +48,11 @@ void uart_del_char() {
 int getc() {
   while (1) {
     if ((kbc_status & 0xff) != 0) {
-      return kbc_queue;
+      int c = kbc_queue;
+      if (c >= 0x80) { // release
+        continue;
+      }
+      return c;
     }
     if ((uart3_flag & 0x01) != 0) {
       break;
@@ -1057,7 +1061,7 @@ void cat_file(char *filename, char *block_buf) {
   char *file_entry = foreach_dir_entry(block_buf, 0, find_file, fn83);
 
   if (file_entry == 0) {
-    puts("no such file");
+    puts("no such file\n");
     return;
   }
   unsigned int siz_lo = read16(file_entry + 28);
@@ -1084,7 +1088,7 @@ void rm_file(char *filename, char *block_buf) {
   char *file_entry = foreach_dir_entry(block_buf, &ent_sec, find_file, fn83);
 
   if (file_entry == 0) {
-    puts("no such file");
+    puts("no such file\n");
     return;
   }
   *file_entry = 0xe5;
@@ -1382,6 +1386,7 @@ int syscall(int funcnum, int *args) {
           s[i++] = c;
         }
       }
+      ret = i;
     }
     break;
   case 3: // open a file in FAT filesystem on the main SD card
@@ -1500,7 +1505,8 @@ int syscall(int funcnum, int *args) {
         }
         for (int i = 0; i < 16; ++i) {
           ent = block_buf + (i << 5);
-          if (*ent == 0x00) { // 空エントリ
+          char c = *(char*)ent;
+          if (c == 0xe5 | c == 0x00) { // 空エントリ
             break;
           }
         }
