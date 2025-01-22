@@ -10,7 +10,7 @@
 
 #define MAX_OPERAND 128
 #define MAX_BP 512
-#define MAX_LABEL 512
+#define MAX_LABEL 1024
 #define MAX_LINE 512
 
 // 文字列をすべて小文字にする
