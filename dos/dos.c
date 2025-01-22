@@ -29,12 +29,6 @@ void uart_puts(char *s) {
   }
 }
 
-void uart_putsn(char *s, int n) {
-  while (n-- > 0) {
-    uart_putc(*s++);
-  }
-}
-
 void uart_cursor_at_col(int col) {
   uart_puts("\x1B["); // CSI
   if (col < 10) {
@@ -49,6 +43,125 @@ void uart_cursor_at_col(int col) {
 // カーソル上の文字を消す
 void uart_del_char() {
   uart_puts("\x1B[X");
+}
+
+int getc() {
+  while (1) {
+    if ((kbc_status & 0xff) != 0) {
+      return kbc_queue;
+    }
+    if ((uart3_flag & 0x01) != 0) {
+      break;
+    }
+  }
+
+  char c = uart_getc();
+  if (c != 0x1b) {
+    return c;
+  } else { // escape sequence
+    c = uart_getc();
+    if (c != '[') {
+      return c;
+    } else { // CSI
+      c = uart_getc();
+      if ('A' <= c & c <= 'D') {
+        return 0x1c + c - 'A';
+      }
+      return c;
+    }
+  }
+}
+
+int lcd_cursor_x;
+int lcd_cursor_y;
+char lcd_buf[60]; // 2～4 行目のバッファ
+
+void lcd_cursor_at(int row, int col) {
+  lcd_cmd(0x80 | ((((row & 1) << 6) | (row >> 1) * 20) + col));
+}
+
+void lcd_cursor_set() {
+  lcd_cursor_at(lcd_cursor_y, lcd_cursor_x);
+}
+
+void putc(int c) {
+  uart_putc(c);
+
+  switch (c) {
+  case '\b':
+    if (lcd_cursor_x > 0) {
+      --lcd_cursor_x;
+      lcd_cursor_set();
+    }
+    break;
+  case '\n':
+    if (lcd_cursor_y == 0) {
+      ++lcd_cursor_y;
+    } else if (lcd_cursor_y < 3) {
+      char *line_buf = lcd_buf + 20*(lcd_cursor_y - 1);
+      while (lcd_cursor_x < 20) {
+        line_buf[lcd_cursor_x++] = ' ';
+      }
+      ++lcd_cursor_y;
+    } else {
+      // スクロール
+      lcd_cmd(0x80);
+      for (int row = 0; row < 3; ++row) {
+        char *line_buf = lcd_buf + 20*row;
+        lcd_cursor_at(row, 0);
+        for (int i = 0; i < 20; ++i) {
+          lcd_putc(*line_buf++);
+        }
+      }
+      for (int i = 0; i < 40; ++i) {
+        lcd_buf[i] = lcd_buf[i + 20];
+      }
+    }
+    lcd_cursor_x = 0;
+    lcd_cursor_set();
+    {
+      char *line_buf = lcd_buf + 20*(lcd_cursor_y - 1);
+      for (int i = 0; i < 20; ++i) {
+        *line_buf++ = ' ';
+        lcd_putc(' ');
+      }
+    }
+    lcd_cursor_set();
+    break;
+  default:
+    if (lcd_cursor_x < 20) {
+      if (lcd_cursor_y >= 1) {
+        lcd_buf[20*(lcd_cursor_y - 1) + lcd_cursor_x++] = c;
+      }
+      lcd_putc(c);
+    }
+  }
+}
+
+void puts(char *s) {
+  while (*s) {
+    putc(*s++);
+  }
+}
+
+void putsn(char *s, int n) {
+  while (n-- > 0) {
+    putc(*s++);
+  }
+}
+
+void cursor_at_col(int col) {
+  uart_cursor_at_col(col);
+
+  lcd_cursor_x = col;
+  lcd_cursor_set();
+}
+
+void del_char() {
+  uart_del_char();
+
+  lcd_putc(' ');
+  lcd_cursor_set();
 }
 
 void assert_cs() {
@@ -174,23 +287,23 @@ void show_sd_cmd_error(char cmd, int r1, char *msg) {
     cmd -= 10;
   }
 
-  uart_puts("CMD");
+  puts("CMD");
   if (digit10 > 0) {
-    uart_putc('0' + digit10);
+    putc('0' + digit10);
   }
-  uart_putc('0' + cmd);
-  uart_puts(" -> ");
+  putc('0' + cmd);
+  puts(" -> ");
 
   if (r1 < 0) {
-    uart_puts("timeout");
+    puts("timeout");
   } else {
     int2hex(r1, buf, 2);
     buf[2] = '\0';
-    uart_puts(buf);
+    puts(buf);
   }
-  uart_putc('\n');
+  putc('\n');
 
-  uart_puts(msg);
+  puts(msg);
 }
 
 // return minus value on error
@@ -664,7 +777,7 @@ int foreach_dir_entry(char *block_buf, unsigned int *entry_sec,
       *entry_sec = RootEntSector + find_loop;
     }
     if (sd_read_block(block_buf, RootEntSector + find_loop) < 0) {
-      uart_puts("failed to read block\n");
+      puts("failed to read block\n");
       return 0;
     }
     for (int i = 0; i < 16; ++i) {
@@ -685,13 +798,7 @@ void print_filename_trimspace(char *name, char *end) {
   while (*end == ' ') {
     --end;
   }
-  for (; name <= end; ++name) {
-    if (*name == 0x7e) { // チルダ
-      uart_putc(0x01);
-    } else {
-      uart_putc(*name);
-    }
-  }
+  putsn(name, end - name + 1);
 }
 
 unsigned int read16(char *buf) {
@@ -706,27 +813,27 @@ int print_file_name(char *dir_entry, void *dummy) {
 
   print_filename_trimspace(dir_entry, dir_entry + 7);
   if (strncmp(dir_entry + 8, "   ", 3) != 0) { // 拡張子あり
-    uart_putc('.');
+    putc('.');
     print_filename_trimspace(dir_entry + 8, dir_entry + 10);
   }
   if (is_dir) {
-    uart_putc('/');
+    putc('/');
   }
 
   // ファイルサイズ表示
-  uart_cursor_at_col(13);
+  cursor_at_col(13);
   unsigned int siz_lo = read16(dir_entry + 28);
   unsigned int siz_hi = read16(dir_entry + 30);
   char buf[6];
   if (siz_hi == 0) {
     int2dec(siz_lo, buf, 5);
     buf[5] = 0;
-    uart_puts(buf);
-    uart_putc('B');
+    puts(buf);
+    putc('B');
   } else {
-    uart_puts("TOOBIG");
+    puts("TOOBIG");
   }
-  uart_putc('\n');
+  putc('\n');
 
   return 0;
 }
@@ -784,17 +891,17 @@ int load_exe_by_filename(int (*app_main)(), char *app_dmem, char *filename) {
   }
 
   if (file_entry == 0) {
-    uart_puts("No such file\n");
+    puts("No such file\n");
     return -1;
   } else {
     unsigned int exe_clus = read16(file_entry + 26);
     unsigned int exe_lba = clus_to_sec(exe_clus);
     if (load_exe(app_main, app_dmem, exe_lba) < 0) {
-      uart_puts("failed to load app\n");
+      puts("failed to load app\n");
       return -1;
     }
 
-    uart_puts("File loaded\n");
+    puts("File loaded\n");
   }
   return 0;
 }
@@ -837,9 +944,9 @@ void run_app(int (*app_main)(), char *block_buf, int argc, char **argv) {
 
   int2hex(ret_code, buf, 4);
   buf[4] = 0;
-  uart_puts("\xe2\x86\x92"); // 右矢印
-  uart_puts(buf);
-  uart_putc('\n');
+  puts("\xe2\x86\x92"); // 右矢印
+  puts(buf);
+  putc('\n');
 }
 
 char uart1_recv_byte() {
@@ -861,7 +968,7 @@ void recv_program(int (*app_main)(), unsigned int *dmem) {
     uart_data;
   }
 
-  uart_puts("receiving a program from UART1\n");
+  puts("receiving a program from UART1\n");
   unsigned int pmem_len = uart1_recv_word();
   unsigned int dmem_bytes = uart1_recv_word();
   // 受信中に文字列表示などの重たい処理をするとデータを取りこぼす
@@ -878,12 +985,12 @@ void recv_program(int (*app_main)(), unsigned int *dmem) {
 
   // ので、表示処理は後でやる
   int2hex(pmem_len, buf, 4);
-  uart_puts("pmem_len:   ");
-  uart_putsn(buf, 4);
+  puts("pmem_len:   ");
+  putsn(buf, 4);
   int2hex(dmem_bytes, buf, 4);
-  uart_puts("\ndmem_bytes: ");
-  uart_putsn(buf, 4);
-  uart_putc('\n');
+  puts("\ndmem_bytes: ");
+  putsn(buf, 4);
+  putc('\n');
 }
 
 unsigned int sdinfo;
@@ -891,32 +998,32 @@ unsigned int cap_mib;
 
 void print_msg_dec(char *msg, int val) {
   char buf[5];
-  uart_puts(msg);
-  uart_puts(": ");
+  puts(msg);
+  puts(": ");
   int nzero = int2dec(val, buf, 5);
-  uart_putsn(buf + nzero, 5 - nzero);
-  uart_putc('\n');
+  putsn(buf + nzero, 5 - nzero);
+  putc('\n');
 }
 
 void print_sdinfo() {
   char buf[5];
-  uart_puts("SDv");
+  puts("SDv");
   if (sdinfo & 0x0001) {
-    uart_puts("2+");
+    puts("2+");
   } else {
-    uart_puts("1 ");
+    puts("1 ");
   }
   if (sdinfo & 0x0002) {
-    uart_puts("HC");
+    puts("HC");
   } else {
-    uart_puts("SC");
+    puts("SC");
   }
 
-  uart_puts(" ");
+  puts(" ");
   int2dec(cap_mib, buf, 4);
   buf[4] = 0;
-  uart_puts(buf);
-  uart_puts("MB\n");
+  puts(buf);
+  puts("MB\n");
 }
 
 void print_partinfo() {
@@ -936,7 +1043,7 @@ void cat_file(char *filename, char *block_buf) {
   char *file_entry = foreach_dir_entry(block_buf, 0, find_file, fn83);
 
   if (file_entry == 0) {
-    uart_puts("no such file");
+    puts("no such file");
     return;
   }
   unsigned int siz_lo = read16(file_entry + 28);
@@ -945,7 +1052,7 @@ void cat_file(char *filename, char *block_buf) {
   unsigned int clus = read16(file_entry + 26);
   unsigned int lba = clus_to_sec(clus);
   if (sd_read_block(block_buf, lba) < 0) {
-    uart_puts("failed to load file\n");
+    puts("failed to load file\n");
     return;
   }
 
@@ -953,7 +1060,7 @@ void cat_file(char *filename, char *block_buf) {
   if (siz_hi > 0 || siz_lo >= 512) {
     len = 512;
   }
-  uart_putsn(block_buf, len);
+  putsn(block_buf, len);
 }
 
 void rm_file(char *filename, char *block_buf) {
@@ -963,7 +1070,7 @@ void rm_file(char *filename, char *block_buf) {
   char *file_entry = foreach_dir_entry(block_buf, &ent_sec, find_file, fn83);
 
   if (file_entry == 0) {
-    uart_puts("no such file");
+    puts("no such file");
     return;
   }
   *file_entry = 0xe5;
@@ -973,7 +1080,7 @@ void rm_file(char *filename, char *block_buf) {
   }
 
   if (sd_write_block(block_buf, ent_sec) < 0) {
-    uart_puts("failed to write a file entry\n");
+    puts("failed to write a file entry\n");
     return;
   }
 
@@ -981,12 +1088,12 @@ void rm_file(char *filename, char *block_buf) {
   unsigned int clus = read16(file_entry + 26);
 
   if (sd_read_block(block_buf, PartitionSector + BPB_ResvdSecCnt + (clus >> 8)) < 0) {
-    uart_puts("failed to read FAT\n");
+    puts("failed to read FAT\n");
     return;
   }
   *((unsigned int *)block_buf + (clus & 255)) = 0;
   if (sd_write_block(block_buf, PartitionSector + BPB_ResvdSecCnt + (clus >> 8)) < 0) {
-    uart_puts("failed to write FAT\n");
+    puts("failed to write FAT\n");
     return;
   }
 }
@@ -1007,7 +1114,7 @@ int load_hex_by_filename(unsigned int pmem_addr, char *block_buf, char *filename
 
   int *file_entry = foreach_dir_entry(block_buf, 0, find_file, fn83);
   if (file_entry == 0) {
-    uart_puts("No such file\n");
+    puts("No such file\n");
     return -1;
   }
 
@@ -1021,7 +1128,7 @@ int load_hex_by_filename(unsigned int pmem_addr, char *block_buf, char *filename
   unsigned int sec = clus_to_sec(clus);
 
   if (sd_read_block(block_buf, sec) < 0) {
-    uart_puts("failed to read file\n");
+    puts("failed to read file\n");
     return -1;
   }
 
@@ -1049,7 +1156,7 @@ int load_hex_by_filename(unsigned int pmem_addr, char *block_buf, char *filename
     }
   }
 
-  uart_puts("hex file is loaded on pmem\n");
+  puts("hex file is loaded on pmem\n");
   return 0;
 }
 
@@ -1111,9 +1218,8 @@ int main() {
   char block_buf[512];
 
   lcd_init();
-  uart_puts("BuntanPC DOS");
-  uart_putc('\n');
-  lcd_puts("BuntanPC DOS");
+  puts("BuntanPC DOS");
+  putc('\n');
 
   sdinfo = sd_init();
   if (sdinfo < 0) {
@@ -1141,7 +1247,7 @@ int main() {
 
   // MBR か PBR の判定
   if (!has_signature_55AA(block_buf)) {
-    uart_puts("not found 55 AA");
+    puts("not found 55 AA");
     return 1;
   }
   if (!is_valid_PBR(block_buf)) {
@@ -1166,22 +1272,22 @@ int main() {
       break;
     }
     if (i == 4) {
-      uart_puts("MBR with no FAT16 pt");
+      puts("MBR with no FAT16 pt");
       return 1;
     }
   } else {
-    uart_puts("Unknown BS");
+    puts("Unknown BS");
     return 1;
   }
 
   if (!is_valid_PBR(block_buf)) {
-    uart_puts("no valid PBR");
+    puts("no valid PBR");
     return 1;
   }
 
   set_bpb_values(block_buf);
   if (BPB_BytsPerSec != 512) {
-    uart_puts("BPB_BytsPerSec!=512");
+    puts("BPB_BytsPerSec!=512");
     return 1;
   }
 
@@ -1189,28 +1295,28 @@ int main() {
   char cmd[64];
   int cmd_i = 0;
 
-  uart_puts("> ");
+  puts("> ");
 
   while (1) {
-    int key = uart_getc();
+    int key = getc();
 
     if (key == '\n') { // Enter
-      uart_putc('\n');
+      putc('\n');
       if (cmd_i > 0) {
         cmd[cmd_i] = '\0';
         proc_cmd(cmd, block_buf, app_main, app_dmem);
       }
       cmd_i = 0;
-      uart_puts("> ");
+      puts("> ");
     } else if (key == '\b') {
       if (cmd_i > 0) {
         cmd_i--;
-        uart_putc('\b');
-        uart_del_char();
+        putc('\b');
+        del_char();
       }
     } else if (0x20 <= key & key < 0x80 & cmd_i < 63) {
       cmd[cmd_i++] = key;
-      uart_putc(key);
+      putc(key);
     }
   }
 
@@ -1232,12 +1338,12 @@ int syscall(int funcnum, int *args) {
       ret = 0;
       if (len < 0) {
         while (*s) {
-          uart_putc(*s++);
+          putc(*s++);
           ++ret;
         }
       } else {
         while (ret++ < len) {
-          uart_putc(*s++);
+          putc(*s++);
         }
       }
     }
@@ -1248,15 +1354,15 @@ int syscall(int funcnum, int *args) {
       int len = args[1] - 1;
       int i = 0;
       while (1) {
-        int c = uart_getc();
-        uart_putc(c);
+        int c = getc();
+        putc(c);
         if (c == '\n') {
           s[i] = '\0';
           break;
         } else if (c == '\b') {
           if (i > 0) {
             --i;
-            uart_del_char();
+            del_char();
           }
         } else if (i < len) {
           s[i++] = c;
@@ -1403,7 +1509,7 @@ int syscall(int funcnum, int *args) {
     ret = int2dec(args[0], args[1], args[2]);
     break;
   case 9:
-    ret = uart_getc();
+    ret = getc();
     break;
   }
   __builtin_set_gp(0x2000);
