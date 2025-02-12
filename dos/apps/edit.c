@@ -324,40 +324,28 @@ int main(int *info) {
   sys_put_string(argv[1], -1);
   leave_status_mode();
 
-  int c = sys_getc();
-  while (1) {
-    if (c == '\x1b') {
-      c = sys_getc();
-      if (c == '\x1b') {
-        continue;
-      } else if (c == '[') {
-        c = sys_getc();
-        switch (c) {
-        case '\x1b':
-          continue;
-        case 'A':
-          cursor_up();
-          break;
-        case 'B':
-          cursor_down();
-          break;
-        case 'C':
-          cursor_right();
-          break;
-        case 'D':
-          cursor_left();
-          break;
-        }
-      }
-    } else if (c == 'S' - 0x40) {
+  int c;
+  while ((c = sys_getc()) != 0x18) { // Ctrl-X でループを抜ける
+    switch (c) {
+    case 0x1c:
+      cursor_up();
+      break;
+    case 0x1d:
+      cursor_down();
+      break;
+    case 0x1e:
+      cursor_right();
+      break;
+    case 0x1f:
+      cursor_left();
+      break;
+    case 0x13: // Ctrl-S
       save_file(argv[1], file_entry); // Ctrl-S で保存
-    } else if (c == 'X' - 0x40) {
-      break; // Ctrl-X でループを抜ける
-    } else {
+      break;
+    default:
       // 文字の挿入
       insert_char(c);
     }
-    c = sys_getc();
   }
 
   // カーソルを最下行に持って行くことで、DOS プロンプトが正しい位置から再開するようにする
