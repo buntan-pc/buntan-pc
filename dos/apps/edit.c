@@ -7,14 +7,6 @@ int cursor_y;
 
 char block_buf[512];
 
-int char_at(int x, int y) {
-  return text_buf[80 * y + x];
-}
-
-int char_at_cursor() {
-  return char_at(cursor_x, cursor_y);
-}
-
 void write_at(int x, int y, int c) {
   text_buf[80 * y + x] = c;
 }
@@ -45,7 +37,7 @@ void cursor_down() {
 }
 
 void cursor_right() {
-  if (cursor_x < 80 && char_at_cursor() != 0) {
+  if (cursor_x < 80 && text_buf[80 * cursor_y + cursor_x] != 0) {
     ++cursor_x;
     sys_put_string("\x1b[C", -1);
     // cursor_x == 80 のとき、text_buf からは 1 文字右にはみ出た状態になるので注意
@@ -179,11 +171,9 @@ void insert_char(int c) {
         line_buf[cursor_x++] = c;
         sys_put_string(&c, 1);
       } else {
-        if (char_at_cursor() != 0) {
-          // ずらし処理
-          for (int x = 79; x > cursor_x; --x) {
-            line_buf[x] = line_buf[x - 1];
-          }
+        // ずらし処理
+        for (int x = 79; x > cursor_x; --x) {
+          line_buf[x] = line_buf[x - 1];
         }
         line_buf[cursor_x++] = c;
         sys_put_string("\x1b[@", -1); // カーソル位置に空白を挿入
