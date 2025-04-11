@@ -15,7 +15,7 @@ all: $(EXES) Makefile
 	$(ASM) -o $@ $<
 
 %.s: %.c Makefile
-	$(CC) --ret-from-start -o $@ $<
+	$(CC) --ret-from-start --offset-global-addr 4 -o $@ $<
 
 .PHONY: clean
 clean:
