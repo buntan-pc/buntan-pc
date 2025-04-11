@@ -168,11 +168,14 @@ void proc_cmd(char *cmd) {
     send_str(msg);
   } else if (strncmp(cmd, "send ", 5) == 0) {
     char *endptr;
-    int dst_addr = strtoi(cmd + 5, &endptr, 10);
+    unsigned int dst_addr = strtoi(cmd + 5, &endptr, 10);
+    unsigned int addr = (dst_addr << 4) | my_addr;
     if (*endptr == ' ') {
       char *msg = endptr + 1;
-      send_head((dst_addr << 4) | my_addr, strlen(msg));
+      send_head(addr, strlen(msg));
       send_str(msg);
+    } else if (*endptr == '\0') {
+      send_head(addr, 0);
     }
   } else if (strncmp(cmd, "set greet ", 10) == 0) {
     strcpy(greet_body, cmd + 10);
