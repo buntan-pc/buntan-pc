@@ -41,7 +41,7 @@ struct Symbol *FindSymbolLocal(struct Symbol *head, struct Token *name) {
 }
 
 struct Scope *EnterScope(struct Scope *current) {
-  struct Scope *s = NewGlobalScope(NewSymbol(kSymHead, NULL));
+  struct Scope *s = NewGlobalScope(NewSymbol(kSymHead, NULL), 0);
   s->parent = current;
   return s;
 }
@@ -55,10 +55,10 @@ struct Symbol *FindSymbol(struct Scope *scope, struct Token *name) {
   return sym;
 }
 
-struct Scope *NewGlobalScope(struct Symbol *global_syms) {
+struct Scope *NewGlobalScope(struct Symbol *global_syms, int var_offset) {
   struct Scope *s = malloc(sizeof(struct Scope));
   s->parent = NULL;
   s->syms = global_syms;
-  s->var_offset = 0;
+  s->var_offset = var_offset;
   return s;
 }

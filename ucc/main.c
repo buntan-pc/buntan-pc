@@ -1138,6 +1138,7 @@ int main(int argc, char **argv) {
   char input_dirname[MAX_PATHLEN] = ".";
 
   int ret_from_start = 0; // 真なら start 関数は return する
+  int global_addr_offset = 0; // グローバル変数のアドレスをずらす量
   for (int i = 1; i < argc; i++) {
     if (strcmp(argv[i], "--ast") == 0) {
       print_ast = 1;
@@ -1153,6 +1154,18 @@ int main(int argc, char **argv) {
       exit(1);
     } else if (strcmp(argv[i], "--ret-from-start") == 0) {
       ret_from_start = 1;
+    } else if (strcmp(argv[i], "--offset-global-addr") == 0) {
+      i++;
+      if (i >= argc) {
+        fprintf(stderr, "offset value is not specified\n");
+        exit(1);
+      }
+      char *endp = NULL;
+      global_addr_offset = strtol(argv[i], &endp, 0);
+      if (endp && *endp != '\0') {
+        fprintf(stderr, "failed to convert to an integer: '%s'\n", endp);
+        exit(1);
+      }
     } else {
       input_filename = argv[i];
     }
@@ -1181,7 +1194,7 @@ int main(int argc, char **argv) {
     fclose(input_file);
   }
 
-  struct Scope *global_scope = NewGlobalScope(make_builtin_syms());
+  struct Scope *global_scope = NewGlobalScope(make_builtin_syms(), global_addr_offset);
   struct ParseContext parse_ctx = {
     global_scope,
     kPPInit,
