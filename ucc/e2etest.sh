@@ -13,8 +13,11 @@ then
   exit 1
 fi
 
+as_dir=../kuas
+as=$as_dir/as
+
 make
-make -C ../uas
+make -C $as_dir
 make -C ../cpu sim.exe
 
 function test_prog() {
@@ -47,7 +50,7 @@ function test_prog() {
     exit
   fi
 
-  ../uas/as --pmem testcase.pmem.hex --dmem testcase.dmem.hex testcase.s 2>/dev/null
+  $as --pmem testcase.pmem.hex --dmem testcase.dmem.hex testcase.s 2>/dev/null
 
   case $target in
     sim)

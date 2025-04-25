@@ -13,6 +13,7 @@
 /cpu/       @uchan-nos
 /board/     @uchan-nos
 /dos/       @uchan-nos
+/kuas/      @hidemi-kawai
 /uas/       @uchan-nos
 /ucc/       @uchan-nos
 /scripts/   @uchan-nos @hikalium
