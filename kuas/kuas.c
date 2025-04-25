@@ -1,26 +1,11 @@
 #include "aclmini.c"
 
-Auc *skpSpc(Auc *p)
-{
-	while (0 < *p && *p <= ' ') p++;
-	return p;
-}
-
-int cmd(Auc *p, Auc **q, const char *s)
-{
-	Ai l = strlen(s);
-	if (strncmp((AStr) p, s, l) == 0 && p[l] <= ' ') {
-		if (q != 0)
-			*q = skpSpc(p + l);
-		return 1;
-	}
-	return 0;
-}
-
 AClass(Label) { Ai sec, ofs; };
 
 Ai istk0; // 多分将来的に不要になるので、operand0()の引数には積まない.
 
+Auc *skpSpc(Auc *p) { while (0 < *p && *p <= ' ') p++; return p; }
+#define cmd(s, t)	(strcmp(s, t) == 0)
 int opr0Sub(Auc c) { return (c == '+' || c == '-' || c <= ' ' || c == ','); }
 
 Ai operand0(Auc *p, Auc **pp, Ai *pbas, ATokenMgr *tokn, Label *lb)
@@ -62,11 +47,11 @@ Ai operand1(Auc *p)
 
 int uAsmMain(Auc *src, AExpMem *pmem, AExpMem *dmem, ATokenMgr *tokn, AExpMem *labl, char *errMsg)
 {
-	Ai pass, i, im; Auc *p, *q, *src0 = src;
+	Ai pass, i, im = 0; Auc *p, *q, *src0 = src;
 	Ai pmem0 = pmem->n, dmem0 = dmem->n;
 	for (pass = 0; pass < 2; pass++) {
 		Ai sec = -1, ofs[2], bas, isp = 15;
-		int16_t istk[16], rhs; istk[isp] = 0;
+		int16_t istk[16]; istk[isp] = 0; istk[(isp + 1) & 15] = 0;
 		pmem->n = pmem0; dmem->n = dmem0;
 		for (src = src0; *src != '\0'; ) {
 			Auc linBuf[1000];
@@ -84,14 +69,7 @@ int uAsmMain(Auc *src, AExpMem *pmem, AExpMem *dmem, ATokenMgr *tokn, AExpMem *l
 				i--; // 行末のスペース類を取り除く.
 			linBuf[i] = '\0';
 			p = linBuf;
-
 			if (*p == '\0') continue; // 空行.
-			if (cmd(p, &q, "section")) {
-				sec = -1;
-				if (cmd(q, 0, ".text")) sec = 0;
-				if (cmd(q, 0, ".data")) sec = 1;
-				continue;
-			}
 
 			AExpMem_rsv(labl, ASz(Label) * (tokn->n + 9));
 			AExpMem_rsv(pmem, ASz(int32_t) * 9);
@@ -99,28 +77,36 @@ int uAsmMain(Auc *src, AExpMem *pmem, AExpMem *dmem, ATokenMgr *tokn, AExpMem *l
 			int32_t *ppm = (int32_t *) (pmem->p + pmem->n);
 			Auc     *pdm = dmem->p + dmem->n;
 			Label   *lb  = (Label *) labl->p;
-			istk0 = istk[isp&15];
-			if (cmd(p, &q, ".push") && *q != '\0') { istk[(--isp)&15] = operand0(q, &q, &bas, tokn, lb); continue; }
-			if (cmd(p, &q, ".add")  && *q == '\0') { rhs = istk[(isp++)&15]; istk[isp&15] += rhs; continue; }
-			if (cmd(p, &q, ".sub")  && *q == '\0') { rhs = istk[(isp++)&15]; istk[isp&15] -= rhs; continue; }
-			if (cmd(p, &q, ".mul")  && *q == '\0') { rhs = istk[(isp++)&15]; istk[isp&15] *= rhs; continue; }
-			if (cmd(p, &q, ".sign") && *q == '\0') { istk[isp&15] ^= 0x8000; continue; }
-			if (cmd(p, &q, ".eq")   && *q == '\0') { rhs = istk[(isp++)&15]; istk[isp&15] = (istk[isp&15] == rhs); continue; }
-			if (cmd(p, &q, ".neq")  && *q == '\0') { rhs = istk[(isp++)&15]; istk[isp&15] = (istk[isp&15] != rhs); continue; }
-			if (cmd(p, &q, ".lt")   && *q == '\0') { rhs = istk[(isp++)&15]; istk[isp&15] = (istk[isp&15] <  rhs); continue; }
-			if (cmd(p, &q, ".le")   && *q == '\0') { rhs = istk[(isp++)&15]; istk[isp&15] = (istk[isp&15] <= rhs); continue; }
-			if (cmd(p, &q, ".bt")   && *q == '\0') { rhs = istk[(isp++)&15]; istk[isp&15] = ((uint16_t) istk[isp&15] <  (uint16_t) rhs); continue; }
-			if (cmd(p, &q, ".be")   && *q == '\0') { rhs = istk[(isp++)&15]; istk[isp&15] = ((uint16_t) istk[isp&15] <= (uint16_t) rhs); continue; }
-			if (cmd(p, &q, ".not")  && *q == '\0') { istk[isp&15] ^= -1; continue; }
-			if (cmd(p, &q, ".and")  && *q == '\0') { rhs = istk[(isp++)&15]; istk[isp&15] &= rhs; continue; }
-			if (cmd(p, &q, ".or")   && *q == '\0') { rhs = istk[(isp++)&15]; istk[isp&15] |= rhs; continue; }
-			if (cmd(p, &q, ".xor")  && *q == '\0') { rhs = istk[(isp++)&15]; istk[isp&15] ^= rhs; continue; }
-			if (cmd(p, &q, ".shr")  && *q == '\0') { rhs = istk[(isp++)&15]; istk[isp&15] = (uint16_t) istk[isp&15] >> rhs; continue; }
-			if (cmd(p, &q, ".sar")  && *q == '\0') { rhs = istk[(isp++)&15]; istk[isp&15] = (int16_t)  istk[isp&15] >> rhs; continue; }
-			if (cmd(p, &q, ".shl")  && *q == '\0') { rhs = istk[(isp++)&15]; istk[isp&15] <<= rhs; continue; }
-			if (sec < 0) continue;
+			istk0 = istk[isp & 15];
 
-			if (cmd(p, &q, "db") && sec == 1 && *q != '\0') {
+			if ((q = (Auc *) strchr((AStr) p, ':')) != NULL && sec >= 0) {	// def-label.
+				i = ATokenMgr_s2i(tokn, (AStr) p, q - p);
+				ofs[0] = pmem->n / ASz(int32_t);
+				ofs[1] = dmem->n;
+				lb[i].sec = sec; lb[i].ofs = ofs[sec]; continue;
+			}
+
+			char r[16];
+			for (i = 0; i < 14 && p[i] > ' '; i++)
+				r[i + 1] = p[i];
+			r[i + 1] = '\0';
+			q = skpSpc(p + i);
+			r[0] = '0';
+			if (*q != '\0') {
+				r[0] = '2';
+				if (q[0] == 'f' && q[1] == 'p' && q[2] == ',') { q = skpSpc(q + 3); r[0] = '4'; }
+				if (cmd(r, "2section")) { // 特別なオペランドを持つ命令.
+					sec = -1;
+					if (cmd((AStr) q, ".text")) sec = 0;
+					if (cmd((AStr) q, ".data")) sec = 1;
+					continue;
+				}
+				if (cmd(r, "2pop")) { *ppm = 0x1c820 | operand1(q); goto next; }
+				im = operand0(q, 0, &bas, tokn, lb); // 一般的なオペランドを持つ命令.
+				if (bas != 0) r[0]++;
+			}
+
+			if (cmd(r, "2db") && sec == 1) {
 				for (;;) {
 					im = operand0(q, &q, &bas, tokn, lb);
 					*pdm++ = im & 0xff;
@@ -130,96 +116,80 @@ int uAsmMain(Auc *src, AExpMem *pmem, AExpMem *dmem, ATokenMgr *tokn, AExpMem *l
 				}
 				continue;
 			}
-			if (cmd(p, &q, "push") && sec == 0 && *q != '\0') {
-				im = operand0(q, 0, &bas, tokn, lb);
-				if (bas == 0) {
-					*ppm = 0x30000 | (im & 0xffff);
-				} else {
-					*ppm = 0x14000 | bas << 12 | (im & 0xfff);
-				}
-nextPmem:
+
+			int16_t rhs = istk[isp & 15], lhs = istk[(isp + 1) & 15];
+			uint16_t rhu = (uint16_t) rhs, lhu = (uint16_t) lhs;
+			if (cmd(r, "2.push")) { istk[(--isp) & 15] = im; continue; }
+			if (cmd(r, "0.sign")) { istk[isp & 15] ^= 0x8000; continue; }
+			if (cmd(r, "0.not"))  { istk[isp & 15] ^= -1; continue; }
+			if (cmd(r, "0.add"))  { istk[(++isp) & 15] =  lhs + rhs;   continue; }
+			if (cmd(r, "0.sub"))  { istk[(++isp) & 15] =  lhs - rhs;   continue; }
+			if (cmd(r, "0.mul"))  { istk[(++isp) & 15] =  lhs * rhs;   continue; }
+			if (cmd(r, "0.eq"))   { istk[(++isp) & 15] = (lhs == rhs); continue; }
+			if (cmd(r, "0.neq"))  { istk[(++isp) & 15] = (lhs != rhs); continue; }
+			if (cmd(r, "0.lt"))   { istk[(++isp) & 15] = (lhs <  rhs); continue; }
+			if (cmd(r, "0.le"))   { istk[(++isp) & 15] = (lhs <= rhs); continue; }
+			if (cmd(r, "0.bt"))   { istk[(++isp) & 15] = (lhu <  rhu); continue; }
+			if (cmd(r, "0.be"))   { istk[(++isp) & 15] = (lhu <= rhu); continue; }
+			if (cmd(r, "0.and"))  { istk[(++isp) & 15] =  lhs &  rhs;  continue; }
+			if (cmd(r, "0.or"))   { istk[(++isp) & 15] =  lhs |  rhs;  continue; }
+			if (cmd(r, "0.xor"))  { istk[(++isp) & 15] =  lhs ^  rhs;  continue; }
+			if (cmd(r, "0.shr"))  { istk[(++isp) & 15] =  lhu >> rhs;  continue; }
+			if (cmd(r, "0.sar"))  { istk[(++isp) & 15] =  lhs >> rhs;  continue; }
+			if (cmd(r, "0.shl"))  { istk[(++isp) & 15] =  lhs << rhs;  continue; }
+			if (sec != 0) goto err;
+
+			AClass(OpecodeTable) { AStr s; int32_t op; };
+			As OpecodeTable ot[] = {
+				{ "2ld1",  0x01008000 }, { "2st1",  0x0100c000 }, { "2ld",   0x01010000 }, { "2st",   0x01010001 }, // group 01
+				{ "3ld1",  0x01008000 }, { "3st1",  0x0100c000 }, { "3ld",   0x01010000 }, { "3st",   0x01010001 },
+
+				{ "4add",  0x01005000 }, { "2push", 0x02030000 }, { "3push", 0x01014000 }, { "2dup",  0x0301c080 }, // group 01-03
+
+				{ "2call", 0x04000000 }, { "2jmp",  0x05004000 }, { "2jz",   0x05006000 },                          // group 04-05
+
+				{ "0nop",  0x0001c000 }, { "0inc",  0x0001c001 }, { "0inc2", 0x0001c002 }, { "0not",  0x0001c004 }, // group 00
+				{ "0sign", 0x0001c005 }, { "0exts", 0x0001c006 }, { "0pop",  0x0001c04f }, { "0and",  0x0001c050 },
+				{ "0or",   0x0001c051 }, { "0xor",  0x0001c052 }, { "0shr",  0x0001c054 }, { "0sar",  0x0001c055 },
+				{ "0shl",  0x0001c056 }, { "0add",  0x0001c060 }, { "0sub",  0x0001c061 }, { "0mul",  0x0001c062 },
+				{ "0eq",   0x0001c068 }, { "0neq",  0x0001c069 }, { "0lt",   0x0001c06a }, { "0le",   0x0001c06b },
+				{ "0bt",   0x0001c06c }, { "0be",   0x0001c06d }, { "0dup",  0x0001c080 },
+				{ "0ret",  0x0001c800 }, { "0call", 0x0001c801 }, { "0ldd",  0x0001c808 }, { "0ldd1", 0x0001c809 },
+				{ "0sta",  0x0001c80c }, { "0sta1", 0x0001c80d }, { "0std",  0x0001c80e }, { "0std1", 0x0001c80f },
+				{ "0int",  0x0001c810 }, { "0iret", 0x0001c812 }, { "0spha", 0x0001c824 }, { "0spla", 0x0001c825 },
+				{ "", -1 }
+			};
+			for (i = 0; ot[i].op != -1; i++) {
+				if (cmd(r, ot[i].s)) break;
+			}
+			Ai grp = ot[i].op >> 24, op = ot[i].op & 0xffffff;
+			if (grp == 0x00) {
+				*ppm = op;
+next:
 				pmem->n += ASz(int32_t);
 				continue;
 			}
-			if (cmd(p, &q, "add") && sec == 0 && q[0] == 'f' && q[1] == 'p' && q[2] == ',') {
-				im = operand0(skpSpc(q + 3), 0, &bas, tokn, lb);
-				if (bas == 0) {
-					*ppm = 0x05000 | (im & 0xfff);
-					goto nextPmem;
-				}
-			}
-			if (cmd(p, &q, "dup") && sec == 0 && *q != '\0') {
-				im = operand0(q, 0, &bas, tokn, lb);
-				if (im == 0) { *ppm = 0x1c080; goto nextPmem; }
-				if (im == 1) { *ppm = 0x1c08f; goto nextPmem; }
-			}
-			AClass(OpecodeTable) { AStr s; int32_t op; };
-			As OpecodeTable ot0[] = {
-				{ "ld1", 0x08000 }, { "st1",  0x0c000 }, { "ld", 0x10000 }, { "st",  0x10001 }, { "", 0 }
-			};
-			for (i = 0; ot0[i].s[0] != '\0'; i++) {
-				if (cmd(p, &q, ot0[i].s)) break;
-			}
-			if (ot0[i].s[0] != '\0' && sec == 0 && *q != '\0') {
-				im = operand0(q, 0, &bas, tokn, lb);
-				*ppm = ot0[i].op | bas << 12 | (im & 0xfff);
-				goto nextPmem;
-			}
-			As OpecodeTable ot1[] = {
-				{ "call", 0x00000 }, { "jmp", 0x04000 }, { "jz", 0x06000 }, { "", 0 }
-			};
-			for (i = 0; ot1[i].s[0] != '\0'; i++) {
-				if (cmd(p, &q, ot1[i].s)) break;
-			}
-			if (ot1[i].s[0] != '\0' && sec == 0 && *q != '\0') {
-				im = operand0(q, 0, &bas, tokn, lb);
-				if (bas == 0) {
-					Ai ip = pmem->n / ASz(int32_t) + 1, msk = 0x3fff;
-					if (i > 0) msk = 0xfff;
-					*ppm = ot1[i].op | ((im - ip) & msk);
-					goto nextPmem;
-				}
-			}
-			As OpecodeTable ot2[] = {
-				{ "nop",  0x1c000 }, { "inc",  0x1c001 }, { "inc2", 0x1c002 }, { "not",  0x1c004 },
-				{ "sign", 0x1c005 }, { "exts", 0x1c006 }, { "and",  0x1c050 }, { "or",   0x1c051 },
-				{ "xor",  0x1c052 }, { "shr",  0x1c054 }, { "sar",  0x1c055 }, { "shl",  0x1c056 },
-				{ "add",  0x1c060 }, { "sub",  0x1c061 }, { "mul",  0x1c062 }, { "eq",   0x1c068 },
-				{ "neq",  0x1c069 }, { "lt",   0x1c06a }, { "le",   0x1c06b }, { "bt",   0x1c06c },
-				{ "be",   0x1c06d }, { "ret",  0x1c800 }, { "ldd",  0x1c808 }, { "ldd1", 0x1c809 },
-				{ "sta",  0x1c80c }, { "sta1", 0x1c80d }, { "std",  0x1c80e }, { "std1", 0x1c80f },
-				{ "int",  0x1c810 }, { "iret", 0x1c812 }, { "spha", 0x1c824 }, { "spla", 0x1c825 },
-				{ "dup",  0x1c080 }, { "pop",  0x1c04f }, { "call", 0x1c801 },
-				{ "",     0 }
-			};
-			for (i = 0; ot2[i].s[0] != '\0'; i++) {
-				if (cmd(p, &q, ot2[i].s)) break;
-			}
-			if (ot2[i].s[0] != '\0' && sec == 0 && *q == '\0') {
-				*ppm = ot2[i].op;
-				goto nextPmem;
-			}
-			if (cmd(p, &q, "pop") && sec == 0 && *q > 0) {
-				*ppm = 0x1c820 | operand1(q);
-				goto nextPmem;
-			}
-			if ((q = (Auc *) strchr((AStr) p, ':')) != NULL) {	// def-label.
-				i = ATokenMgr_s2i(tokn, (AStr) p, q - p);
-				ofs[0] = pmem->n / ASz(int32_t);
-				ofs[1] = dmem->n;
-				lb[i].sec = sec; lb[i].ofs = ofs[sec]; continue;
-			}
-
-			if (pass == 0) {
-				sprintf(errMsg, "mikan(abort): %s\n", p); 
-				return 1;
-			}
+			if (grp == 0x01) { *ppm = op | bas << 12 | (im & 0xfff); goto next; }
+			if (grp == 0x02) { *ppm = op | (im & 0xffff); goto next; } // push
+			if (grp == 0x03) { *ppm = op | ((-im) & 0xf); goto next; } // dup 0 / dup 1
+			if (grp == 0x04) { Ai ip = pmem->n / ASz(int32_t) + 1; *ppm = op | ((im - ip) & 0x3fff); goto next; } // call
+			if (grp == 0x05) { Ai ip = pmem->n / ASz(int32_t) + 1; *ppm = op | ((im - ip) & 0x0fff); goto next; } // jmp / jz
+err:
+			sprintf(errMsg, "mikan(abort): %s\n", p); 
+			return 1;
 		}
 	}
 	return 0;
 }
 
 #define UseMlcNumSz		0
+
+FILE *myOpen(const char *path, const char *mod)
+{
+	FILE *fp = fopen(path, mod);
+	if (fp == NULL) { fprintf(stderr, "fopen error : %s\n", path); exit(1); }
+	return fp;
+}
 
 int main(int argc, const char **argv)
 {
@@ -244,8 +214,7 @@ int main(int argc, const char **argv)
 	AExpMem_ini(src); AExpMem_ini(pmem); AExpMem_ini(dmem); AExpMem_ini(labl);
 	FILE *fp = stdin;
 	if (inp != NULL && strcmp(inp, "-") != 0)
-		fp = fopen(inp, "rb");
-	if (fp == NULL) { fprintf(stderr, "fopen error : %s\n", inp); exit(1); }
+		fp = myOpen(inp, "rb");
 	do {
 		AExpMem_rsv(src, 65536);
 		i = fread(src->p + src->n, 1, 65536, fp);
@@ -262,18 +231,18 @@ int main(int argc, const char **argv)
 		AExpMem_rsv(dmem, 4);
 		dmem->n = 4;
 	}
-	i = uAsmMain(src->p, pmem, dmem, tokn, labl, errMsg);
-	if (i != 0) fprintf(stderr, "%s\n", errMsg);
+	int errCode = uAsmMain(src->p, pmem, dmem, tokn, labl, errMsg);
+	if (errCode != 0) fprintf(stderr, "%s\n", errMsg);
 	fprintf(stderr, "size of .data: %d bytes\n", (int) dmem->n);
 	fprintf(stderr, "size of .text: %d instructions\n", (int) (pmsz = pmem->n / ASz(int32_t)));
 	if (dmf != NULL) {
-		fp = fopen(dmf, "wt");
+		fp = myOpen(dmf, "wt");
 		for (i = 0; i < dmem->n; i += 2)
 			fprintf(fp, "%02X%02X\n", dmem->p[i + 1], dmem->p[i]);
 		fclose(fp);
 	}
 	if (pmf != NULL) {
-		fp = fopen(pmf, "wt");
+		fp = myOpen(pmf, "wt");
 		for (i = 0; i < pmem->n; i += ASz(int32_t))
 			fprintf(fp, "%05X\n", *(int32_t *)(pmem->p + i));
 		fclose(fp);
@@ -285,8 +254,7 @@ int main(int argc, const char **argv)
 		dmem->p[3] = (dmem->n >> 8) & 0xff;
 		AExpMem_rsv(dmem, 512);
 		memset(dmem->p + dmem->n, 0, 512);
-		fp = fopen(exe, "wb");
-		if (fp == NULL) { fprintf(stderr, "fopen error : %s\n", exe); exit(1); }
+		fp = myOpen(exe, "wb");
 		fwrite(dmem->p, 1, (dmem->n + 511) & -512, fp);
 		Auc *pc = AMlc_alc(AMlc_m0, AMlc_m0v, pmsz * 3);
 		int32_t *pi = (int32_t *) pmem->p;
@@ -300,8 +268,7 @@ int main(int argc, const char **argv)
 		AMlc_fre(AMlc_m0, AMlc_m0v, pc, j);
 	}
 	if (map != NULL) {
-		fp = fopen(map, "wt");
-		if (fp == NULL) { fprintf(stderr, "fopen error : %s\n", map); exit(1); }
+		fp = myOpen(map, "wt");
 		Label *lb  = (Label *) labl->p;
 		for (i = 0; i < tokn->n; i++)
 			fprintf(fp, "#%04d sec=%d ofs=0x%04x : %s\n", (int) i, (int) lb[i].sec, (int) lb[i].ofs, ATokenMgr_i2s(tokn, i));
@@ -314,5 +281,5 @@ int main(int argc, const char **argv)
 		fprintf(stderr, "m0.n=%d, m0.s=%d\n", m0->n, m0->s);
 	#endif
 
-	return 0;
+	return errCode;
 }
