@@ -102,7 +102,7 @@ def main():
 
     if args.dev[0] == '/' and not os.path.exists(args.dev):
         print('No such device: ' + args.dev, file=sys.stderr)
-        print("You may need 'sudo modprobe ftdi_sio'")
+        print("You may need 'sudo modprobe ftdi_sio' or 'sudo modprobe vhci_hcd'")
         sys.exit(1)
 
     ser = serial.Serial(args.dev, 115200, timeout=args.timeout,
