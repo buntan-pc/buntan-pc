@@ -1,36 +1,32 @@
 #!/usr/bin/python3
 
-class Variable:
-    def __init__(self, name):
-        self._name = name
+from enum import Enum
+
+class ValueKind(Enum)
+    # name    = (i, prefix)
+    Variable  = (1, '')
+    Temporary = (2, '_')
+    Number    = (3, '')
+    Register  = (4, 'R')
+
+class Value:
+    def __init__(self, kind, value):
+        self._kind = kind
+        self._value = value
 
     def __str__(self):
-        return self._name
+        return f'{self._kind[1]}{self._value}'
 
-class Temporary:
-    def __init__(self, name):
-        self._name = name
-
-    def __str__(self):
-        return '_' + self._name
-
-class Number:
-    def __init__(self, num):
-        self._num = num
-
-    def __str__(self):
-        return self._num
-
-class Register:
-    def __init__(self, num):
-        self._num = num
-
-    def __str__(self):
-        return f'R{self._num}'
+    def __eq__(self, other):
+        return self._kind == other._kind and self._value == other._value
 
     @property
-    def num(self):
-        return self._num
+    def kind(self):
+        return self._kind
+
+    @property
+    def value(self):
+        return self._value
 
 class OneBlockCodeGenerator:
     '''
@@ -66,6 +62,7 @@ class TAI:
 
 def get_reg_having_var(var, ad):
     addrs = ad[var]
+    print(f'var={var} ad[var]={ad[var]}')
     regs = [a for a in addrs if isinstance(a, Register)]
     print(f'get_reg_having_var({var}, [{",".join(str(a) for a in addrs)}]) -> {regs}')
     return regs[0] if regs else None
@@ -139,7 +136,7 @@ class BinOp(TAI):
 
         if self._l not in ad:
             ad[self._l] = set()
-            if isinstance(self._l, Variable):
+            if self._l.kind == ValueKind.Variable:
                 ad[self._l].add(self._l)
 
         l_reg, spill_vars = get_reg_for_read(self._l, rd, ad)
