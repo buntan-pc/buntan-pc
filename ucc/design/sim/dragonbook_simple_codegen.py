@@ -1,32 +1,166 @@
 #!/usr/bin/python3
 
-from enum import Enum
-
-class ValueKind(Enum)
-    # name    = (i, prefix)
-    Variable  = (1, '')
-    Temporary = (2, '_')
-    Number    = (3, '')
-    Register  = (4, 'R')
+from collections import OrderedDict
 
 class Value:
-    def __init__(self, kind, value):
-        self._kind = kind
+    def __init__(self, prefix, value):
+        self._prefix = prefix
         self._value = value
 
     def __str__(self):
-        return f'{self._kind[1]}{self._value}'
+        return f'{self._prefix}{self._value}'
 
     def __eq__(self, other):
-        return self._kind == other._kind and self._value == other._value
+        return self.__class__ == other.__class__ and self._value == other._value
+
+    def __hash__(self):
+        return hash(f'{self.__class__}{self._value}')
 
     @property
-    def kind(self):
-        return self._kind
+    def prefix(self):
+        return self._prefix
 
     @property
     def value(self):
         return self._value
+
+class Variable(Value):
+    def __init__(self, name):
+        super().__init__('', name)
+
+    @property
+    def name(self):
+        return self.value
+
+class Temporary(Value):
+    def __init__(self, name):
+        super().__init__('_', name)
+
+    @property
+    def name(self):
+        return self.value
+
+class Number(Value):
+    def __init__(self, num):
+        super().__init__('', num)
+
+    @property
+    def num(self):
+        return self.value
+
+class Register(Value):
+    def __init__(self, num):
+        super().__init__('R', num)
+
+    @property
+    def num(self):
+        return self.value
+
+def list_append_if_none(ls, elem):
+    if elem not in ls:
+        ls.append(elem)
+    return ls
+
+def list_remove_if_exist(ls, elem):
+    if elem in ls:
+        ls.remove(elem)
+    return ls
+
+class RegisterDescriptor:
+    '''
+    レジスタディスクリプタの表の整合性を保ちつつ更新するためのメソッドを持つ。
+    整合性を保つことに集中し、それ以外のロジックは含めない。
+    '''
+    def __init__(self, reg_num):
+        self._rd = [[] for _ in range(reg_num)]
+
+    def __str__(self):
+        return ' '.join(f'{i}:{",".join(str(v) for v in vs)}' for i, vs in enumerate(self._rd))
+
+    def __getitem__(self, i):
+        vs = self._rd[i.num if isinstance(i, Register) else i]
+        return vs.copy()  # shallow copy
+
+    def __len__(self):
+        return len(self._rd)
+
+    def assign_reg_for_read(self, reg, val):
+        if val in self._rd[reg.num]:
+            return False
+
+        if isinstance(val, list):
+            self._rd[reg.num] = val
+        else:
+            self._rd[reg.num] = [val]
+        return True
+
+    def assign_reg_for_write(self, reg, val):
+        for i in range(len(self._rd)):
+            if i == reg.num:
+                if isinstance(val, list):
+                    self._rd[i] = val
+                else:
+                    self._rd[i] = [val]
+            else:
+                list_remove_if_exist(self._rd[i], val)
+
+    def get_reg_having_val_or_free(self, val):
+        having_val = [i for i in range(len(self._rd)) if val in self._rd[i]]
+        if having_val:
+            return Register(having_val[0])
+        free_regs = [i for i in range(len(self._rd)) if len(self._rd[i]) == 0]
+        if free_regs:
+            return Register(free_regs[0])
+        return None
+
+class AddressDescriptor:
+    '''
+    アドレスディスクリプタの表の整合性を保ちつつ更新するためのメソッドを持つ。
+    整合性を保つことに集中し、それ以外のロジックは含めない。
+    '''
+    def __init__(self):
+        self._ad = OrderedDict()
+
+    def __str__(self):
+        return ' '.join(f'{v}:{",".join(str(a) for a in addrs)}' for v, addrs in self._ad.items())
+
+    def __getitem__(self, val):
+        self._init_key(val)
+        return self._ad[val]
+
+    def _init_key(self, val):
+        if val not in self._ad:
+            self._ad[val] = []
+            if isinstance(val, Variable):
+                list_append_if_none(self._ad[val], val)
+
+    def assign_reg_for_read(self, val, reg):
+        self._init_key(val)
+        for v in self._ad:
+            if v == val:
+                list_append_if_none(self._ad[v], reg)
+            else:
+                list_remove_if_exist(self._ad[v], reg)
+
+    def assign_reg_for_write(self, val, reg, exclude=None):
+        self._init_key(val)
+        for v in self._ad:
+            if v == val:
+                self._ad[v] = [reg]
+            elif v != exclude:
+                list_remove_if_exist(self._ad[v], reg)
+
+    def spill(self, val):
+        self._ad[val] = [val]
+
+    def get_vars_only_on_reg(self):
+        vs = []
+        for v, addrs in self._ad.items():
+            if isinstance(v, Variable) and len(addrs) == 1:
+                a = list(addrs)[0]
+                if isinstance(a, Register):
+                    vs.append((v, a))
+        return vs
 
 class OneBlockCodeGenerator:
     '''
@@ -37,61 +171,47 @@ class OneBlockCodeGenerator:
         reg_num: The number of registers
         var_names: Names of variables alive at the exit of this block
         '''
-        self._rd = [set() for _ in range(reg_num)]  # rd[i]: set of var
-        self._ad = dict()                           # ad[var]: set of var or reg
+        self._rd = RegisterDescriptor(reg_num)
+        self._ad = AddressDescriptor()
         self._var_names_alive_at_exit = var_names
 
     def gen_asm(self, tai):
         return tai.gen_asm(self._rd, self._ad)
 
+    def gen_st_vars(self):
+        vs = self._ad.get_vars_only_on_reg()
+        return [f'ST {v[0]}, {v[1]}' for v in vs]
+
 def print_rd(rd):
-    print('RD', end=' ')
-    for i, vs in enumerate(rd):
-        print(f'{i}:{",".join(str(v) for v in vs)}', end=' ')
-    print()
+    print('RD', rd)
 
 def print_ad(ad):
-    print('AD', end=' ')
-    for var, addrs in ad.items():
-        print(f'{var}:{",".join(str(a) for a in addrs)}', end=' ')
-    print()
+    print('AD', ad)
 
 class TAI:
     def __init__(self):
         pass
 
-def get_reg_having_var(var, ad):
-    addrs = ad[var]
-    print(f'var={var} ad[var]={ad[var]}')
-    regs = [a for a in addrs if isinstance(a, Register)]
-    print(f'get_reg_having_var({var}, [{",".join(str(a) for a in addrs)}]) -> {regs}')
-    return regs[0] if regs else None
-
-def get_free_reg(rd):
-    free_regs = [i for i in range(len(rd)) if len(rd[i]) == 0]
-    return Register(free_regs[0]) if free_regs else None
-
 # 指定したレジスタを空にするためにスピルが必要な変数のリストを返す
 def get_spill_vars(reg, rd, ad):
     vs = rd[reg.num]
-    spill = set()
+    spill = []
     for v in vs:
         # reg_i 以外に v の最新値を保持している場所があるかを検査
         addrs = [a for a in ad[v] if a != reg]
         if len(addrs) == 0:
-            spill.add(v)
+            spill.append(v)
     return spill
 
-def get_reg_for_read(var, rd, ad):
-    r = get_reg_having_var(var, ad)
+def get_reg_for_read(var, rd, ad, exclude):
+    r = rd.get_reg_having_val_or_free(var)
     if r:
-        return r, set()
-    r = get_free_reg(rd)
-    if r:
-        return r, set()
+        return r, []
 
     spill_vars_for_reg = []
     for i in range(len(rd)):
+        if i in exclude:
+            continue
         reg = Register(i)
         spill_vars = get_spill_vars(reg, rd, ad)
         spill_vars_for_reg.append((reg, spill_vars))
@@ -99,23 +219,35 @@ def get_reg_for_read(var, rd, ad):
     min_score_reg, min_score_spill_vars = sorted(spill_vars_for_reg, key=lambda elem: len(elem[1]))[0]
     return min_score_reg, min_score_spill_vars
 
-def get_reg_for_write(var, rd, ad):
-    r = get_reg_having_var(var, ad)
-    if r and len(rd[r.num]) == 1:
-        # r は var だけを持っている
-        return r, set()
-    r = get_free_reg(rd)
-    if r:
-        return r, set()
+def get_reg_for_write(var, rd, ad, exclude):
+    r = rd.get_reg_having_val_or_free(var)
+    if r and (rd[r] == [var] or len(rd[r]) == 0):
+        # r は var だけを持っているか、空っぽ
+        return r, []
 
     spill_vars_for_reg = []
     for i in range(len(rd)):
+        if i in exclude:
+            continue
         reg = Register(i)
-        spill_vars = get_spill_vars(reg, rd, ad) - {var}
+        spill_vars = list_remove_if_exist(get_spill_vars(reg, rd, ad), var)
         spill_vars_for_reg.append((reg, spill_vars))
 
     min_score_reg, min_score_spill_vars = sorted(spill_vars_for_reg, key=lambda elem: len(elem[1]))[0]
     return min_score_reg, min_score_spill_vars
+
+def gen_asm_reg_for_read(var, rd, ad, exclude=[]):
+    asm = []
+
+    reg, spill_vars = get_reg_for_read(var, rd, ad, exclude)
+    for spill_var in spill_vars:
+        asm.append(f'ST {spill_var}, {reg}')
+        ad.spill(spill_var)
+    if rd.assign_reg_for_read(reg, var):
+        asm.append(f'LD {reg}, {var}')
+    ad.assign_reg_for_read(var, reg)
+
+    return reg, asm
 
 class BinOp(TAI):
     def __init__(self, dst, op, l, r):
@@ -134,45 +266,17 @@ class BinOp(TAI):
     def gen_asm(self, rd, ad):
         asm = []
 
-        if self._l not in ad:
-            ad[self._l] = set()
-            if self._l.kind == ValueKind.Variable:
-                ad[self._l].add(self._l)
+        l_reg, l_asm = gen_asm_reg_for_read(self._l, rd, ad)
+        asm.extend(l_asm)
+        r_reg, r_asm = gen_asm_reg_for_read(self._r, rd, ad, exclude=[l_reg.num])
+        asm.extend(r_asm)
 
-        l_reg, spill_vars = get_reg_for_read(self._l, rd, ad)
-        for spill_var in spill_vars:
-            asm.append(f'ST {spill_var}, {l_reg}')
-        if self._l not in rd[l_reg.num]:
-            rd[l_reg.num].add(self._l)
-            ad[self._l].add(l_reg)
-            asm.append(f'LD {l_reg}, {self._l}')
-
-        print_ad(ad)
-
-        if self._r not in ad:
-            ad[self._r] = set()
-            if isinstance(self._l, Variable):
-                ad[self._r].add(self._r)
-
-        r_reg, spill_vars = get_reg_for_read(self._r, rd, ad)
-        for spill_var in spill_vars:
-            asm.append(f'ST {spill_var}, {r_reg}')
-        if self._r not in rd[r_reg.num]:
-            rd[r_reg.num].add(self._r)
-            ad[self._r].add(r_reg)
-            asm.append(f'LD {r_reg}, {self._r}')
-
-        print_ad(ad)
-
-        if self._dst not in ad:
-            ad[self._dst] = set()
-
-        d_reg, spill_vars = get_reg_for_write(self._dst, rd, ad)
+        d_reg, spill_vars = get_reg_for_write(self._dst, rd, ad, exclude=[l_reg.num, r_reg.num])
         for spill_var in spill_vars:
             asm.append(f'ST {spill_var}, {d_reg}')
 
-        rd[d_reg.num].add(self._dst)
-        ad[self._dst].add(d_reg)
+        rd.assign_reg_for_write(d_reg, self._dst)
+        ad.assign_reg_for_write(self._dst, d_reg)
         asm.append(f'{self._op} {d_reg}, {l_reg}, {r_reg}')
 
         return asm
@@ -190,7 +294,11 @@ class Copy(TAI):
         return self._dst
 
     def gen_asm(self, rd, ad):
-        pass
+        reg, asm = gen_asm_reg_for_read(self._src, rd, ad)
+        rd.assign_reg_for_write(reg, [self._src, self._dst])
+        ad.assign_reg_for_read(self._src, reg)
+        ad.assign_reg_for_write(self._dst, reg, exclude=self._src)
+        return asm
 
 def var_parse(name):
     if name.startswith('_'):
@@ -241,3 +349,5 @@ d = _2 + _1
         print(gen.gen_asm(tai))
         print_rd(gen._rd)
         print_ad(gen._ad)
+
+    print(gen.gen_st_vars())
