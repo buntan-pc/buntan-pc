@@ -260,6 +260,10 @@ class BinOp(TAI):
         return f'{self._op}  {self._dst}, {self._l}, {self._r}'
 
     @property
+    def values(self):
+        return {self._dst, self._l, self._r}
+
+    @property
     def dst(self):
         return self._dst
 
@@ -288,6 +292,10 @@ class Copy(TAI):
 
     def __str__(self):
         return f'=  {self._dst}, {self._src}'
+
+    @property
+    def values(self):
+        return {self._dst, self._src}
 
     @property
     def dst(self):
@@ -330,24 +338,86 @@ def tac_parse(src):
     Parse given three address codes, generate an array of TAI object.
     '''
     tac = []
+    values = set()
     for line in src.splitlines():
         tai = tai_parse(line.strip())
         tac.append(tai)
-    return tac
+        values.update(tai.values)
+    return tac, values
+
+def fill_str(s, n):
+    l = len(s)
+    if l >= n:
+        return s
+    n_sp = n - l
+    return ' '*(n_sp//2) + s + ' '*((n_sp + 1)//2)
+
+class InfoTablePrinter:
+    def __init__(self, reg_num, variables, temporaries, tai_width=20, asm_width=20):
+        self._reg_num = reg_num
+        self._variables = variables
+        self._temporaries = temporaries
+        self._tai_width = tai_width
+        self._asm_width = asm_width
+
+    def print_header(self):
+        print(' '*self._tai_width, end='|')
+        print(' '*self._asm_width, end='|')
+        print('|'.join(fill_str(str(Register(i)), 5) for i in range(self._reg_num)), end='|')
+        print('|'.join(fill_str(str(v), 5) for v in self._variables), end='|')
+        print('|'.join(fill_str(str(t), 5) for t in self._temporaries), end='|')
+        print()
+
+    def print_line(self, rd, ad, tai, insn):
+        tai_str = ''
+        if insn is None:
+            tai_str = 'initial'
+            insn = ''
+        elif tai is None:
+            tai_str = ''
+        else:
+            tai_str = str(tai)
+
+        print(tai_str.ljust(20), end='|')
+        print(insn.ljust(20), end='|')
+        for i in range(self._reg_num):
+            print(f'{",".join(str(v) for v in rd[i]).ljust(5)}', end='|')
+        for v in self._variables:
+            print(f'{",".join(str(a) for a in ad[v]).ljust(5)}', end='|')
+        for t in self._temporaries:
+            print(f'{",".join(str(a) for a in ad[t]).ljust(5)}', end='|')
+        print()
 
 if __name__ == '__main__':
-    three_addr_code = tac_parse('''\
+    three_addr_code, values = tac_parse('''\
 _0 = a - b
 _1 = a - c
 _2 = _0 + _1
 a = d
 d = _2 + _1
 ''')
-    gen = OneBlockCodeGenerator(4, {'a', 'b', 'c', 'd'})
-    for tai in three_addr_code:
-        print(tai)
-        print(gen.gen_asm(tai))
-        print_rd(gen._rd)
-        print_ad(gen._ad)
+    three_addr_code, values = tac_parse('''\
+_0 = a - b
+_1 = a - c
+a = d
+''')
 
-    print(gen.gen_st_vars())
+    variables = sorted((v for v in values if isinstance(v, Variable)), key=lambda v: v.name)
+    temporaries = sorted((v for v in values if isinstance(v, Temporary)), key=lambda v: v.name)
+    reg_num = 4
+
+    info_printer = InfoTablePrinter(reg_num, variables, temporaries)
+    info_printer.print_header()
+
+    gen = OneBlockCodeGenerator(reg_num, {'a', 'b', 'c', 'd'})
+    info_printer.print_line(gen._rd, gen._ad, None, None)
+
+    for tai in three_addr_code:
+        asm = gen.gen_asm(tai)
+        for insn in asm[:-1]:
+            info_printer.print_line(gen._rd, gen._ad, None, insn)
+        insn = asm[-1]
+        info_printer.print_line(gen._rd, gen._ad, tai, insn)
+
+    for insn in gen.gen_st_vars():
+        info_printer.print_line(gen._rd, gen._ad, None, insn)
