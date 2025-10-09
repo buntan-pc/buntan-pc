@@ -348,9 +348,9 @@ def gen_tac_expr(expr):
             r_tac, r_var = gen_tac_expr(rhs)
             return r_tac + [Copy(dst, r_var)], dst
         else:
-            dst = gen_tmp()
             l_tac, l_var = gen_tac_expr(lhs)
             r_tac, r_var = gen_tac_expr(rhs)
+            dst = gen_tmp()
             return l_tac + r_tac + [BinOp(dst, expr.value, l_var, r_var)], dst
     else:
         if expr.type == NAME:
