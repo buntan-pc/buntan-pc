@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 
 from collections import OrderedDict
+from parse import parse, NAME, NUMBER, OP
 
 class Value:
     def __init__(self, prefix, value):
@@ -316,7 +317,7 @@ def var_parse(name):
     else:
         return Variable(name)
 
-def tai_parse(src):
+def gen_tai(expr):
     elems = src.split()
     dst = var_parse(elems.pop(0))
     op = elems.pop(0)
@@ -333,16 +334,42 @@ def tai_parse(src):
     elif len(elems) == 0:
         return Copy(dst, lhs)
 
-def tac_parse(src):
+tmp_cnt = 0
+def gen_tmp():
+    global tmp_cnt
+    tmp_cnt += 1
+    return Temporary(str(tmp_cnt))
+
+def gen_tac_expr(expr):
+    if len(expr.children) == 2:
+        lhs, rhs = expr.children
+        if expr.value == '=':
+            dst = Variable(lhs.value)
+            r_tac, r_var = gen_tac_expr(rhs)
+            return r_tac + [Copy(dst, r_var)], dst
+        else:
+            dst = gen_tmp()
+            l_tac, l_var = gen_tac_expr(lhs)
+            r_tac, r_var = gen_tac_expr(rhs)
+            return l_tac + r_tac + [BinOp(dst, expr.value, l_var, r_var)], dst
+    else:
+        if expr.type == NAME:
+            return [], Variable(expr.value)
+        elif expr.type == NUMBER:
+            return [], Number(expr.value)
+        raise ValueError(f'unexpected node: {expr}')
+
+def gen_tac(prog):
     '''
-    Parse given three address codes, generate an array of TAI object.
+    Generate an array of TAI object from the given program.
     '''
     tac = []
     values = set()
-    for line in src.splitlines():
-        tai = tai_parse(line.strip())
-        tac.append(tai)
-        values.update(tai.values)
+    for expr in prog:
+        tac_for_expr, var = gen_tac_expr(expr)
+        tac.extend(tac_for_expr)
+        for tai in tac_for_expr:
+            values.update(tai.values)
     return tac, values
 
 def fill_str(s, n):
@@ -369,17 +396,13 @@ class InfoTablePrinter:
         print()
 
     def print_line(self, rd, ad, tai, insn):
-        tai_str = ''
-        if insn is None:
+        tai_str = '' if tai is None else str(tai)
+        insn_str = '' if insn is None else insn
+        if tai is None and insn is None:
             tai_str = 'initial'
-            insn = ''
-        elif tai is None:
-            tai_str = ''
-        else:
-            tai_str = str(tai)
 
         print(tai_str.ljust(20), end='|')
-        print(insn.ljust(20), end='|')
+        print(insn_str.ljust(20), end='|')
         for i in range(self._reg_num):
             print(f'{",".join(str(v) for v in rd[i]).ljust(5)}', end='|')
         for v in self._variables:
@@ -388,19 +411,21 @@ class InfoTablePrinter:
             print(f'{",".join(str(a) for a in ad[t]).ljust(5)}', end='|')
         print()
 
+
+
 if __name__ == '__main__':
-    three_addr_code, values = tac_parse('''\
-_0 = a - b
-_1 = a - c
-_2 = _0 + _1
+    src = '''\
+t = (a - b) + (a - c) + (a - c)
 a = d
-d = _2 + _1
-''')
-    three_addr_code, values = tac_parse('''\
-_0 = a - b
-_1 = a - c
-a = d
-''')
+d = t
+'''
+
+    print('src:')
+    print(src)
+
+    prog = parse(src)
+    three_addr_code, values = gen_tac(prog)
+    print('\n'.join(str(tai) for tai in three_addr_code))
 
     variables = sorted((v for v in values if isinstance(v, Variable)), key=lambda v: v.name)
     temporaries = sorted((v for v in values if isinstance(v, Temporary)), key=lambda v: v.name)
@@ -414,10 +439,13 @@ a = d
 
     for tai in three_addr_code:
         asm = gen.gen_asm(tai)
-        for insn in asm[:-1]:
-            info_printer.print_line(gen._rd, gen._ad, None, insn)
-        insn = asm[-1]
-        info_printer.print_line(gen._rd, gen._ad, tai, insn)
+        if len(asm) > 0:
+            for insn in asm[:-1]:
+                info_printer.print_line(gen._rd, gen._ad, None, insn)
+            insn = asm[-1]
+            info_printer.print_line(gen._rd, gen._ad, tai, insn)
+        else:
+            info_printer.print_line(gen._rd, gen._ad, tai, None)
 
     for insn in gen.gen_st_vars():
         info_printer.print_line(gen._rd, gen._ad, None, insn)

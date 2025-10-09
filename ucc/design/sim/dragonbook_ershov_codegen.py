@@ -1,29 +1,6 @@
 #!/usr/bin/python3
 
-from io import BytesIO
-from tokenize import tokenize, NAME, NUMBER, NEWLINE, ENDMARKER
-
-class Node:
-    def __init__(self, value, *children):
-        self._value = value
-        self._children = children
-        self._ershov = 0
-
-    @property
-    def value(self):
-        return self._value
-
-    @property
-    def children(self):
-        return self._children
-
-    @property
-    def ershov(self):
-        return self._ershov
-
-    @ershov.setter
-    def ershov(self, n):
-        self._ershov = n
+from parse import parse
 
 def calc_ershov_number(expr):
     if (expr.children is None) or len(expr.children) == 0:
@@ -82,85 +59,6 @@ def gen_asm_for_expr(expr, base=0):
     else:
         raise ValueError('expr must be a leaf or a binary expression')
 
-def program(ts):
-    block = []
-    while ts[0].type != ENDMARKER:
-        node, ts = expression(ts)
-        if ts[0].type == NEWLINE:
-            ts = ts[1:]
-        else:
-            raise ValueError(f"newline is expected, got '{ts[0].string}'. line='{ts[0].line}'")
-        block.append(node)
-
-    return block, ts
-
-def expression(ts):
-    return assignment(ts)
-
-def assignment(ts):
-    node, ts = additive(ts)
-
-    while True:
-        t = ts[0]
-        if t.string == '=':
-            rhs, ts = additive(ts[1:])
-            node = Node(t.string, node, rhs)
-        else:
-            break
-
-    return node, ts
-
-def additive(ts):
-    node, ts = multiplicative(ts)
-
-    while True:
-        t = ts[0]
-        if t.string in ['+', '-']:
-            rhs, ts = multiplicative(ts[1:])
-            node = Node(t.string, node, rhs)
-        else:
-            break
-
-    return node, ts
-
-def multiplicative(ts):
-    node, ts = primitive(ts)
-
-    while True:
-        t = ts[0]
-        if t.string in ['*', '/']:
-            rhs, ts = primitive(ts[1:])
-            node = Node(t.string, node, rhs)
-        else:
-            break
-
-    return node, ts
-
-def primitive(ts):
-    t = ts[0]
-    if t.string == '(':
-        node, ts = expression(ts[1:])
-        if ts[0].string != ')':
-            raise ValueError(f"')' is expected, got '{ts[0].string}'. line='{ts[0].line}'")
-        ts = ts[1:]
-    elif t.type == NUMBER:
-        node = Node(int(t.string))
-        ts = ts[1:]
-    elif t.type == NAME:
-        node = Node(t.string)
-        ts = ts[1:]
-    else:
-        raise ValueError(f"unexpected token: '{ts[0].string}'. line='{ts[0].line}'")
-
-    return node, ts
-
-def parse(tokens):
-    # tokens[0] は常に ENCODING なので読み飛ばす
-    node, ts = program(tokens[1:])
-    if ts[0].type not in [ENDMARKER]:
-        raise ValueError(f"unexpected token: '{ts[0].string}'. line='{ts[0].line}'")
-    return node
-
 def main():
     src = '''\
 t = (a - b) + (a - c) + (a - c)
@@ -171,8 +69,7 @@ d = t
     print('src:')
     print(src)
 
-    tokens = tokenize(BytesIO(src.encode('utf-8')).readline)
-    prog = parse(list(tokens))
+    prog = parse(src)
 
     for expr in prog:
         if expr.value == '=':  # assignment
