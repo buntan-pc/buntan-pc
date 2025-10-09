@@ -82,8 +82,33 @@ def gen_asm_for_expr(expr, base=0):
     else:
         raise ValueError('expr must be a leaf or a binary expression')
 
+def program(ts):
+    block = []
+    while ts[0].type != ENDMARKER:
+        node, ts = expression(ts)
+        if ts[0].type == NEWLINE:
+            ts = ts[1:]
+        else:
+            raise ValueError(f"newline is expected, got '{ts[0].string}'. line='{ts[0].line}'")
+        block.append(node)
+
+    return block, ts
+
 def expression(ts):
-    return additive(ts)
+    return assignment(ts)
+
+def assignment(ts):
+    node, ts = additive(ts)
+
+    while True:
+        t = ts[0]
+        if t.string == '=':
+            rhs, ts = additive(ts[1:])
+            node = Node(t.string, node, rhs)
+        else:
+            break
+
+    return node, ts
 
 def additive(ts):
     node, ts = multiplicative(ts)
@@ -131,19 +156,30 @@ def primitive(ts):
 
 def parse(tokens):
     # tokens[0] は常に ENCODING なので読み飛ばす
-    node, ts = expression(tokens[1:])
-    if ts[0].type not in [NEWLINE, ENDMARKER]:
+    node, ts = program(tokens[1:])
+    if ts[0].type not in [ENDMARKER]:
         raise ValueError(f"unexpected token: '{ts[0].string}'. line='{ts[0].line}'")
     return node
 
 def main():
-    src = '2*3 + 3*(4 + 5)'
-    tokens = tokenize(BytesIO(src.encode('utf-8')).readline)
-    expr = parse(list(tokens))
+    src = '''\
+t = (a - b) + (a - c) + (a - c)
+a = d
+d = t
+'''
 
-    calc_ershov_number(expr)
-    print_tree(expr, 'root')
-    print('\n'.join(gen_asm_for_expr(expr)))
+    print('src:')
+    print(src)
+
+    tokens = tokenize(BytesIO(src.encode('utf-8')).readline)
+    prog = parse(list(tokens))
+
+    for expr in prog:
+        if expr.value == '=':  # assignment
+            lhs, rhs = expr.children
+            calc_ershov_number(rhs)
+            print('\n'.join(gen_asm_for_expr(rhs)))
+            print(f'ST {lhs.value}, R{rhs.ershov}')
 
 if __name__ == '__main__':
     main()
