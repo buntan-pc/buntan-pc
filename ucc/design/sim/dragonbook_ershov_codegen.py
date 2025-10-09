@@ -1,5 +1,8 @@
 #!/usr/bin/python3
 
+from io import BytesIO
+from tokenize import tokenize, NAME, NUMBER, NEWLINE, ENDMARKER
+
 class Node:
     def __init__(self, value, *children):
         self._value = value
@@ -79,8 +82,65 @@ def gen_asm_for_expr(expr, base=0):
     else:
         raise ValueError('expr must be a leaf or a binary expression')
 
+def expression(ts):
+    return additive(ts)
+
+def additive(ts):
+    node, ts = multiplicative(ts)
+
+    while True:
+        t = ts[0]
+        if t.string in ['+', '-']:
+            rhs, ts = multiplicative(ts[1:])
+            node = Node(t.string, node, rhs)
+        else:
+            break
+
+    return node, ts
+
+def multiplicative(ts):
+    node, ts = primitive(ts)
+
+    while True:
+        t = ts[0]
+        if t.string in ['*', '/']:
+            rhs, ts = primitive(ts[1:])
+            node = Node(t.string, node, rhs)
+        else:
+            break
+
+    return node, ts
+
+def primitive(ts):
+    t = ts[0]
+    if t.string == '(':
+        node, ts = expression(ts[1:])
+        if ts[0].string != ')':
+            raise ValueError(f"')' is expected, got '{ts[0].string}'. line='{ts[0].line}'")
+        ts = ts[1:]
+    elif t.type == NUMBER:
+        node = Node(int(t.string))
+        ts = ts[1:]
+    elif t.type == NAME:
+        node = Node(t.string)
+        ts = ts[1:]
+    else:
+        raise ValueError(f"unexpected token: '{ts[0].string}'. line='{ts[0].line}'")
+
+    return node, ts
+
+def parse(tokens):
+    # tokens[0] は常に ENCODING なので読み飛ばす
+    node, ts = expression(tokens[1:])
+    if ts[0].type not in [NEWLINE, ENDMARKER]:
+        raise ValueError(f"unexpected token: '{ts[0].string}'. line='{ts[0].line}'")
+    return node
+
 def main():
-    expr = Node('+', Node('*', Node(2), Node(3)), Node('*', Node(3), Node('+', Node(4), Node(5))))
+    src = '2*3 + 3*(4 + 5)'
+    tokens = tokenize(BytesIO(src.encode('utf-8')).readline)
+    expr = parse(list(tokens))
+
     calc_ershov_number(expr)
     print_tree(expr, 'root')
     print('\n'.join(gen_asm_for_expr(expr)))
