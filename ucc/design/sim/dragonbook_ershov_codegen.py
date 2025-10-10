@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 
+from asm import *
 from parse import parse
 
 def calc_ershov_number(expr):
@@ -36,9 +37,9 @@ def print_tree(t, name, indent=0):
 def gen_asm_for_expr(expr, base=0):
     if len(expr.children) == 0:
         if isinstance(expr.value, int):
-            return [f'MOV R{base + expr.ershov}, {expr.value}']
+            return [LI(f'R{base + expr.ershov}', expr.value)]
         else:
-            return [f'LD R{base + expr.ershov}, {expr.value}']
+            return [LD(f'R{base + expr.ershov}', expr.value)]
     elif len(expr.children) == 2:
         lhs, rhs = expr.children
         r_result = base + rhs.ershov
@@ -55,7 +56,10 @@ def gen_asm_for_expr(expr, base=0):
             asm.extend(gen_asm_for_expr(lhs, base))  # Ershov 数が大きい左辺を先に生成
             asm.extend(gen_asm_for_expr(rhs, base))
 
-        return asm + [f'{expr.value} R{base + expr.ershov}, R{l_result}, R{r_result}']
+        d_reg = f'R{base + expr.ershov}'
+        l_reg = f'R{l_result}'
+        r_reg = f'R{r_result}'
+        return asm + [get_op(expr.value)(d_reg, l_reg, r_reg)]
     else:
         raise ValueError('expr must be a leaf or a binary expression')
 
@@ -75,7 +79,7 @@ d = t
         if expr.value == '=':  # assignment
             lhs, rhs = expr.children
             calc_ershov_number(rhs)
-            print('\n'.join(gen_asm_for_expr(rhs)))
+            print('\n'.join(str(insn) for insn in gen_asm_for_expr(rhs)))
             print(f'ST {lhs.value}, R{rhs.ershov}')
 
 if __name__ == '__main__':

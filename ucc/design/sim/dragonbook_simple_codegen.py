@@ -1,6 +1,8 @@
 #!/usr/bin/python3
 
 from collections import OrderedDict
+
+from asm import *
 from parse import parse, NAME, NUMBER, OP
 
 class Value:
@@ -181,7 +183,7 @@ class OneBlockCodeGenerator:
 
     def gen_st_vars(self):
         vs = self._ad.get_vars_only_on_reg()
-        return [f'ST {v[0]}, {v[1]}' for v in vs]
+        return [ST(v[0], v[1]) for v in vs]
 
 def print_rd(rd):
     print('RD', rd)
@@ -242,10 +244,10 @@ def gen_asm_reg_for_read(var, rd, ad, exclude=[]):
 
     reg, spill_vars = get_reg_for_read(var, rd, ad, exclude)
     for spill_var in spill_vars:
-        asm.append(f'ST {spill_var}, {reg}')
+        asm.append(ST(spill_var, reg))
         ad.spill(spill_var)
     if rd.assign_reg_for_read(reg, var):
-        asm.append(f'LD {reg}, {var}')
+        asm.append(LD(reg, var))
     ad.assign_reg_for_read(var, reg)
 
     return reg, asm
@@ -278,11 +280,11 @@ class BinOp(TAI):
 
         d_reg, spill_vars = get_reg_for_write(self._dst, rd, ad, exclude=[l_reg.num, r_reg.num])
         for spill_var in spill_vars:
-            asm.append(f'ST {spill_var}, {d_reg}')
+            asm.append(ST(spill_var, d_reg))
 
         rd.assign_reg_for_write(d_reg, self._dst)
         ad.assign_reg_for_write(self._dst, d_reg)
-        asm.append(f'{self._op} {d_reg}, {l_reg}, {r_reg}')
+        asm.append(get_op(self._op)(d_reg, l_reg, r_reg))
 
         return asm
 
@@ -409,7 +411,7 @@ class InfoTablePrinter:
 
     def print_line(self, rd, ad, tai, insn):
         tai_str = '' if tai is None else str(tai)
-        insn_str = '' if insn is None else insn
+        insn_str = '' if insn is None else str(insn)
         if tai is None and insn is None:
             tai_str = 'initial'
 
