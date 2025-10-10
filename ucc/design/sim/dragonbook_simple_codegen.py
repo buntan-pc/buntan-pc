@@ -260,7 +260,7 @@ class BinOp(TAI):
         self._r = r
 
     def __str__(self):
-        return f'{self._op}  {self._dst}, {self._l}, {self._r}'
+        return f'{self._dst} = {self._l} {self._op} {self._r}'
 
     @property
     def values(self):
@@ -294,7 +294,7 @@ class Copy(TAI):
         self._src = src
 
     def __str__(self):
-        return f'=  {self._dst}, {self._src}'
+        return f'{self._dst} = {self._src}'
 
     @property
     def values(self):
@@ -448,27 +448,38 @@ d = t
         prog = parse(src)
         three_addr_code, values = gen_tac(prog)
 
+    print('3 address code:')
     print('\n'.join(str(tai) for tai in three_addr_code))
+    print()
 
     variables = sorted((v for v in values if isinstance(v, Variable)), key=lambda v: v.name)
     temporaries = sorted((v for v in values if isinstance(v, Temporary)), key=lambda v: v.name)
     reg_num = 4
 
-    info_printer = InfoTablePrinter(reg_num, variables, temporaries)
-    info_printer.print_header()
-
     gen = OneBlockCodeGenerator(reg_num, {'a', 'b', 'c', 'd'})
-    info_printer.print_line(gen._rd, gen._ad, None, None)
 
-    for tai in three_addr_code:
-        asm = gen.gen_asm(tai)
-        if len(asm) > 0:
-            for insn in asm[:-1]:
-                info_printer.print_line(gen._rd, gen._ad, None, insn)
-            insn = asm[-1]
-            info_printer.print_line(gen._rd, gen._ad, tai, insn)
-        else:
-            info_printer.print_line(gen._rd, gen._ad, tai, None)
+    verbose = False
+    if verbose:
+        info_printer = InfoTablePrinter(reg_num, variables, temporaries)
+        info_printer.print_header()
+        info_printer.print_line(gen._rd, gen._ad, None, None)
 
-    for insn in gen.gen_st_vars():
-        info_printer.print_line(gen._rd, gen._ad, None, insn)
+        for tai in three_addr_code:
+            asm = gen.gen_asm(tai)
+            if len(asm) > 0:
+                for insn in asm[:-1]:
+                    info_printer.print_line(gen._rd, gen._ad, None, insn)
+                insn = asm[-1]
+                info_printer.print_line(gen._rd, gen._ad, tai, insn)
+            else:
+                info_printer.print_line(gen._rd, gen._ad, tai, None)
+
+        for insn in gen.gen_st_vars():
+            info_printer.print_line(gen._rd, gen._ad, None, insn)
+    else:
+        for tai in three_addr_code:
+            asm = gen.gen_asm(tai)
+            if asm:
+                print('\n'.join(str(insn) for insn in asm))
+        for insn in gen.gen_st_vars():
+            print(insn)
