@@ -317,7 +317,7 @@ def var_parse(name):
     else:
         return Variable(name)
 
-def gen_tai(expr):
+def tai_parse(src):
     elems = src.split()
     dst = var_parse(elems.pop(0))
     op = elems.pop(0)
@@ -333,6 +333,18 @@ def gen_tai(expr):
         return BinOp(dst, binop, lhs, rhs)
     elif len(elems) == 0:
         return Copy(dst, lhs)
+
+def tac_parse(src):
+    '''
+    Parse given three address codes, generate an array of TAI object.
+    '''
+    tac = []
+    values = set()
+    for line in src.splitlines():
+        tai = tai_parse(line.strip())
+        tac.append(tai)
+        values.update(tai.values)
+    return tac, values
 
 tmp_cnt = 0
 def gen_tmp():
@@ -411,20 +423,29 @@ class InfoTablePrinter:
             print(f'{",".join(str(a) for a in ad[t]).ljust(5)}', end='|')
         print()
 
-
-
 if __name__ == '__main__':
-    src = '''\
+    give_tac_directly = True
+    if give_tac_directly:
+        src = '''\
+_1 = a - b
+_2 = a - c
+_3 = _1 + _2
+t = _3 + _2
+a = d
+d = t
+'''
+        three_addr_code, values = tac_parse(src)
+    else:
+        src = '''\
 t = (a - b) + (a - c) + (a - c)
 a = d
 d = t
 '''
+        print('src:')
+        print(src)
+        prog = parse(src)
+        three_addr_code, values = gen_tac(prog)
 
-    print('src:')
-    print(src)
-
-    prog = parse(src)
-    three_addr_code, values = gen_tac(prog)
     print('\n'.join(str(tai) for tai in three_addr_code))
 
     variables = sorted((v for v in values if isinstance(v, Variable)), key=lambda v: v.name)
