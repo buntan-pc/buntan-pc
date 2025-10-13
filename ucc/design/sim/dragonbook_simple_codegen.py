@@ -199,7 +199,7 @@ class TAI:
 def get_spill_vars(reg, rd, ad):
     vs = rd[reg.num]
     spill = []
-    for v in vs:
+    for v in [v for v in vs if not isinstance(v, Number)]:
         # reg_i 以外に v の最新値を保持している場所があるかを検査
         addrs = [a for a in ad[v] if a != reg]
         if len(addrs) == 0:
@@ -247,7 +247,10 @@ def gen_asm_reg_for_read(var, rd, ad, exclude=[]):
         asm.append(ST(spill_var, reg))
         ad.spill(spill_var)
     if rd.assign_reg_for_read(reg, var):
-        asm.append(LD(reg, var))
+        if isinstance(var, Number):
+            asm.append(LI(reg, var))
+        else:
+            asm.append(LD(reg, var))
     ad.assign_reg_for_read(var, reg)
 
     return reg, asm
@@ -425,14 +428,14 @@ class InfoTablePrinter:
             print(f'{",".join(str(a) for a in ad[t]).ljust(5)}', end='|')
         print()
 
-if __name__ == '__main__':
+def main():
     give_tac_directly = True
     if give_tac_directly:
         src = '''\
 _1 = a - b
 _2 = a - c
-_3 = _1 + _2
-t = _3 + _2
+_3 = 2 * _2
+t = _1 + _3
 a = d
 d = t
 '''
@@ -483,3 +486,6 @@ d = t
                 print('\n'.join(str(insn) for insn in asm))
         for insn in gen.gen_st_vars():
             print(insn)
+
+if __name__ == '__main__':
+    main()

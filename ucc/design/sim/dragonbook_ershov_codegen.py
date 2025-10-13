@@ -65,7 +65,7 @@ def gen_asm_for_expr(expr, base=0):
 
 def main():
     src = '''\
-t = (a - b) + (a - c) + (a - c)
+t = (a - b) + 2 * (a - c)
 a = d
 d = t
 '''

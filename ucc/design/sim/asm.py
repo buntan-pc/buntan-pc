@@ -9,7 +9,7 @@ def make_insn_class(name, params):
     return cls
 
 LD = make_insn_class('LD', ['rd', 'name'])
-ST = make_insn_class('ST', ['name', 'rd'])
+ST = make_insn_class('ST', ['name', 'rs'])
 LI = make_insn_class('LI', ['rd', 'imm'])
 ADD = make_insn_class('ADD', ['rd', 'rs1', 'rs2'])
 SUB = make_insn_class('SUB', ['rd', 'rs1', 'rs2'])
