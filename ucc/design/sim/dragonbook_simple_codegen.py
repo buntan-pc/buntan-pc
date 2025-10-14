@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 
 from asm import *
 from parse import parse, NAME, NUMBER, OP
@@ -169,7 +169,7 @@ class OneBlockCodeGenerator:
     '''
     This generates code for one basic block.
     '''
-    def __init__(self, reg_num, var_names):
+    def __init__(self, reg_num, var_names, def_use):
         '''
         reg_num: The number of registers
         var_names: Names of variables alive at the exit of this block
@@ -177,9 +177,10 @@ class OneBlockCodeGenerator:
         self._rd = RegisterDescriptor(reg_num)
         self._ad = AddressDescriptor()
         self._var_names_alive_at_exit = var_names
+        self._def_use = def_use
 
     def gen_asm(self, tai):
-        return tai.gen_asm(self._rd, self._ad)
+        return tai.gen_asm(self._rd, self._ad, self._def_use)
 
     def gen_st_vars(self):
         vs = self._ad.get_vars_only_on_reg()
@@ -192,37 +193,74 @@ def print_ad(ad):
     print('AD', ad)
 
 class TAI:
-    def __init__(self):
-        pass
+    def __init__(self, line_num):
+        self._line_num = line_num
+
+    @property
+    def line_num(self):
+        return self._line_num
 
 # 指定したレジスタを空にするためにスピルが必要な変数のリストを返す
-def get_spill_vars(reg, rd, ad):
+def get_spill_vars(reg, rd, ad, def_use, line_num):
     vs = rd[reg.num]
     spill = []
     for v in [v for v in vs if not isinstance(v, Number)]:
-        # reg_i 以外に v の最新値を保持している場所があるかを検査
+        # reg 以外に v の最新値を保持している場所があるかを検査
         addrs = [a for a in ad[v] if a != reg]
         if len(addrs) == 0:
-            spill.append(v)
+            # この変数が後に利用されることを確認
+            for start, end in def_use[v]:
+                if start > line_num:
+                    break
+                if start <= line_num < end:
+                    spill.append(v)
+                    break
     return spill
 
-def get_reg_for_read(var, rd, ad, exclude):
+def get_reg_for_read(var, rd, ad, def_use, line_num, exclude):
     r = rd.get_reg_having_val_or_free(var)
     if r:
         return r, []
 
-    spill_vars_for_reg = []
+    spill_vars_for_reg = dict()
     for i in range(len(rd)):
         if i in exclude:
             continue
         reg = Register(i)
-        spill_vars = get_spill_vars(reg, rd, ad)
-        spill_vars_for_reg.append((reg, spill_vars))
+        spill_vars = get_spill_vars(reg, rd, ad, def_use, line_num)
+        spill_vars_for_reg[reg] = spill_vars
 
-    min_score_reg, min_score_spill_vars = sorted(spill_vars_for_reg, key=lambda elem: len(elem[1]))[0]
-    return min_score_reg, min_score_spill_vars
+    spill_score = sorted(((reg, len(vs)) for reg, vs in spill_vars_for_reg.items()), key=lambda item: item[1])
+    min_score = spill_score[0][1]
+    min_score_last_i = len(spill_score)
+    for i in range(len(spill_score)):
+        if spill_score[i][1] > min_score:
+            min_score_last_i = i
+            break
+    if min_score_last_i == 1:
+        min_score_reg = spill_score[0][0]
+        return min_score_reg, spill_vars_for_reg[min_score_reg]
 
-def get_reg_for_write(var, rd, ad, exclude):
+    # [0, min_score_last_i) の範囲はいずれもスピルコストが最小
+    # 可能であれば、今後使わない変数をスピルさせたい
+    use_after_for_reg = dict()
+    for reg, _ in spill_score[0:min_score_last_i]:
+        # この時点での tai の行数が欲しい
+        use_after = 0
+        for var in spill_vars_for_reg[reg]:
+            for start, end in def_use[var]:
+                if line_num < start:
+                    break
+                if start <= line_num < end:
+                    # この変数の値は後に使われる
+                    use_after += 1
+                    break
+        use_after_for_reg[reg] = use_after
+
+    min_score_reg = sorted(use_after_for_reg.items(), key=lambda item: item[1])[0][0]
+    return min_score_reg, spill_vars_for_reg[min_score_reg]
+
+def get_reg_for_write(var, rd, ad, def_use, line_num, exclude):
     r = rd.get_reg_having_val_or_free(var)
     if r and (rd[r] == [var] or len(rd[r]) == 0):
         # r は var だけを持っているか、空っぽ
@@ -233,16 +271,16 @@ def get_reg_for_write(var, rd, ad, exclude):
         if i in exclude:
             continue
         reg = Register(i)
-        spill_vars = list_remove_if_exist(get_spill_vars(reg, rd, ad), var)
+        spill_vars = list_remove_if_exist(get_spill_vars(reg, rd, ad, def_use, line_num), var)
         spill_vars_for_reg.append((reg, spill_vars))
 
     min_score_reg, min_score_spill_vars = sorted(spill_vars_for_reg, key=lambda elem: len(elem[1]))[0]
     return min_score_reg, min_score_spill_vars
 
-def gen_asm_reg_for_read(var, rd, ad, exclude=[]):
+def gen_asm_reg_for_read(var, rd, ad, def_use, line_num, exclude=[]):
     asm = []
 
-    reg, spill_vars = get_reg_for_read(var, rd, ad, exclude)
+    reg, spill_vars = get_reg_for_read(var, rd, ad, def_use, line_num, exclude)
     for spill_var in spill_vars:
         asm.append(ST(spill_var, reg))
         ad.spill(spill_var)
@@ -256,7 +294,8 @@ def gen_asm_reg_for_read(var, rd, ad, exclude=[]):
     return reg, asm
 
 class BinOp(TAI):
-    def __init__(self, dst, op, l, r):
+    def __init__(self, dst, op, l, r, line_num):
+        super().__init__(line_num)
         self._dst = dst
         self._op = op
         self._l = l
@@ -273,15 +312,15 @@ class BinOp(TAI):
     def dst(self):
         return self._dst
 
-    def gen_asm(self, rd, ad):
+    def gen_asm(self, rd, ad, def_use):
         asm = []
 
-        l_reg, l_asm = gen_asm_reg_for_read(self._l, rd, ad)
+        l_reg, l_asm = gen_asm_reg_for_read(self._l, rd, ad, def_use, self._line_num)
         asm.extend(l_asm)
-        r_reg, r_asm = gen_asm_reg_for_read(self._r, rd, ad, exclude=[l_reg.num])
+        r_reg, r_asm = gen_asm_reg_for_read(self._r, rd, ad, def_use, self._line_num, exclude=[l_reg.num])
         asm.extend(r_asm)
 
-        d_reg, spill_vars = get_reg_for_write(self._dst, rd, ad, exclude=[l_reg.num, r_reg.num])
+        d_reg, spill_vars = get_reg_for_write(self._dst, rd, ad, def_use, self._line_num, exclude=[l_reg.num, r_reg.num])
         for spill_var in spill_vars:
             asm.append(ST(spill_var, d_reg))
 
@@ -292,7 +331,8 @@ class BinOp(TAI):
         return asm
 
 class Copy(TAI):
-    def __init__(self, dst, src):
+    def __init__(self, dst, src, line_num):
+        super().__init__(line_num)
         self._dst = dst
         self._src = src
 
@@ -307,8 +347,8 @@ class Copy(TAI):
     def dst(self):
         return self._dst
 
-    def gen_asm(self, rd, ad):
-        reg, asm = gen_asm_reg_for_read(self._src, rd, ad)
+    def gen_asm(self, rd, ad, def_use):
+        reg, asm = gen_asm_reg_for_read(self._src, rd, ad, def_use, self._line_num)
         rd.assign_reg_for_write(reg, [self._src, self._dst])
         ad.assign_reg_for_read(self._src, reg)
         ad.assign_reg_for_write(self._dst, reg, exclude=self._src)
@@ -321,6 +361,13 @@ def var_parse(name):
         return Number(int(name))
     else:
         return Variable(name)
+
+line_num = 0
+def gen_line_num():
+    global line_num
+    l = line_num
+    line_num += 1
+    return l
 
 def tai_parse(src):
     elems = src.split()
@@ -335,9 +382,9 @@ def tai_parse(src):
     if len(elems) == 2:
         binop = elems.pop(0)
         rhs = var_parse(elems.pop(0))
-        return BinOp(dst, binop, lhs, rhs)
+        return BinOp(dst, binop, lhs, rhs, gen_line_num())
     elif len(elems) == 0:
-        return Copy(dst, lhs)
+        return Copy(dst, lhs, gen_line_num())
 
 def tac_parse(src):
     '''
@@ -363,12 +410,12 @@ def gen_tac_expr(expr):
         if expr.value == '=':
             dst = Variable(lhs.value)
             r_tac, r_var = gen_tac_expr(rhs)
-            return r_tac + [Copy(dst, r_var)], dst
+            return r_tac + [Copy(dst, r_var, gen_line_num())], dst
         else:
             l_tac, l_var = gen_tac_expr(lhs)
             r_tac, r_var = gen_tac_expr(rhs)
             dst = gen_tmp()
-            return l_tac + r_tac + [BinOp(dst, expr.value, l_var, r_var)], dst
+            return l_tac + r_tac + [BinOp(dst, expr.value, l_var, r_var, gen_line_num())], dst
     else:
         if expr.type == NAME:
             return [], Variable(expr.value)
@@ -428,6 +475,39 @@ class InfoTablePrinter:
             print(f'{",".join(str(a) for a in ad[t]).ljust(5)}', end='|')
         print()
 
+def detect_def_use(tac):
+    # 変数が定義された行と、その値が最後に使用される行の組を、変数ごとに求める
+    def_use = defaultdict(list)  # { 変数 : [ ( 定義行, 最終使用行 ) ] }
+
+    for i, tai in enumerate(tac):
+        if isinstance(tai, BinOp) or isinstance(tai, Copy):
+            def_var = tai.dst
+        else:
+            raise ValueError(f'unknown TAI type: {type(tai)}')
+
+        # 最終使用行を見つける
+        last_use = None
+        for j in range(i+1, len(tac)):
+            if def_var in tac[j].values - {tac[j].dst}:
+                last_use = j
+            if def_var == tac[j].dst:
+                break
+        if last_use is not None:
+            def_use[def_var].append((i, last_use))
+
+        # 定義されていないのに読まれている変数は、ブロック外で定義されているとする
+        for val in [v for v in tai.values if isinstance(v, Variable) and v not in def_use]:
+            last_use = None
+            for j in range(i, len(tac)):
+                if val in tac[j].values - {tac[j].dst}:
+                    last_use = j
+                if val == tac[j].dst:
+                    break
+            if last_use is not None:
+                def_use[val].append((-1, last_use))
+
+    return def_use
+
 def main():
     give_tac_directly = True
     if give_tac_directly:
@@ -455,11 +535,13 @@ d = t
     print('\n'.join(str(tai) for tai in three_addr_code))
     print()
 
+    def_use = detect_def_use(three_addr_code)
+
     variables = sorted((v for v in values if isinstance(v, Variable)), key=lambda v: v.name)
     temporaries = sorted((v for v in values if isinstance(v, Temporary)), key=lambda v: v.name)
     reg_num = 4
 
-    gen = OneBlockCodeGenerator(reg_num, {'a', 'b', 'c', 'd'})
+    gen = OneBlockCodeGenerator(reg_num, {'a', 'b', 'c', 'd'}, def_use)
 
     verbose = False
     if verbose:
