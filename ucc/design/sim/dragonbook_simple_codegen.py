@@ -478,6 +478,8 @@ class InfoTablePrinter:
 def detect_def_use(tac, vars_alive_at_exit):
     # 変数が定義された行と、その値が最後に使用される行の組を、変数ごとに求める
     def_use = defaultdict(list)  # { 変数 : [ ( 定義行, 最終使用行 ) ] }
+    last_def = dict() # 最終定義行
+    last_use = dict() # 最終使用行
 
     for tai in tac:
         if isinstance(tai, BinOp) or isinstance(tai, Copy):
@@ -485,28 +487,23 @@ def detect_def_use(tac, vars_alive_at_exit):
         else:
             raise ValueError(f'unknown TAI type: {type(tai)}')
 
-        # 最終使用行を見つける
-        last_use = None
-        for j in range(tai.line_num+1, len(tac)):
-            if def_var in tac[j].values - {tac[j].dst}:
-                last_use = j
-            if def_var == tac[j].dst:
-                break
-        if last_use is not None:
-            def_use[def_var].append((tai.line_num, last_use))
-        elif def_var in vars_alive_at_exit:
-            def_use[def_var].append((tai.line_num, len(tac)))
+        use_vars = tai.values - {def_var}  # 式の右辺に現れる変数
+        for var in use_vars:
+            last_use[var] = tai.line_num
 
-        # 定義されていないのに読まれている変数は、ブロック外で定義されているとする
-        for val in [v for v in tai.values if isinstance(v, Variable) and v not in def_use]:
-            last_use = None
-            for j in range(tai.line_num, len(tac)):
-                if val in tac[j].values - {tac[j].dst}:
-                    last_use = j
-                if val == tac[j].dst:
-                    break
-            if last_use is not None:
-                def_use[val].append((-1, last_use))
+        # last_def を更新する前に last_def と last_use を使って def_use を計算
+        if def_var in last_use:
+            last_def_line = last_def.get(def_var, -1)
+            def_use[def_var].append((last_def_line, last_use[def_var]))
+
+        # def_use を計算し終えたら last_def を更新
+        last_def[def_var] = tai.line_num
+
+    for var in last_def:
+        if var in vars_alive_at_exit:
+            def_use[var].append((last_def[var], len(tac)))
+        elif last_def[var] < last_use.get(var, 0):
+            def_use[var].append((last_def[var], last_use[var]))
 
     # ブロック外で定義され、ブロック内で一度も変更されず、ブロックの出口で生存している変数に対する処理
     for var in vars_alive_at_exit:
