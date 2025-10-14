@@ -169,14 +169,14 @@ class OneBlockCodeGenerator:
     '''
     This generates code for one basic block.
     '''
-    def __init__(self, reg_num, var_names, def_use):
+    def __init__(self, reg_num, vars_alive_at_exit, def_use):
         '''
         reg_num: The number of registers
         var_names: Names of variables alive at the exit of this block
         '''
         self._rd = RegisterDescriptor(reg_num)
         self._ad = AddressDescriptor()
-        self._var_names_alive_at_exit = var_names
+        self._vars_alive_at_exit = vars_alive_at_exit
         self._def_use = def_use
 
     def gen_asm(self, tai):
@@ -184,7 +184,7 @@ class OneBlockCodeGenerator:
 
     def gen_st_vars(self):
         vs = self._ad.get_vars_only_on_reg()
-        return [ST(v[0], v[1]) for v in vs]
+        return [ST(v[0], v[1]) for v in vs if v[0] in self._vars_alive_at_exit]
 
 def print_rd(rd):
     print('RD', rd)
@@ -475,11 +475,11 @@ class InfoTablePrinter:
             print(f'{",".join(str(a) for a in ad[t]).ljust(5)}', end='|')
         print()
 
-def detect_def_use(tac):
+def detect_def_use(tac, vars_alive_at_exit):
     # 変数が定義された行と、その値が最後に使用される行の組を、変数ごとに求める
     def_use = defaultdict(list)  # { 変数 : [ ( 定義行, 最終使用行 ) ] }
 
-    for i, tai in enumerate(tac):
+    for tai in tac:
         if isinstance(tai, BinOp) or isinstance(tai, Copy):
             def_var = tai.dst
         else:
@@ -487,24 +487,31 @@ def detect_def_use(tac):
 
         # 最終使用行を見つける
         last_use = None
-        for j in range(i+1, len(tac)):
+        for j in range(tai.line_num+1, len(tac)):
             if def_var in tac[j].values - {tac[j].dst}:
                 last_use = j
             if def_var == tac[j].dst:
                 break
         if last_use is not None:
-            def_use[def_var].append((i, last_use))
+            def_use[def_var].append((tai.line_num, last_use))
+        elif def_var in vars_alive_at_exit:
+            def_use[def_var].append((tai.line_num, len(tac)))
 
         # 定義されていないのに読まれている変数は、ブロック外で定義されているとする
         for val in [v for v in tai.values if isinstance(v, Variable) and v not in def_use]:
             last_use = None
-            for j in range(i, len(tac)):
+            for j in range(tai.line_num, len(tac)):
                 if val in tac[j].values - {tac[j].dst}:
                     last_use = j
                 if val == tac[j].dst:
                     break
             if last_use is not None:
                 def_use[val].append((-1, last_use))
+
+    # ブロック外で定義され、ブロック内で一度も変更されず、ブロックの出口で生存している変数に対する処理
+    for var in vars_alive_at_exit:
+        if var not in def_use:
+            def_use[var].append((-1, len(tac)))
 
     return def_use
 
@@ -535,13 +542,14 @@ d = t
     print('\n'.join(str(tai) for tai in three_addr_code))
     print()
 
-    def_use = detect_def_use(three_addr_code)
+    vars_alive_at_exit = {Variable(name) for name in ['a', 'b', 'c', 'd']}
+    def_use = detect_def_use(three_addr_code, vars_alive_at_exit)
 
     variables = sorted((v for v in values if isinstance(v, Variable)), key=lambda v: v.name)
     temporaries = sorted((v for v in values if isinstance(v, Temporary)), key=lambda v: v.name)
     reg_num = 4
 
-    gen = OneBlockCodeGenerator(reg_num, {'a', 'b', 'c', 'd'}, def_use)
+    gen = OneBlockCodeGenerator(reg_num, vars_alive_at_exit, def_use)
 
     verbose = False
     if verbose:
