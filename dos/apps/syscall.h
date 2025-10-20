@@ -1,6 +1,6 @@
 int (*syscall)();
 
-int init_syscall(int *info) {
+void init_syscall(int *info) {
   syscall = info[1];
 }
 
