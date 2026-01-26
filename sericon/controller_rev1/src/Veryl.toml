@@ -1,0 +1,8 @@
+[project]
+name = "controller"
+version = "0.1.0"
+authors = ["Kota UCHIDA <uchan@uchan.net>"]
+
+[build]
+sources = ["veryl"]
+target = {type = "directory", path = "target"}

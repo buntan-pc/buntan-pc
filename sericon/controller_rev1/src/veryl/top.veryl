@@ -1,0 +1,104 @@
+module top (
+  sys_clk: input clock,
+  rst_n_raw: input reset_async_low,
+  onboard_led: output logic<6>,
+  clk_p: output 'dvi clock,
+  clk_n: output 'dvi clock,
+  data_p: output 'dvi logic,
+  data_n: output 'dvi logic,
+) {
+  var rst_n : reset_async_low;
+  var dvi_rst_n : 'dvi reset_async_low;
+
+  inst rst_synchronizer: $std::synchronizer_basic #(
+    WIDTH: 1,
+    STAGES: 2,
+  ) (
+    i_clk: sys_clk,
+    i_rst: rst_n_raw,
+    i_d: 1'b1,
+    o_d: rst_n,
+  );
+
+  assign onboard_led = if rst_n ? ~6'b000001 : '1;
+
+  var data : 'dvi bit<10>;
+  var fclk : 'dvi clock;
+  var pclk : 'dvi clock;
+  var pll_lock : 'dvi logic;
+
+  unsafe (cdc) {
+    inst pll: $sv::gowin_rpll_fclk(
+      clkin: sys_clk,
+      clkout: fclk,
+      lock: pll_lock
+    );
+
+    assign dvi_rst_n = rst_n & pll_lock;
+  }
+
+  inst clkdiv: $sv::CLKDIV #(
+    DIV_MODE: "5",
+    GSREN: "false",
+  ) (
+    CLKOUT: pclk,
+    HCLKIN: fclk,
+    RESETN: dvi_rst_n,
+    CALIB: 0,
+  );
+
+  assign data = 10'b00_1111_0001;
+
+  var data_ser : 'dvi logic;
+  inst data_oser : $sv::OSER10 #(
+    GSREN: "false",
+    LSREN: "true"
+  ) (
+    Q: data_ser,
+    D0: data[0],
+    D1: data[1],
+    D2: data[2],
+    D3: data[3],
+    D4: data[4],
+    D5: data[5],
+    D6: data[6],
+    D7: data[7],
+    D8: data[8],
+    D9: data[9],
+    FCLK: fclk,
+    PCLK: pclk,
+    RESET: ~dvi_rst_n,
+  );
+
+  var clk_ser : 'dvi logic;
+  inst clk_oser : $sv::OSER10 #(
+    GSREN: "false",
+    LSREN: "true"
+  ) (
+    Q: clk_ser,
+    D0: 1'b1,
+    D1: 1'b1,
+    D2: 1'b1,
+    D3: 1'b1,
+    D4: 1'b1,
+    D5: 1'b0,
+    D6: 1'b0,
+    D7: 1'b0,
+    D8: 1'b0,
+    D9: 1'b0,
+    FCLK: fclk,
+    PCLK: pclk,
+    RESET: ~dvi_rst_n,
+  );
+
+  inst lvds_clk : $sv::ELVDS_OBUF (
+    I: clk_ser,
+    O: clk_p,
+    OB: clk_n,
+  );
+  inst lvds_data : $sv::ELVDS_OBUF (
+    I: data_ser,
+    O: data_p,
+    OB: data_n,
+  );
+}

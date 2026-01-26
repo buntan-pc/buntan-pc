@@ -14,6 +14,7 @@ BuntanPC はいくつかのコンポーネントから構成されていて、�
 | ucc              | uchan-nos (Kota UCHIDA) | uchan 製 C コンパイラ                      |
 | scripts          | BuntanPC Authors        | どのコンポーネントにも属さない小物ツール群 |
 | doc              | BuntanPC Authors        | どのコンポーネントにも属さないドキュメント |
+| sericon          | uchan-nos (Kota UCHIDA) | BuntanPC 用シリアルコンソール              |
 
 ### 新たなコンポーネントの追加
 
