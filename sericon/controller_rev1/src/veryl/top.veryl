@@ -4,9 +4,52 @@ module top (
   onboard_led: output logic<6>,
   clk_p: output 'dvi clock,
   clk_n: output 'dvi clock,
-  data_p: output 'dvi logic,
-  data_n: output 'dvi logic,
+  data_p: output 'dvi logic[3],
+  data_n: output 'dvi logic[3],
+  o_state_h: output 'dvi logic<2>,
+  o_state_v: output 'dvi logic<2>,
 ) {
+  struct DVIParamsSingle {
+    bp : u16, // back porch
+    act: u16, // active
+    fp : u16, // front porch
+    syn: u16, // sync
+  }
+  struct DVIParams {
+    h : DVIParamsSingle,
+    v : DVIParamsSingle,
+  }
+  const CVT_RBv2 : DVIParams = DVIParams'{
+    h : DVIParamsSingle'{
+      bp : 40,
+      act: 1024,
+      fp : 8,
+      syn: 32,
+    },
+    v : DVIParamsSingle'{
+      bp : 6,
+      act: 600,
+      fp : 4,
+      syn: 8,
+    },
+  };
+  const CVT : DVIParams = DVIParams'{
+    h : DVIParamsSingle'{
+      bp : 128,
+      act: 1024,
+      fp : 32,
+      syn: 96,
+    },
+    v : DVIParamsSingle'{
+      bp : 8,
+      act: 600,
+      fp : 3,
+      syn: 10,
+    },
+  };
+
+  const DP : DVIParams = CVT;
+
   var rst_n : reset_async_low;
   var dvi_rst_n : 'dvi reset_async_low;
 
@@ -20,9 +63,8 @@ module top (
     o_d: rst_n,
   );
 
-  assign onboard_led = if rst_n ? ~6'b000001 : '1;
+  assign onboard_led = if rst_n ? ~6'b000101 : '1;
 
-  var data : 'dvi bit<10>;
   var fclk : 'dvi clock;
   var pclk : 'dvi clock;
   var pll_lock : 'dvi logic;
@@ -47,28 +89,147 @@ module top (
     CALIB: 0,
   );
 
-  assign data = 10'b00_1111_0001;
+  enum DVIState: bit<2> {
+    back_porch,
+    active,
+    front_porch,
+    sync,
+  }
 
-  var data_ser : 'dvi logic;
-  inst data_oser : $sv::OSER10 #(
-    GSREN: "false",
-    LSREN: "true"
-  ) (
-    Q: data_ser,
-    D0: data[0],
-    D1: data[1],
-    D2: data[2],
-    D3: data[3],
-    D4: data[4],
-    D5: data[5],
-    D6: data[6],
-    D7: data[7],
-    D8: data[8],
-    D9: data[9],
-    FCLK: fclk,
-    PCLK: pclk,
-    RESET: ~dvi_rst_n,
-  );
+  var pixel_h : 'dvi bit<11>; // 0～2047
+  var next_pixel_h : 'dvi bit<11>;
+  var state_h : 'dvi DVIState;
+  assign o_state_h = state_h;
+
+  var pixel_v : 'dvi bit<10>; // 0～1023
+  var state_v : 'dvi DVIState;
+  assign o_state_v = state_v;
+
+  const pixels_per_line : u16 = DP.h.bp + DP.h.act + DP.h.fp + DP.h.syn;
+  assign next_pixel_h = if pixel_h <: pixels_per_line - 1 ? pixel_h + 1 : 0;
+  assign state_h = switch {
+    pixel_h <: DP.h.bp                      : DVIState::back_porch,
+    pixel_h <: DP.h.bp + DP.h.act           : DVIState::active,
+    pixel_h <: DP.h.bp + DP.h.act + DP.h.fp : DVIState::front_porch,
+    default                                 : DVIState::sync,
+  };
+  assign state_v = switch {
+    pixel_v <: DP.v.bp                      : DVIState::back_porch,
+    pixel_v <: DP.v.bp + DP.v.act           : DVIState::active,
+    pixel_v <: DP.v.bp + DP.v.act + DP.v.fp : DVIState::front_porch,
+    default                                 : DVIState::sync,
+  };
+
+  always_ff (pclk, dvi_rst_n) {
+    if_reset {
+      pixel_h = 0;
+    } else {
+      pixel_h = next_pixel_h;
+    }
+  }
+  always_ff (pclk, dvi_rst_n) {
+    if_reset {
+      pixel_v = 0;
+    } else if next_pixel_h == 0 {
+      if pixel_v <: DP.v.bp + DP.v.act + DP.v.fp + DP.v.syn - 1 {
+        pixel_v += 1;
+      } else {
+        pixel_v = 0;
+      }
+    }
+  }
+
+  // TM(1111_1111) = 0_1111_1111
+  // N0 = 0, N1 = 8
+  // TM(0000_0000) = 1_0000_0000
+  // N0 = 8, N1 = 0
+  var dc_disparity : 'dvi i8[2];
+  var data_enable : 'dvi bit;
+  assign data_enable = state_h == DVIState::active && state_v == DVIState::active;
+
+  always_ff (pclk, dvi_rst_n) {
+    if_reset {
+      dc_disparity[0] = 0;
+      dc_disparity[1] = 0;
+    } else if data_enable {
+      dc_disparity[0] += switch {
+        dc_disparity[0] >: 0 : -8,
+        dc_disparity[0] <: 0 : 6,
+        default              : -8,
+      };
+      dc_disparity[1] += switch {
+        dc_disparity[1] >: 0 : -8,
+        dc_disparity[1] <: 0 : 10,
+        default              : -8,
+      };
+    } else {
+      dc_disparity[0] = 0;
+      dc_disparity[1] = 0;
+    }
+  }
+
+  var data9 : 'dvi bit[2];
+  assign data9[0] = if dc_disparity[0] >= 0 ? 1'b1 : 1'b0;
+  assign data9[1] = if dc_disparity[1] >= 0 ? 1'b0 : 1'b1;
+
+  var data : 'dvi bit<10>[3];
+
+  always_comb {
+    if data_enable {
+      data[0] = {
+        data9[0],
+        1'b0,
+        if data9[0] == 0 ? 8'b1111_1111 : 8'b0000_0000 // TM(1111_1111)
+      };
+      data[1] = {
+        data9[1],
+        1'b1,
+        if data9[1] == 0 ? 8'b0000_0000 : 8'b1111_1111 // TM(0000_0000)
+      };
+      data[2] = {
+        data9[1],
+        1'b1,
+        if data9[1] == 0 ? 8'b0000_0000 : 8'b1111_1111 // TM(0000_0000)
+      };
+    } else {
+      data[0] = case {state_v == DVIState::sync, state_h == DVIState::sync} {
+        {0, 0} : 10'b0010101011,
+        {0, 1} : 10'b1101010100,
+        {1, 0} : 10'b0010101010,
+        default: 10'b1101010101,
+      };
+      data[1] = 10'b00_1010_1011;
+      data[2] = 10'b00_1010_1011;
+    }
+  }
+
+  var data_ser : 'dvi logic[3];
+  for i in 0..3 :gen_oser {
+    inst data_oser : $sv::OSER10 #(
+      GSREN: "false",
+      LSREN: "true"
+    ) (
+      Q: data_ser[i],
+      D0: data[i][0],
+      D1: data[i][1],
+      D2: data[i][2],
+      D3: data[i][3],
+      D4: data[i][4],
+      D5: data[i][5],
+      D6: data[i][6],
+      D7: data[i][7],
+      D8: data[i][8],
+      D9: data[i][9],
+      FCLK: fclk,
+      PCLK: pclk,
+      RESET: ~dvi_rst_n,
+    );
+    inst lvds_data : $sv::ELVDS_OBUF (
+      I: data_ser[i],
+      O: data_p[i],
+      OB: data_n[i],
+    );
+  }
 
   var clk_ser : 'dvi logic;
   inst clk_oser : $sv::OSER10 #(
@@ -96,9 +257,21 @@ module top (
     O: clk_p,
     OB: clk_n,
   );
-  inst lvds_data : $sv::ELVDS_OBUF (
-    I: data_ser,
-    O: data_p,
-    OB: data_n,
-  );
 }
+
+/*
+画面制御のパラメタ（CVT-RBv2を採用）
+
+| パラメタ      | CVT   | CVT  | CVT-RB | CVT-RBv2 | Unit   |
+| ------------- | ----- | ---- | ------ | -------- | ------ |
+| V Frequency   | 59.825| 51.58| 59.695 | 60       | Hz     |
+| Pixel Clock   | 49    | 41   | 43.75  | 40.936   | MHz    |
+| H Back Porch  | 144   | 128  | 80     | 40       | Pixels |
+| H Active      | 1024  | 1024 | 1024   | 1024     | Pixels |
+| H Front Porch | 40    | 32   | 48     | 8        | Pixels |
+| H Sync        | 104   | 96   | 32     | 32       | Pixels |
+| V Back Porch  | 11    | 8    | 6      | 6        | Lines  |
+| V Active      | 600   | 600  | 600    | 600      | Lines  |
+| V Front Porch | 3     | 3    | 3      | 4        | Lines  |
+| V Sync        | 10    | 10   | 10     | 8        | Lines  |
+*/

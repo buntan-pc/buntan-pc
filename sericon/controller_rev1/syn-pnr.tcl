@@ -4,6 +4,7 @@ set_option -verilog_std sysv2017
 set_option -print_all_synthesis_warning 1
 set_option -top_module "controller_top"
 set_option -output_base_name "controller"
+set_option -use_sspi_as_gpio 1
 
 add_file "src/port.cst"
 add_file "src/timing.sdc"
