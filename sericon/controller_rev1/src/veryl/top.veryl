@@ -48,7 +48,7 @@ module top (
     },
   };
 
-  const DP : DVIParams = CVT;
+  const DP : DVIParams = CVT_RBv2;
 
   var rst_n : reset_async_low;
   var dvi_rst_n : 'dvi reset_async_low;
@@ -90,10 +90,10 @@ module top (
   );
 
   enum DVIState: bit<2> {
+    sync,
     back_porch,
     active,
     front_porch,
-    sync,
   }
 
   var pixel_h : 'dvi bit<11>; // 0～2047
@@ -108,16 +108,16 @@ module top (
   const pixels_per_line : u16 = DP.h.bp + DP.h.act + DP.h.fp + DP.h.syn;
   assign next_pixel_h = if pixel_h <: pixels_per_line - 1 ? pixel_h + 1 : 0;
   assign state_h = switch {
-    pixel_h <: DP.h.bp                      : DVIState::back_porch,
-    pixel_h <: DP.h.bp + DP.h.act           : DVIState::active,
-    pixel_h <: DP.h.bp + DP.h.act + DP.h.fp : DVIState::front_porch,
-    default                                 : DVIState::sync,
+    pixel_h <: DP.h.syn                      : DVIState::sync,
+    pixel_h <: DP.h.syn + DP.h.bp            : DVIState::back_porch,
+    pixel_h <: DP.h.syn + DP.h.bp + DP.h.act : DVIState::active,
+    default                                  : DVIState::front_porch,
   };
   assign state_v = switch {
-    pixel_v <: DP.v.bp                      : DVIState::back_porch,
-    pixel_v <: DP.v.bp + DP.v.act           : DVIState::active,
-    pixel_v <: DP.v.bp + DP.v.act + DP.v.fp : DVIState::front_porch,
-    default                                 : DVIState::sync,
+    pixel_v <: DP.v.syn                      : DVIState::sync,
+    pixel_v <: DP.v.syn + DP.v.bp            : DVIState::back_porch,
+    pixel_v <: DP.v.syn + DP.v.bp + DP.v.act : DVIState::active,
+    default                                  : DVIState::front_porch,
   };
 
   always_ff (pclk, dvi_rst_n) {
@@ -139,67 +139,85 @@ module top (
     }
   }
 
+  var data_enable : 'dvi bit;
+  assign data_enable = state_h == DVIState::active && state_v == DVIState::active;
+
+  function popcnt2(val: input bit<2>) -> u8 {
+    return case val {
+      2'b00  : 0,
+      2'b01  : 1,
+      2'b10  : 1,
+      default: 2,
+    };
+  }
+  function popcnt4(val: input bit<4>) -> u8 {
+    return popcnt2(val[1:0]) + popcnt2(val[3:2]);
+  }
+  function popcnt8(val: input bit<8>) -> u8 {
+    return popcnt4(val[3:0]) + popcnt4(val[7:4]);
+  }
+
+  struct DCBalancingResult {
+    data: bit<10>,
+    cnt: i8,
+  }
+  function balance_dc(data: input bit<9>, cnt: input i8) -> DCBalancingResult {
+    var n1 : u8;
+    var n0 : u8;
+    var n1n0 : i8;
+
+    n1 = popcnt8(data[7:0]);
+    n0 = 8 - n1;
+    n1n0 = (n1 as i8) - (n0 as i8);
+
+    if cnt == 0 || n1n0 == 0 {
+      return DCBalancingResult'{
+        data: {~data[8], data[8], if data[8] ? data[7:0] : ~data[7:0]},
+        cnt : if data[8] ? cnt + n1n0 : cnt - n1n0,
+      };
+    } else if (cnt >: 0 && n1n0 >: 0) || (cnt <: 0 && n1n0 <: 0) {
+      return DCBalancingResult'{
+        data: {1'b1, data[8], ~data[7:0]},
+        cnt : cnt + (data[8] << 1) - n1n0,
+      };
+    } else {
+      return DCBalancingResult'{
+        data: {1'b0, data[8], data[7:0]},
+        cnt : cnt - (data[8] << 1) + n1n0,
+      };
+    }
+  }
+
+  function trans_max(data: input bit<2>) -> bit<10> {
+    return case data {
+      2'b00  : 10'b0010101011,
+      2'b01  : 10'b1101010100,
+      2'b10  : 10'b0010101010,
+      default: 10'b1101010101,
+    };
+  }
+
   // TM(1111_1111) = 0_1111_1111
   // N0 = 0, N1 = 8
   // TM(0000_0000) = 1_0000_0000
   // N0 = 8, N1 = 0
-  var dc_disparity : 'dvi i8[2];
-  var data_enable : 'dvi bit;
-  assign data_enable = state_h == DVIState::active && state_v == DVIState::active;
-
+  var dcb : 'dvi DCBalancingResult[2];
   always_ff (pclk, dvi_rst_n) {
     if_reset {
-      dc_disparity[0] = 0;
-      dc_disparity[1] = 0;
+      dcb[0].cnt = 0;
+      dcb[1].cnt = 0;
     } else if data_enable {
-      dc_disparity[0] += switch {
-        dc_disparity[0] >: 0 : -8,
-        dc_disparity[0] <: 0 : 6,
-        default              : -8,
-      };
-      dc_disparity[1] += switch {
-        dc_disparity[1] >: 0 : -8,
-        dc_disparity[1] <: 0 : 10,
-        default              : -8,
-      };
+      dcb[0] = balance_dc(9'b1_0000_0000, dcb[0].cnt);
+      dcb[1] = balance_dc(9'b0_1111_1111, dcb[1].cnt);
     } else {
-      dc_disparity[0] = 0;
-      dc_disparity[1] = 0;
-    }
-  }
-
-  var data9 : 'dvi bit[2];
-  assign data9[0] = if dc_disparity[0] >= 0 ? 1'b1 : 1'b0;
-  assign data9[1] = if dc_disparity[1] >= 0 ? 1'b0 : 1'b1;
-
-  var data : 'dvi bit<10>[3];
-
-  always_comb {
-    if data_enable {
-      data[0] = {
-        data9[0],
-        1'b0,
-        if data9[0] == 0 ? 8'b1111_1111 : 8'b0000_0000 // TM(1111_1111)
+      dcb[0] = DCBalancingResult'{
+        data: trans_max({state_v == DVIState::sync, state_h == DVIState::sync}),
+        cnt: 0,
       };
-      data[1] = {
-        data9[1],
-        1'b1,
-        if data9[1] == 0 ? 8'b0000_0000 : 8'b1111_1111 // TM(0000_0000)
+      dcb[1] = DCBalancingResult'{
+        data: trans_max(2'b00),
+        cnt: 0,
       };
-      data[2] = {
-        data9[1],
-        1'b1,
-        if data9[1] == 0 ? 8'b0000_0000 : 8'b1111_1111 // TM(0000_0000)
-      };
-    } else {
-      data[0] = case {state_v == DVIState::sync, state_h == DVIState::sync} {
-        {0, 0} : 10'b0010101011,
-        {0, 1} : 10'b1101010100,
-        {1, 0} : 10'b0010101010,
-        default: 10'b1101010101,
-      };
-      data[1] = 10'b00_1010_1011;
-      data[2] = 10'b00_1010_1011;
     }
   }
 
@@ -210,16 +228,16 @@ module top (
       LSREN: "true"
     ) (
       Q: data_ser[i],
-      D0: data[i][0],
-      D1: data[i][1],
-      D2: data[i][2],
-      D3: data[i][3],
-      D4: data[i][4],
-      D5: data[i][5],
-      D6: data[i][6],
-      D7: data[i][7],
-      D8: data[i][8],
-      D9: data[i][9],
+      D0: dcb[if i == 0 ? 0 : 1].data[0],
+      D1: dcb[if i == 0 ? 0 : 1].data[1],
+      D2: dcb[if i == 0 ? 0 : 1].data[2],
+      D3: dcb[if i == 0 ? 0 : 1].data[3],
+      D4: dcb[if i == 0 ? 0 : 1].data[4],
+      D5: dcb[if i == 0 ? 0 : 1].data[5],
+      D6: dcb[if i == 0 ? 0 : 1].data[6],
+      D7: dcb[if i == 0 ? 0 : 1].data[7],
+      D8: dcb[if i == 0 ? 0 : 1].data[8],
+      D9: dcb[if i == 0 ? 0 : 1].data[9],
       FCLK: fclk,
       PCLK: pclk,
       RESET: ~dvi_rst_n,
