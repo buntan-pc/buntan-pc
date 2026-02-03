@@ -157,6 +157,21 @@ module top (
     return popcnt4(val[3:0]) + popcnt4(val[7:4]);
   }
 
+  function trans_min(i_data: input bit<8>) -> bit<9> {
+    var n1 : u8;
+    var is_xnor : bit;
+    var o_data : bit<8>;
+
+    n1 = popcnt8(i_data);
+    is_xnor = n1 >= 5 || (n1 == 4 && i_data[0] == 0);
+
+    o_data[0] = i_data[0];
+    for i: u8 in 0..7 {
+      o_data[i+1] = is_xnor ^ (i_data[i+1] ^ o_data[i]);
+    }
+    return {~is_xnor, o_data};
+  }
+
   struct DCBalancingResult {
     data: bit<10>,
     cnt: i8,
@@ -197,6 +212,11 @@ module top (
     };
   }
 
+  var act_pixel_h : 'dvi bit<10>;
+  var act_pixel_v : 'dvi bit<10>;
+  assign act_pixel_h = pixel_h - DP.h.syn - DP.h.bp;
+  assign act_pixel_v = pixel_v - DP.v.syn - DP.v.bp;
+
   // TM(1111_1111) = 0_1111_1111
   // N0 = 0, N1 = 8
   // TM(0000_0000) = 1_0000_0000
@@ -207,8 +227,8 @@ module top (
       dcb[0].cnt = 0;
       dcb[1].cnt = 0;
     } else if data_enable {
-      dcb[0] = balance_dc(9'b1_0000_0000, dcb[0].cnt);
-      dcb[1] = balance_dc(9'b0_1111_1111, dcb[1].cnt);
+      dcb[0] = balance_dc(trans_min(act_pixel_h[9:2]), dcb[0].cnt);
+      dcb[1] = balance_dc(trans_min(act_pixel_v[7:0]), dcb[1].cnt);
     } else {
       dcb[0] = DCBalancingResult'{
         data: trans_max({state_v == DVIState::sync, state_h == DVIState::sync}),
