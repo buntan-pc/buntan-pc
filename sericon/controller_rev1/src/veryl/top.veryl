@@ -6,8 +6,6 @@ module top (
   clk_n: output 'dvi clock,
   data_p: output 'dvi logic[3],
   data_n: output 'dvi logic[3],
-  o_state_h: output 'dvi logic<2>,
-  o_state_v: output 'dvi logic<2>,
 ) {
   struct DVIParamsSingle {
     bp : u16, // back porch
@@ -99,11 +97,9 @@ module top (
   var pixel_h : 'dvi bit<11>; // 0～2047
   var next_pixel_h : 'dvi bit<11>;
   var state_h : 'dvi DVIState;
-  assign o_state_h = state_h;
 
   var pixel_v : 'dvi bit<10>; // 0～1023
   var state_v : 'dvi DVIState;
-  assign o_state_v = state_v;
 
   const pixels_per_line : u16 = DP.h.bp + DP.h.act + DP.h.fp + DP.h.syn;
   assign next_pixel_h = if pixel_h <: pixels_per_line - 1 ? pixel_h + 1 : 0;
