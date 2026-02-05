@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: MIT
+/*
+ * Copyright (c) 2026 Kota UCHIDA
+ */
+
 module DviOut (
   clk: input 'dvi clock,
   rst_n: input 'dvi reset_async_low,

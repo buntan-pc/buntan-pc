@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: MIT
+/*
+ * Copyright (c) 2026 Kota UCHIDA
+ */
+
 module top (
   sys_clk: input clock,
   rst_n_raw: input reset_async_low,
