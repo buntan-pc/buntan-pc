@@ -1,0 +1,119 @@
+module DviOut (
+  clk: input 'dvi clock,
+  rst_n: input 'dvi reset_async_low,
+
+  i_color: input 'dvi bit<3, 8>,
+  i_de:    input 'dvi logic,
+  i_hsync: input 'dvi logic,
+  i_vsync: input 'dvi logic,
+  o_data: output 'dvi bit<10>[3],
+) {
+  struct VideoSignal {
+    color: bit<3, 8>,
+    de:    logic,
+    hsync: logic,
+    vsync: logic,
+  }
+
+  var sig_buf: 'dvi VideoSignal;
+  always_ff (clk) {
+    sig_buf.color = i_color;
+    sig_buf.de = i_de;
+    sig_buf.hsync = i_hsync;
+    sig_buf.vsync = i_vsync;
+  }
+
+  function popcnt2(val: input bit<2>) -> u8 {
+    return case val {
+      2'b00  : 0,
+      2'b01  : 1,
+      2'b10  : 1,
+      default: 2,
+    };
+  }
+  function popcnt4(val: input bit<4>) -> u8 {
+    return popcnt2(val[1:0]) + popcnt2(val[3:2]);
+  }
+  function popcnt8(val: input bit<8>) -> u8 {
+    return popcnt4(val[3:0]) + popcnt4(val[7:4]);
+  }
+
+  function trans_min(i_data: input bit<8>) -> bit<9> {
+    var n1 : u8;
+    var is_xnor : bit;
+    var o_data : bit<8>;
+
+    n1 = popcnt8(i_data);
+    is_xnor = n1 >= 5 || (n1 == 4 && i_data[0] == 0);
+
+    o_data[0] = i_data[0];
+    for i: u8 in 0..7 {
+      o_data[i+1] = is_xnor ^ (i_data[i+1] ^ o_data[i]);
+    }
+    return {~is_xnor, o_data};
+  }
+
+  struct DCBalancingResult {
+    data: bit<10>,
+    cnt: i8,
+  }
+  function balance_dc(data: input bit<9>, cnt: input i8) -> DCBalancingResult {
+    var n1 : u8;
+    var n0 : u8;
+    var n1n0 : i8;
+
+    n1 = popcnt8(data[7:0]);
+    n0 = 8 - n1;
+    n1n0 = (n1 as i8) - (n0 as i8);
+
+    if cnt == 0 || n1n0 == 0 {
+      return DCBalancingResult'{
+        data: {~data[8], data[8], if data[8] ? data[7:0] : ~data[7:0]},
+        cnt : if data[8] ? cnt + n1n0 : cnt - n1n0,
+      };
+    } else if (cnt >: 0 && n1n0 >: 0) || (cnt <: 0 && n1n0 <: 0) {
+      return DCBalancingResult'{
+        data: {1'b1, data[8], ~data[7:0]},
+        cnt : cnt + (data[8] << 1) - n1n0,
+      };
+    } else {
+      return DCBalancingResult'{
+        data: {1'b0, data[8], data[7:0]},
+        cnt : cnt - (data[8] << 1) + n1n0,
+      };
+    }
+  }
+
+  function trans_max(data: input bit<2>) -> bit<10> {
+    return case data {
+      2'b00  : 10'b0010101011,
+      2'b01  : 10'b1101010100,
+      2'b10  : 10'b0010101010,
+      default: 10'b1101010101,
+    };
+  }
+
+  var dcb : 'dvi DCBalancingResult[3];
+  always_ff (clk, rst_n) {
+    if_reset {
+      for i: u8 in 0..3 {
+        dcb[i].cnt = 0;
+      }
+    } else if sig_buf.de {
+      for i: u8 in 0..3 {
+        dcb[i] = balance_dc(trans_min(sig_buf.color[i]), dcb[i].cnt);
+      }
+    } else {
+      dcb[0] = DCBalancingResult'{
+        data: trans_max({sig_buf.vsync, sig_buf.hsync}),
+        cnt: 0,
+      };
+      dcb[1] = DCBalancingResult'{data: trans_max(2'b00), cnt: 0};
+      dcb[2] = DCBalancingResult'{data: trans_max(2'b00), cnt: 0};
+    }
+  }
+
+  for i in 0..3: gen_data_assign {
+    assign o_data[i] = dcb[i].data;
+  }
+}

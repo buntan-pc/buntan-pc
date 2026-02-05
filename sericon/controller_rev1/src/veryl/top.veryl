@@ -93,16 +93,16 @@ module top (
         LSREN: "true"
       ) (
         Q: data_ser[i],
-        D0: dcb[i].data[0],
-        D1: dcb[i].data[1],
-        D2: dcb[i].data[2],
-        D3: dcb[i].data[3],
-        D4: dcb[i].data[4],
-        D5: dcb[i].data[5],
-        D6: dcb[i].data[6],
-        D7: dcb[i].data[7],
-        D8: dcb[i].data[8],
-        D9: dcb[i].data[9],
+        D0: dvi_out_data[i][0],
+        D1: dvi_out_data[i][1],
+        D2: dvi_out_data[i][2],
+        D3: dvi_out_data[i][3],
+        D4: dvi_out_data[i][4],
+        D5: dvi_out_data[i][5],
+        D6: dvi_out_data[i][6],
+        D7: dvi_out_data[i][7],
+        D8: dvi_out_data[i][8],
+        D9: dvi_out_data[i][9],
         FCLK: fclk,
         PCLK: pclk,
         RESET: ~dvi_rst_n,
@@ -195,76 +195,6 @@ module top (
   var data_enable : 'dvi bit;
   assign data_enable = state_h == DVIState::active && state_v == DVIState::active;
 
-  function popcnt2(val: input bit<2>) -> u8 {
-    return case val {
-      2'b00  : 0,
-      2'b01  : 1,
-      2'b10  : 1,
-      default: 2,
-    };
-  }
-  function popcnt4(val: input bit<4>) -> u8 {
-    return popcnt2(val[1:0]) + popcnt2(val[3:2]);
-  }
-  function popcnt8(val: input bit<8>) -> u8 {
-    return popcnt4(val[3:0]) + popcnt4(val[7:4]);
-  }
-
-  function trans_min(i_data: input bit<8>) -> bit<9> {
-    var n1 : u8;
-    var is_xnor : bit;
-    var o_data : bit<8>;
-
-    n1 = popcnt8(i_data);
-    is_xnor = n1 >= 5 || (n1 == 4 && i_data[0] == 0);
-
-    o_data[0] = i_data[0];
-    for i: u8 in 0..7 {
-      o_data[i+1] = is_xnor ^ (i_data[i+1] ^ o_data[i]);
-    }
-    return {~is_xnor, o_data};
-  }
-
-  struct DCBalancingResult {
-    data: bit<10>,
-    cnt: i8,
-  }
-  function balance_dc(data: input bit<9>, cnt: input i8) -> DCBalancingResult {
-    var n1 : u8;
-    var n0 : u8;
-    var n1n0 : i8;
-
-    n1 = popcnt8(data[7:0]);
-    n0 = 8 - n1;
-    n1n0 = (n1 as i8) - (n0 as i8);
-
-    if cnt == 0 || n1n0 == 0 {
-      return DCBalancingResult'{
-        data: {~data[8], data[8], if data[8] ? data[7:0] : ~data[7:0]},
-        cnt : if data[8] ? cnt + n1n0 : cnt - n1n0,
-      };
-    } else if (cnt >: 0 && n1n0 >: 0) || (cnt <: 0 && n1n0 <: 0) {
-      return DCBalancingResult'{
-        data: {1'b1, data[8], ~data[7:0]},
-        cnt : cnt + (data[8] << 1) - n1n0,
-      };
-    } else {
-      return DCBalancingResult'{
-        data: {1'b0, data[8], data[7:0]},
-        cnt : cnt - (data[8] << 1) + n1n0,
-      };
-    }
-  }
-
-  function trans_max(data: input bit<2>) -> bit<10> {
-    return case data {
-      2'b00  : 10'b0010101011,
-      2'b01  : 10'b1101010100,
-      2'b10  : 10'b0010101010,
-      default: 10'b1101010101,
-    };
-  }
-
   const PIXEL_WIDTH: u8 = 10;
   var act_pixel_h : 'dvi bit<PIXEL_WIDTH>;
   var act_pixel_v : 'dvi bit<PIXEL_WIDTH>;
@@ -320,10 +250,8 @@ module top (
     font_buf = font_mem[font_addr];
   }
 
-  var pixel_color: 'dvi bit<8>[3];
-  assign pixel_color[0] /* B */ = if font_buf[FONT_W - 1 - font_xpos] ? 8'h66 : 8'h00;
-  assign pixel_color[1] /* G */ = if font_buf[FONT_W - 1 - font_xpos] ? 8'hFF : 8'h00;
-  assign pixel_color[2] /* R */ = 0;
+  var pixel_color: 'dvi bit<3, 8>; // B, G, R
+  assign pixel_color = if font_buf[FONT_W - 1 - font_xpos] ? 24'h66FF00 : '0;
 
   always_ff (pclk, dvi_rst_n) {
     if_reset {
@@ -338,27 +266,18 @@ module top (
     $readmemh("../scrn_init.hex", scrn_mem);
   }
 
-  var dcb : 'dvi DCBalancingResult[3];
-  always_ff (pclk, dvi_rst_n) {
-    if_reset {
-      for i: u8 in 0..3 {
-        dcb[i].cnt = 0;
-      }
-    } else if data_enable {
-      for i: u8 in 0..3 {
-        dcb[i] = balance_dc(trans_min(pixel_color[i]), dcb[i].cnt);
-      }
-    } else {
-      dcb[0] = DCBalancingResult'{
-        data: trans_max({state_v == DVIState::sync, state_h == DVIState::sync}),
-        cnt: 0,
-      };
-      dcb[1] = DCBalancingResult'{data: trans_max(2'b00), cnt: 0};
-      dcb[2] = DCBalancingResult'{data: trans_max(2'b00), cnt: 0};
-    }
-  }
-
+  var dvi_out_data: 'dvi bit<10>[3];
+  inst dvi_out: DviOut (
+    clk: pclk,
+    rst_n: dvi_rst_n,
+    i_color: pixel_color,
+    i_de: data_enable,
+    i_hsync: state_h == DVIState::sync,
+    i_vsync: state_v == DVIState::sync,
+    o_data: dvi_out_data,
+  );
 }
+
 
 /*
 画面制御のパラメタ（CVT-RBv2を採用）

@@ -6,7 +6,8 @@ TARGET := impl/pnr/controller.fs
 SRCS := src/port.cst \
 	src/timing.sdc \
 	src/ip/gowin_rpll_fclk/gowin_rpll_fclk.v \
-	src/veryl/top.veryl
+	src/veryl/top.veryl \
+	src/veryl/dvi.veryl
 
 VERYL_SRCS := $(filter %.veryl,$(SRCS))
 
