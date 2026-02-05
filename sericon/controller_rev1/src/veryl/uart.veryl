@@ -1,0 +1,175 @@
+// SPDX-License-Identifier: MIT
+/*
+ * Copyright (c) 2026 Kota UCHIDA
+ */
+
+module Uart#(
+  param CLOCK_HZ:  u32 = 27_000_000,
+  param BAUD:      u32 = 9600,
+  param DATA_BITS: u8  = 8,
+  param TIM_WIDTH: u8  = $clog2(CLOCK_HZ / BAUD),
+) (
+  clk:      input  clock,
+  rst:      input  reset,
+  rx:       input  logic, // UART RX signal
+  tx:       output logic, // UART TX signal
+  rx_data:  output bit<DATA_BITS>,
+  tx_data:  input  bit<DATA_BITS>,
+  rd:       input  bit, // read rx buffer
+  rx_full:  output bit, // rx buffer full
+  wr:       input  bit, // write tx buffer
+  tx_ready: output bit, // ready to transmit
+) {
+
+  const BIT_PERIOD: u32 = CLOCK_HZ / BAUD;
+
+  var rx1buf: logic; // 非同期信号 rx を同期するためのレジスタ
+  var rx_filter: logic<4>;
+  var rx_shift: logic<DATA_BITS>; // シフトレジスタ
+  var tx_shift: logic<DATA_BITS>; // シフトレジスタ
+  var rx_bit_cnt: bit<3>; // 受信済みビット数
+  var tx_bit_cnt: bit<3>; // 送信済みビット数
+  var rxtim_rst: bit;
+  var txtim_rst: bit;
+
+  // 受信状態
+  enum state_t: bit<2> {
+    WAIT,  // スタートビットを待っている
+    START, // スタートビットを送受信している
+    DATA,  // データビットを送受信している
+    STOP   // ストップビットを送受信している
+  }
+  var rx_state: state_t;
+  var tx_state: state_t;
+
+  var rxtim_full: bit; // タイマが次のクロックでオーバーフローするなら 1
+  var txtim_full: bit;
+  var rxtim_half: bit;
+  var txtim_half: bit;
+
+  // 1 ビットのタイミングを作り出すタイマ
+  inst rxtim: $sv::simple_timer #(
+    PERIOD: BIT_PERIOD,
+    BITS: TIM_WIDTH
+  ) (
+    rst: rxtim_rst,
+    clk: clk,
+    half: rxtim_half,
+    full: rxtim_full
+  );
+  inst txtim: $sv::simple_timer #(
+    PERIOD: BIT_PERIOD,
+    BITS: TIM_WIDTH
+  ) (
+    rst: txtim_rst,
+    clk: clk,
+    half: txtim_half,
+    full: txtim_full
+  );
+
+  assign tx = tx_signal(tx_state, tx_shift[0]);
+  assign rxtim_rst = rst || rx_state == state_t::WAIT;
+  assign txtim_rst = rst || tx_state == state_t::WAIT;
+  assign tx_ready = ~wr && tx_state == state_t::WAIT;
+
+  always_ff (clk) {
+    rx_filter = {rx, rx_filter[3:1]};
+  }
+
+  always_ff (clk, rst) {
+    if_reset {
+      rx1buf = 1;
+    } else if (rx_filter[3] & rx_filter[2] & rx_filter[1] & rx_filter[0]) == 1 {
+      rx1buf = 1;
+    } else if (rx_filter[3] | rx_filter[2] | rx_filter[1] | rx_filter[0]) == 0 {
+      rx1buf = 0;
+    }
+  }
+
+  always_ff (clk, rst) {
+    if_reset {
+      rx_state = state_t::WAIT;
+    } else if rx_state == state_t::WAIT && ~rx1buf {
+      rx_state = state_t::START;
+    } else if rx_state == state_t::START && rxtim_full {
+      rx_state = state_t::DATA;
+    } else if rx_state == state_t::DATA && rxtim_full && rx_bit_cnt == DATA_BITS-1 {
+      rx_state = state_t::STOP;
+    } else if rx_state == state_t::STOP && rxtim_half {
+      rx_state = state_t::WAIT; // ストップビットだけは half で受信を終える
+    }
+  }
+
+  always_ff (clk, rst) {
+    if_reset {
+      tx_state = state_t::WAIT;
+    } else if tx_state == state_t::WAIT && wr {
+      tx_state = state_t::START;
+    } else if tx_state == state_t::START && txtim_full {
+      tx_state = state_t::DATA;
+    } else if tx_state == state_t::DATA && txtim_full && tx_bit_cnt == DATA_BITS-1 {
+      tx_state = state_t::STOP;
+    } else if tx_state == state_t::STOP && txtim_full {
+      tx_state = state_t::WAIT;
+    }
+  }
+
+  always_ff (clk, rst) {
+    if_reset {
+      rx_bit_cnt = 0;
+    } else if rx_state == state_t::WAIT {
+      rx_bit_cnt = 0;
+    } else if rx_state == state_t::DATA && rxtim_full {
+      rx_bit_cnt = rx_bit_cnt + 1;
+    }
+  }
+
+  always_ff (clk, rst) {
+    if_reset {
+      tx_bit_cnt = 0;
+    } else if tx_state == state_t::WAIT {
+      tx_bit_cnt = 0;
+    } else if tx_state == state_t::DATA && txtim_full {
+      tx_bit_cnt = tx_bit_cnt + 1;
+    }
+  }
+
+  always_ff (clk, rst) {
+    if_reset {
+      rx_shift = 0;
+    } else if rx_state == state_t::DATA && rxtim_half {
+      rx_shift = {rx1buf, rx_shift[DATA_BITS-1:1]};
+    }
+  }
+
+  always_ff (clk, rst) {
+    if_reset {
+      rx_data = 0;
+      rx_full = 0;
+    } else if rx_state == state_t::STOP && rxtim_half {
+      rx_data = rx_shift;
+      rx_full = 1;
+    } else if rd {
+      rx_full = 0;
+    }
+  }
+
+  always_ff (clk, rst) {
+    if_reset {
+      tx_shift = 0;
+    } else if tx_state == state_t::WAIT && wr {
+      tx_shift = tx_data;
+    } else if tx_state == state_t::DATA && txtim_full {
+      tx_shift = {1'b0, tx_shift[DATA_BITS-1:1]};
+    }
+  }
+
+  function tx_signal(tx_state: input state_t, tx_lsb: input logic) -> logic {
+    return case tx_state {
+      state_t::WAIT:    1,
+      state_t::START:   0,
+      state_t::DATA:    tx_lsb,
+      default: 1, // STOP
+    };
+  }
+}
