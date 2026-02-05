@@ -20,13 +20,13 @@ module top (
   const CVT_RBv2 : DVIParams = DVIParams'{
     h : DVIParamsSingle'{
       bp : 40,
-      act: 1024,
+      act: SCRN_W_PIX,
       fp : 8,
       syn: 32,
     },
     v : DVIParamsSingle'{
       bp : 6,
-      act: 600,
+      act: SCRN_H_PIX,
       fp : 4,
       syn: 8,
     },
@@ -34,13 +34,13 @@ module top (
   const CVT : DVIParams = DVIParams'{
     h : DVIParamsSingle'{
       bp : 128,
-      act: 1024,
+      act: SCRN_W_PIX,
       fp : 32,
       syn: 96,
     },
     v : DVIParamsSingle'{
       bp : 8,
-      act: 600,
+      act: SCRN_H_PIX,
       fp : 3,
       syn: 10,
     },
@@ -93,16 +93,16 @@ module top (
         LSREN: "true"
       ) (
         Q: data_ser[i],
-        D0: dcb[if i == 0 ? 0 : 1].data[0],
-        D1: dcb[if i == 0 ? 0 : 1].data[1],
-        D2: dcb[if i == 0 ? 0 : 1].data[2],
-        D3: dcb[if i == 0 ? 0 : 1].data[3],
-        D4: dcb[if i == 0 ? 0 : 1].data[4],
-        D5: dcb[if i == 0 ? 0 : 1].data[5],
-        D6: dcb[if i == 0 ? 0 : 1].data[6],
-        D7: dcb[if i == 0 ? 0 : 1].data[7],
-        D8: dcb[if i == 0 ? 0 : 1].data[8],
-        D9: dcb[if i == 0 ? 0 : 1].data[9],
+        D0: dcb[i].data[0],
+        D1: dcb[i].data[1],
+        D2: dcb[i].data[2],
+        D3: dcb[i].data[3],
+        D4: dcb[i].data[4],
+        D5: dcb[i].data[5],
+        D6: dcb[i].data[6],
+        D7: dcb[i].data[7],
+        D8: dcb[i].data[8],
+        D9: dcb[i].data[9],
         FCLK: fclk,
         PCLK: pclk,
         RESET: ~dvi_rst_n,
@@ -265,32 +265,96 @@ module top (
     };
   }
 
-  var act_pixel_h : 'dvi bit<10>;
-  var act_pixel_v : 'dvi bit<10>;
+  const PIXEL_WIDTH: u8 = 10;
+  var act_pixel_h : 'dvi bit<PIXEL_WIDTH>;
+  var act_pixel_v : 'dvi bit<PIXEL_WIDTH>;
   assign act_pixel_h = pixel_h - DP.h.syn - DP.h.bp;
   assign act_pixel_v = pixel_v - DP.v.syn - DP.v.bp;
 
-  // TM(1111_1111) = 0_1111_1111
-  // N0 = 0, N1 = 8
-  // TM(0000_0000) = 1_0000_0000
-  // N0 = 8, N1 = 0
-  var dcb : 'dvi DCBalancingResult[2];
+  const FONT_W: u8 = 8;
+  const FONT_H: u8 = 16;
+  const SCRN_W_PIX: u16 = 1024;
+  const SCRN_H_PIX: u16 = 600;
+  const SCRN_W_CHAR: u16 = SCRN_W_PIX / FONT_W;
+  const SCRN_H_CHAR: u16 = SCRN_H_PIX / FONT_H;
+
+  var scrn_mem: 'dvi u8[SCRN_W_CHAR * SCRN_H_CHAR];
+  var scrn_buf: 'dvi u8;
+  var font_mem: 'dvi bit<FONT_W>[128 * FONT_H];
+  var font_buf: 'dvi bit<FONT_W>;
+
+  /* 信号タイミング (WaveDrom)
+
+  {signal: [
+    {name: 'pclk',          wave: 'p.......'},
+    {name: 'pixel_v',       wave: '=.......', data: ['{m, n}']},
+    {name: 'pixel_h[2:0]',  wave: '========', data: [3, 4, 5, 6, 7, 0, 1, 2]},
+    {name: '(pixel_h+3)>>3',wave: '=.=.....', data: ['k', 'k+1']},
+    {name: 'scrn_addr',     wave: '=.=.....', data: ['128*m+k', '128*m+k+1']},
+    {name: 'scrn_mem',      wave: '=..=....', data: ["'A'", "'B'"]},
+    {name: 'ld_scrn_buf',   wave: '0..10...'},
+    {name: 'scrn_buf',      wave: '=...=...', data: ["'A'", "'B'"]},
+    {name: 'font_addr',     wave: '=...=...', data: ["('A'<<4)+n", "('B'<<4)+n"]},
+    {name: 'font_mem',      wave: '=....=..', data: ['Aの行n', 'Bの行n']},
+  ]}
+
+   */
+
+  var font_xpos: 'dvi bit<$clog2(FONT_W)>;
+  var font_ypos: 'dvi bit<$clog2(FONT_H)>;
+  assign font_xpos = act_pixel_h[$clog2(FONT_W)-1:0];
+  assign font_ypos = act_pixel_v[$clog2(FONT_H)-1:0];
+
+  var scrn_addr: 'dvi bit<PIXEL_WIDTH - 4 + $clog2(SCRN_W_CHAR)>;
+  assign scrn_addr =
+    (act_pixel_v >> 4) << $clog2(SCRN_W_CHAR)
+    | (if state_h == DVIState::back_porch ? 0 : (act_pixel_h + 3) >> $clog2(FONT_W));
+
+  var ld_scrn_buf: 'dvi logic;
+  assign ld_scrn_buf = font_xpos == FONT_W - 2;
+
+  var font_addr: 'dvi bit<$clog2(128 * FONT_H)>;
+  assign font_addr = scrn_buf << $clog2(FONT_H) | font_ypos;
+
+  always_ff (pclk) {
+    font_buf = font_mem[font_addr];
+  }
+
+  var pixel_color: 'dvi bit<8>[3];
+  assign pixel_color[0] /* B */ = if font_buf[FONT_W - 1 - font_xpos] ? 8'h66 : 8'h00;
+  assign pixel_color[1] /* G */ = if font_buf[FONT_W - 1 - font_xpos] ? 8'hFF : 8'h00;
+  assign pixel_color[2] /* R */ = 0;
+
   always_ff (pclk, dvi_rst_n) {
     if_reset {
-      dcb[0].cnt = 0;
-      dcb[1].cnt = 0;
+      scrn_buf = 0;
+    } else if ld_scrn_buf {
+      scrn_buf = scrn_mem[scrn_addr];
+    }
+  }
+
+  initial {
+    $readmemh("../hankaku.hex", font_mem);
+    $readmemh("../scrn_init.hex", scrn_mem);
+  }
+
+  var dcb : 'dvi DCBalancingResult[3];
+  always_ff (pclk, dvi_rst_n) {
+    if_reset {
+      for i: u8 in 0..3 {
+        dcb[i].cnt = 0;
+      }
     } else if data_enable {
-      dcb[0] = balance_dc(trans_min(act_pixel_h[9:2]), dcb[0].cnt);
-      dcb[1] = balance_dc(trans_min(act_pixel_v[7:0]), dcb[1].cnt);
+      for i: u8 in 0..3 {
+        dcb[i] = balance_dc(trans_min(pixel_color[i]), dcb[i].cnt);
+      }
     } else {
       dcb[0] = DCBalancingResult'{
         data: trans_max({state_v == DVIState::sync, state_h == DVIState::sync}),
         cnt: 0,
       };
-      dcb[1] = DCBalancingResult'{
-        data: trans_max(2'b00),
-        cnt: 0,
-      };
+      dcb[1] = DCBalancingResult'{data: trans_max(2'b00), cnt: 0};
+      dcb[2] = DCBalancingResult'{data: trans_max(2'b00), cnt: 0};
     }
   }
 

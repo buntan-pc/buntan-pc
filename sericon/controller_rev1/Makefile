@@ -12,7 +12,7 @@ VERYL_SRCS := $(filter %.veryl,$(SRCS))
 
 all: $(TARGET)
 
-$(TARGET): $(SRCS) src/controller.f Makefile
+$(TARGET): $(SRCS) src/controller.f src/hankaku.hex src/scrn_init.hex Makefile
 	@./gw_sh.exe < syn-pnr.tcl 2>&1 | { \
 		err=0; \
 		while IFS= read -r line; do \
@@ -25,6 +25,9 @@ $(TARGET): $(SRCS) src/controller.f Makefile
 src/controller.f: $(VERYL_SRCS) Makefile
 	rm -f $@
 	cd src && veryl build
+
+src/hankaku.hex: src/hankaku.txt Makefile
+	./makefont.py -o $@ $<
 
 .PHONY: sram flash
 sram: $(TARGET) Makefile
