@@ -63,7 +63,7 @@ module top (
 
   assign onboard_led = if rst_n ? ~6'b000101 : '1;
 
-  var fclk : 'dvi clock;
+  var fclk : 'dvif clock;
   var pclk : 'dvi clock;
   var pll_lock : 'dvi logic;
 
@@ -75,16 +75,73 @@ module top (
     );
 
     assign dvi_rst_n = rst_n & pll_lock;
-  }
 
-  inst clkdiv: $sv::CLKDIV #(
-    DIV_MODE: "5",
-    GSREN: "false",
-  ) (
-    CLKOUT: pclk,
-    HCLKIN: fclk,
-    RESETN: dvi_rst_n,
-    CALIB: 0,
+    inst clkdiv: $sv::CLKDIV #(
+      DIV_MODE: "5",
+      GSREN: "false",
+    ) (
+      CLKOUT: pclk,
+      HCLKIN: fclk,
+      RESETN: dvi_rst_n,
+      CALIB: 0,
+    );
+
+    var data_ser : 'dvi logic[3];
+    for i in 0..3 :gen_oser {
+      inst data_oser : $sv::OSER10 #(
+        GSREN: "false",
+        LSREN: "true"
+      ) (
+        Q: data_ser[i],
+        D0: dcb[if i == 0 ? 0 : 1].data[0],
+        D1: dcb[if i == 0 ? 0 : 1].data[1],
+        D2: dcb[if i == 0 ? 0 : 1].data[2],
+        D3: dcb[if i == 0 ? 0 : 1].data[3],
+        D4: dcb[if i == 0 ? 0 : 1].data[4],
+        D5: dcb[if i == 0 ? 0 : 1].data[5],
+        D6: dcb[if i == 0 ? 0 : 1].data[6],
+        D7: dcb[if i == 0 ? 0 : 1].data[7],
+        D8: dcb[if i == 0 ? 0 : 1].data[8],
+        D9: dcb[if i == 0 ? 0 : 1].data[9],
+        FCLK: fclk,
+        PCLK: pclk,
+        RESET: ~dvi_rst_n,
+      );
+    }
+
+    var clk_ser : 'dvi logic;
+    inst clk_oser : $sv::OSER10 #(
+      GSREN: "false",
+      LSREN: "true"
+    ) (
+      Q: clk_ser,
+      D0: 1'b1,
+      D1: 1'b1,
+      D2: 1'b1,
+      D3: 1'b1,
+      D4: 1'b1,
+      D5: 1'b0,
+      D6: 1'b0,
+      D7: 1'b0,
+      D8: 1'b0,
+      D9: 1'b0,
+      FCLK: fclk,
+      PCLK: pclk,
+      RESET: ~dvi_rst_n,
+    );
+  } // unsafe cdc
+
+  for i in 0..3 :gen_lvds {
+    inst lvds_data : $sv::ELVDS_OBUF (
+      I: data_ser[i],
+      O: data_p[i],
+      OB: data_n[i],
+    );
+  }
+  inst lvds_clk : $sv::ELVDS_OBUF (
+    I: clk_ser,
+    O: clk_p,
+    OB: clk_n,
   );
 
   enum DVIState: bit<2> {
@@ -237,60 +294,6 @@ module top (
     }
   }
 
-  var data_ser : 'dvi logic[3];
-  for i in 0..3 :gen_oser {
-    inst data_oser : $sv::OSER10 #(
-      GSREN: "false",
-      LSREN: "true"
-    ) (
-      Q: data_ser[i],
-      D0: dcb[if i == 0 ? 0 : 1].data[0],
-      D1: dcb[if i == 0 ? 0 : 1].data[1],
-      D2: dcb[if i == 0 ? 0 : 1].data[2],
-      D3: dcb[if i == 0 ? 0 : 1].data[3],
-      D4: dcb[if i == 0 ? 0 : 1].data[4],
-      D5: dcb[if i == 0 ? 0 : 1].data[5],
-      D6: dcb[if i == 0 ? 0 : 1].data[6],
-      D7: dcb[if i == 0 ? 0 : 1].data[7],
-      D8: dcb[if i == 0 ? 0 : 1].data[8],
-      D9: dcb[if i == 0 ? 0 : 1].data[9],
-      FCLK: fclk,
-      PCLK: pclk,
-      RESET: ~dvi_rst_n,
-    );
-    inst lvds_data : $sv::ELVDS_OBUF (
-      I: data_ser[i],
-      O: data_p[i],
-      OB: data_n[i],
-    );
-  }
-
-  var clk_ser : 'dvi logic;
-  inst clk_oser : $sv::OSER10 #(
-    GSREN: "false",
-    LSREN: "true"
-  ) (
-    Q: clk_ser,
-    D0: 1'b1,
-    D1: 1'b1,
-    D2: 1'b1,
-    D3: 1'b1,
-    D4: 1'b1,
-    D5: 1'b0,
-    D6: 1'b0,
-    D7: 1'b0,
-    D8: 1'b0,
-    D9: 1'b0,
-    FCLK: fclk,
-    PCLK: pclk,
-    RESET: ~dvi_rst_n,
-  );
-
-  inst lvds_clk : $sv::ELVDS_OBUF (
-    I: clk_ser,
-    O: clk_p,
-    OB: clk_n,
-  );
 }
 
 /*
