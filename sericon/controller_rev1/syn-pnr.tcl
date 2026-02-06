@@ -9,6 +9,7 @@ set_option -use_sspi_as_gpio 1
 add_file "src/port.cst"
 add_file "src/timing.sdc"
 add_file "src/ip/gowin_rpll_fclk/gowin_rpll_fclk.v"
+add_file "../../cpu/simple_timer.sv"
 
 set flist [open src/controller.f r]
 while {[gets $flist line] >= 0} {
