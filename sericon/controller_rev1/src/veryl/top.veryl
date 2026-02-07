@@ -260,11 +260,28 @@ module top (
   var pixel_color: 'dvi bit<3, 8>; // B, G, R
   assign pixel_color = if font_buf[FONT_W - 1 - font_xpos] ? 24'h66FF00 : '0;
 
+  var scrn_wr_pos: 'dvi bit<$clog2(SCRN_W_CHAR * SCRN_H_CHAR)>;
+  var scrn_wr_valid: 'dvi bit;
+  var scrn_wr_ready: 'dvi bit;
+  var scrn_wr_buf: 'dvi bit<8>;
+
   always_ff (pclk, dvi_rst_n) {
     if_reset {
       scrn_buf = 0;
-    } else if ld_scrn_buf {
-      scrn_buf = scrn_mem[scrn_addr];
+      scrn_wr_pos = 0;
+      scrn_wr_ready = 0;
+    } else {
+      if scrn_wr_valid & scrn_wr_ready {
+        scrn_wr_ready = 0;
+      }
+
+      if ld_scrn_buf {
+        scrn_buf = scrn_mem[scrn_addr];
+      } else if scrn_wr_valid & ~scrn_wr_ready {
+        scrn_mem[scrn_wr_pos] = scrn_wr_buf;
+        scrn_wr_pos += 1;
+        scrn_wr_ready = 1;
+      }
     }
   }
 
@@ -299,7 +316,6 @@ module top (
     }
   }
 
-  var scrn_wr_pos: 'dvi bit<$clog2(SCRN_W_CHAR * SCRN_H_CHAR)>;
   var uart_rx_ack: 'dvi bit;
   var uart_rx_ack_dvi: 'dvi bit; // UART モジュールに対して受信完了を知らせる信号
 
@@ -307,18 +323,24 @@ module top (
     always_ff (pclk, dvi_rst_n) {
       if_reset {
         uart_rx_ack = 0;
-        scrn_wr_pos = 0;
-      } else if uart_rx_full_sync {
-        if uart_rx_ack {
-          uart_rx_ack_dvi = 1; // 受信後、1クロック経過してから受信完了を通知
-        } else {
-          uart_rx_ack = 1;
-          scrn_mem[scrn_wr_pos] = uart_rx_data; // UART からデータを受信
-          scrn_wr_pos += 1;
-        }
+        scrn_wr_valid = 0;
       } else {
-        uart_rx_ack = 0;
-        uart_rx_ack_dvi = 0; // uart_rx_full_sync が 0 になったことを確認し、受信完了信号をネゲート
+        if scrn_wr_valid & scrn_wr_ready {
+          scrn_wr_valid = 0;
+        }
+
+        if uart_rx_full_sync {
+          if uart_rx_ack {
+            uart_rx_ack_dvi = 1; // 受信後、1クロック経過してから受信完了を通知
+          } else {
+            uart_rx_ack = 1;
+            scrn_wr_buf = uart_rx_data;
+            scrn_wr_valid = 1;
+          }
+        } else {
+          uart_rx_ack = 0;
+          uart_rx_ack_dvi = 0; // uart_rx_full_sync が 0 になったことを確認し、受信完了信号をネゲート
+        }
       }
     }
   }
