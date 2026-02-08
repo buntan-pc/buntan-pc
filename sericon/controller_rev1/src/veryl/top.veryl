@@ -265,6 +265,9 @@ module top (
   var scrn_wr_ready: 'dvi bit;
   var scrn_wr_buf: 'dvi bit<8>;
 
+  var scrn_wr_pos_line: 'dvi bit<$clog2(SCRN_H_CHAR)>;
+  assign scrn_wr_pos_line = scrn_wr_pos >> $clog2(SCRN_W_CHAR);
+
   always_ff (pclk, dvi_rst_n) {
     if_reset {
       scrn_buf = 0;
@@ -278,9 +281,14 @@ module top (
       if ld_scrn_buf {
         scrn_buf = scrn_mem[scrn_addr];
       } else if scrn_wr_valid & ~scrn_wr_ready {
-        scrn_mem[scrn_wr_pos] = scrn_wr_buf;
-        scrn_wr_pos += 1;
         scrn_wr_ready = 1;
+
+        if scrn_wr_buf == 8'h0A {
+          scrn_wr_pos = (scrn_wr_pos_line + 1) << $clog2(SCRN_W_CHAR);
+        } else {
+          scrn_mem[scrn_wr_pos] = scrn_wr_buf;
+          scrn_wr_pos += 1;
+        }
       }
     }
   }
@@ -347,7 +355,6 @@ module top (
 
   initial {
     $readmemh("../hankaku.hex", font_mem);
-    $readmemh("../scrn_init.hex", scrn_mem);
   }
 
   var dvi_out_data: 'dvi bit<10>[3];
