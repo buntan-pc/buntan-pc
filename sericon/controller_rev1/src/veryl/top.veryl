@@ -68,7 +68,8 @@ module top (
     o_d: rst_n,
   );
 
-  assign onboard_led = if rst_n ? ~6'b000101 : '1;
+  var wr_buf_differ: bit;
+  assign onboard_led = if rst_n ? ~{wr_buf_differ, 5'b000101} : '1;
 
   var fclk : 'dvif clock;
   var pclk : 'dvi clock;
@@ -315,23 +316,28 @@ module top (
     tx_ready: uart_tx_ready,
   );
 
-  var uart_rx_full_sync: bit;
-  always_ff (sys_clk, rst_n) {
-    if_reset {
-      uart_rx_full_sync = 0;
-    } else {
-      uart_rx_full_sync = uart_rx_full;
+  var uart_rx_full_sync: 'dvi bit;
+  unsafe (cdc) {
+    always_ff (pclk, dvi_rst_n) {
+      if_reset {
+        uart_rx_full_sync = 0;
+      } else {
+        uart_rx_full_sync = uart_rx_full;
+      }
     }
   }
 
   var uart_rx_ack: 'dvi bit;
   var uart_rx_ack_dvi: 'dvi bit; // UART モジュールに対して受信完了を知らせる信号
+  var uart_rx_data_dvi: 'dvi bit<8>;
+  var uart_rx_full_dvi: 'dvi bit;
 
   unsafe (cdc) {
     always_ff (pclk, dvi_rst_n) {
       if_reset {
         uart_rx_ack = 0;
         scrn_wr_valid = 0;
+        wr_buf_differ = 0;
       } else {
         if scrn_wr_valid & scrn_wr_ready {
           scrn_wr_valid = 0;
@@ -340,6 +346,9 @@ module top (
         if uart_rx_full_sync {
           if uart_rx_ack {
             uart_rx_ack_dvi = 1; // 受信後、1クロック経過してから受信完了を通知
+            if scrn_wr_buf != uart_rx_data {
+              wr_buf_differ = 1; // デバッグ用
+            }
           } else {
             uart_rx_ack = 1;
             scrn_wr_buf = uart_rx_data;
