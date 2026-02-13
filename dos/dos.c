@@ -4,7 +4,6 @@
  */
 #include "mmio.h"
 #include "delay.h"
-#include "lcd.h"
 
 char *shift_map = " !\x22#$%&'()*+<=>?" // 0x20: !"#$%&'()*+,-./
                   "0!\x22#$%&'()*+<=>?" // 0x30:0123456789:;<=>?
@@ -45,20 +44,16 @@ void uart_del_char() {
   uart_puts("\x1B[X");
 }
 
-// 1: use UART
-// 2: use LCD
-unsigned int io_mode;
-
 int getc() {
   while (1) {
-    if ((io_mode & 2) != 0 & (kbc_status & 0xff) != 0) {
+    if ((kbc_status & 0xff) != 0) {
       int c = kbc_queue;
       if (c >= 0x80) { // release
         continue;
       }
       return c;
     }
-    if ((io_mode & 1) != 0 & (uart3_flag & 0x01) != 0) {
+    if ((uart3_flag & 0x01) != 0) {
       break;
     }
   }
@@ -80,87 +75,16 @@ int getc() {
   }
 }
 
-int lcd_cursor_x;
-int lcd_cursor_y;
-char lcd_buf[60]; // 2～4 行目のバッファ
-
-void lcd_cursor_at(int row, int col) {
-  lcd_cmd(0x80 | ((((row & 1) << 6) | (row >> 1) * 20) + col));
-}
-
-void lcd_cursor_set() {
-  lcd_cursor_at(lcd_cursor_y, lcd_cursor_x);
-}
-
 void putc(unsigned int c) {
-  if (io_mode & 1) {
-    if (c <= 0x7e) {
-      uart_putc(c);
-    } else if (c <= 0x7ff) {
-      uart_putc(0xc0 | (c >> 6));
-      uart_putc(0x80 | (c & 0x3f));
-    } else {
-      uart_putc(0xe0 | (c >> 12));
-      uart_putc(0x80 | ((c >> 6) & 0x3f));
-      uart_putc(0x80 | (c & 0x3f));
-    }
-  }
-
-  if (io_mode & 2) {
-    switch (c) {
-    case '\b':
-      if (lcd_cursor_x > 0) {
-        --lcd_cursor_x;
-        lcd_cursor_set();
-      }
-      break;
-    case '\n':
-      if (lcd_cursor_y == 0) {
-        ++lcd_cursor_y;
-      } else if (lcd_cursor_y < 3) {
-        char *line_buf = lcd_buf + 20*(lcd_cursor_y - 1);
-        while (lcd_cursor_x < 20) {
-          line_buf[lcd_cursor_x++] = ' ';
-        }
-        ++lcd_cursor_y;
-      } else {
-        // スクロール
-        lcd_cmd(0x80);
-        for (int row = 0; row < 3; ++row) {
-          char *line_buf = lcd_buf + 20*row;
-          lcd_cursor_at(row, 0);
-          for (int i = 0; i < 20; ++i) {
-            lcd_putc(*line_buf++);
-          }
-        }
-        for (int i = 0; i < 40; ++i) {
-          lcd_buf[i] = lcd_buf[i + 20];
-        }
-      }
-      lcd_cursor_x = 0;
-      lcd_cursor_set();
-      {
-        char *line_buf = lcd_buf + 20*(lcd_cursor_y - 1);
-        for (int i = 0; i < 20; ++i) {
-          *line_buf++ = ' ';
-          lcd_putc(' ');
-        }
-      }
-      lcd_cursor_set();
-      break;
-    default:
-      if (lcd_cursor_x < 20) {
-        if (c == 0x2192) {
-          c = 0x7e;
-        } else if (c == 0x2190) {
-          c = 0x7f;
-        }
-        if (lcd_cursor_y >= 1) {
-          lcd_buf[20*(lcd_cursor_y - 1) + lcd_cursor_x++] = c;
-        }
-        lcd_putc(c);
-      }
-    }
+  if (c <= 0x7e) {
+    uart_putc(c);
+  } else if (c <= 0x7ff) {
+    uart_putc(0xc0 | (c >> 6));
+    uart_putc(0x80 | (c & 0x3f));
+  } else {
+    uart_putc(0xe0 | (c >> 12));
+    uart_putc(0x80 | ((c >> 6) & 0x3f));
+    uart_putc(0x80 | (c & 0x3f));
   }
 }
 
@@ -178,16 +102,10 @@ void putsn(char *s, int n) {
 
 void cursor_at_col(int col) {
   uart_cursor_at_col(col);
-
-  lcd_cursor_x = col;
-  lcd_cursor_set();
 }
 
 void del_char() {
   uart_del_char();
-
-  lcd_putc(' ');
-  lcd_cursor_set();
 }
 
 void assert_cs() {
@@ -1205,17 +1123,6 @@ void proc_cmd(char *cmd, char *block_buf, int (*app_main)(), char *app_dmem) {
     rm_file(cmd + 3, block_buf);
   } else if (strncmp(cmd, "hex ", 4) == 0) {
     load_hex_by_filename(app_main, block_buf, cmd + 4);
-  } else if (strncmp(cmd, "iomode", 7) == 0) {
-    char buf[4];
-    int2hex(io_mode, buf, 4);
-    putsn(buf, 4);
-    putc('\n');
-  } else if (strncmp(cmd, "iomode ", 7) == 0) {
-    char *p = cmd + 7;
-    io_mode = 0;
-    while (*p) {
-      io_mode = (io_mode << 4) | chartoi(*p++);
-    }
   } else {
     char *argv[8];
     int argc = build_argv(cmd, argv, 8);
@@ -1246,8 +1153,6 @@ unsigned int find_free_cluster(unsigned int *block_buf) {
 }
 
 int main() {
-  io_mode = 3;
-
   int i;
   unsigned int block_len;
   char buf[5];
@@ -1256,7 +1161,6 @@ int main() {
   unsigned char *app_dmem = 0x2000;
   char block_buf[512];
 
-  lcd_init();
   puts("BuntanPC DOS");
   putc('\n');
 

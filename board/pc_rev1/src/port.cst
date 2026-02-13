@@ -31,6 +31,11 @@ IO_PORT "uart3_rx" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
 IO_LOC "uart3_tx" 17;
 IO_PORT "uart3_tx" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
 
+IO_LOC "uart3b_rx" 49;
+IO_PORT "uart3b_rx" IO_TYPE=LVCMOS33 PULL_MODE=UP;
+IO_LOC "uart3b_tx" 48;
+IO_PORT "uart3b_tx" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+
 IO_LOC "key_col_n[0]" 79;
 IO_LOC "key_col_n[1]" 80;
 IO_LOC "key_col_n[2]" 81;
@@ -73,21 +78,6 @@ IO_PORT "tf_cs"   IO_TYPE=LVCMOS33;
 IO_PORT "tf_sclk" IO_TYPE=LVCMOS33;
 IO_PORT "tf_mosi" IO_TYPE=LVCMOS33;
 IO_PORT "tf_miso" IO_TYPE=LVCMOS33;
-
-IO_LOC "lcd_e"     76;
-IO_LOC "lcd_rw"    77;
-IO_LOC "lcd_rs"    63;
-IO_LOC "lcd_db[7]" 32;
-IO_LOC "lcd_db[6]" 31;
-IO_LOC "lcd_db[5]" 49;
-IO_LOC "lcd_db[4]" 48;
-IO_PORT "lcd_e"     IO_TYPE=LVCMOS33;
-IO_PORT "lcd_rw"    IO_TYPE=LVCMOS33;
-IO_PORT "lcd_rs"    IO_TYPE=LVCMOS33;
-IO_PORT "lcd_db[7]" IO_TYPE=LVCMOS33;
-IO_PORT "lcd_db[6]" IO_TYPE=LVCMOS33;
-IO_PORT "lcd_db[5]" IO_TYPE=LVCMOS33;
-IO_PORT "lcd_db[4]" IO_TYPE=LVCMOS33;
 
 IO_LOC "adc_cmp"     55;
 IO_LOC "adc_sh_ctl"  56;

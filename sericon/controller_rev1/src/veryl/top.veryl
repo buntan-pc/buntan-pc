@@ -258,9 +258,6 @@ module top (
     font_buf = font_mem[font_addr];
   }
 
-  var pixel_color: 'dvi bit<3, 8>; // B, G, R
-  assign pixel_color = if font_buf[FONT_W - 1 - font_xpos] ? 24'h66FF00 : '0;
-
   var scrn_wr_pos: 'dvi bit<$clog2(SCRN_W_CHAR * SCRN_H_CHAR)>;
   var scrn_wr_valid: 'dvi bit;
   var scrn_wr_ready: 'dvi bit;
@@ -285,7 +282,11 @@ module top (
         scrn_wr_ready = 1;
 
         if scrn_wr_buf == 8'h0A {
-          scrn_wr_pos = (scrn_wr_pos_line + 1) << $clog2(SCRN_W_CHAR);
+          if scrn_wr_pos_line <: SCRN_H_CHAR - 1 {
+            scrn_wr_pos = (scrn_wr_pos_line + 1) << $clog2(SCRN_W_CHAR);
+          } else {
+            scrn_wr_pos = 0; // 本来は画面をスクロールさせたいが、とりあえず先頭行に戻しておく
+          }
         } else {
           scrn_mem[scrn_wr_pos] = scrn_wr_buf;
           scrn_wr_pos += 1;
@@ -365,6 +366,24 @@ module top (
   initial {
     $readmemh("../hankaku.hex", font_mem);
   }
+
+  var hide_pixel: 'dvi bit;
+  assign hide_pixel = (
+      FONT_H * (scrn_wr_pos_line + 1) <= act_pixel_v &
+      act_pixel_v <: FONT_H * (scrn_wr_pos_line + 2)
+    ) // 現在 UART から受信した文字を書き込んでいる行の次の行
+    | (
+      FONT_H * (scrn_wr_pos_line + 0) <= act_pixel_v &
+      act_pixel_v <: FONT_H * (scrn_wr_pos_line + 1) &
+      FONT_W * scrn_wr_pos[$clog2(SCRN_W_CHAR)-1:0] <= act_pixel_h
+    ); // 現在 UART から受信した文字を書き込んでいる列より後ろの列
+
+  var pixel_color: 'dvi bit<3, 8>; // B, G, R
+  assign pixel_color = switch {
+    hide_pixel:                       '0,
+    font_buf[FONT_W - 1 - font_xpos]: 24'h66FF00,
+    default:                          '0,
+  };
 
   var dvi_out_data: 'dvi bit<10>[3];
   inst dvi_out: DviOut (
