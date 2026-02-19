@@ -317,43 +317,43 @@ module top (
   );
 
   var uart_rx_full_sync: 'dvi bit;
+  var uart_rx_data_dvi: 'dvi bit<8>;
   unsafe (cdc) {
     always_ff (pclk, dvi_rst_n) {
       if_reset {
         uart_rx_full_sync = 0;
       } else {
         uart_rx_full_sync = uart_rx_full;
+        // 本来は 2 段以上の D-FF で同期すべきと言われているが、
+        // 1 段だけでも格段に安定度が向上したので、問題が出るまでは 1 段のままにする。
       }
     }
+    assign uart_rx_data_dvi = uart_rx_data;
   }
 
   var uart_rx_ack: 'dvi bit;
   var uart_rx_ack_dvi: 'dvi bit; // UART モジュールに対して受信完了を知らせる信号
-  var uart_rx_data_dvi: 'dvi bit<8>;
-  var uart_rx_full_dvi: 'dvi bit;
 
-  unsafe (cdc) {
-    always_ff (pclk, dvi_rst_n) {
-      if_reset {
-        uart_rx_ack = 0;
+  always_ff (pclk, dvi_rst_n) {
+    if_reset {
+      uart_rx_ack = 0;
+      scrn_wr_valid = 0;
+    } else {
+      if scrn_wr_valid & scrn_wr_ready {
         scrn_wr_valid = 0;
-      } else {
-        if scrn_wr_valid & scrn_wr_ready {
-          scrn_wr_valid = 0;
-        }
+      }
 
-        if uart_rx_full_sync {
-          if uart_rx_ack {
-            uart_rx_ack_dvi = 1; // 受信後、1クロック経過してから受信完了を通知
-          } else {
-            uart_rx_ack = 1;
-            scrn_wr_buf = uart_rx_data;
-            scrn_wr_valid = 1;
-          }
+      if uart_rx_full_sync {
+        if uart_rx_ack {
+          uart_rx_ack_dvi = 1; // 受信後、1クロック経過してから受信完了を通知
         } else {
-          uart_rx_ack = 0;
-          uart_rx_ack_dvi = 0; // uart_rx_full_sync が 0 になったことを確認し、受信完了信号をネゲート
+          uart_rx_ack = 1;
+          scrn_wr_buf = uart_rx_data_dvi;
+          scrn_wr_valid = 1;
         }
+      } else {
+        uart_rx_ack = 0;
+        uart_rx_ack_dvi = 0; // uart_rx_full_sync が 0 になったことを確認し、受信完了信号をネゲート
       }
     }
   }
@@ -391,17 +391,13 @@ module top (
     o_data: dvi_out_data,
   );
 
-
-  var uart_rx_ack_sys: bit;
   unsafe (cdc) {
-    assign uart_rx_ack_sys = uart_rx_ack_dvi;
-  }
-
-  always_ff (sys_clk, rst_n) {
-    if_reset {
-      uart_rd = 0;
-    } else {
-      uart_rd = uart_rx_ack_sys;
+    always_ff (sys_clk, rst_n) {
+      if_reset {
+        uart_rd = 0;
+      } else {
+        uart_rd = uart_rx_ack_dvi;
+      }
     }
   }
 }
