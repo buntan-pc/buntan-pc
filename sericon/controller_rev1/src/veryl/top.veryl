@@ -68,8 +68,7 @@ module top (
     o_d: rst_n,
   );
 
-  var wr_buf_differ: bit;
-  assign onboard_led = if rst_n ? ~{wr_buf_differ, 5'b000101} : '1;
+  assign onboard_led = if rst_n ? ~6'b000101 : '1;
 
   var fclk : 'dvif clock;
   var pclk : 'dvi clock;
@@ -338,7 +337,6 @@ module top (
       if_reset {
         uart_rx_ack = 0;
         scrn_wr_valid = 0;
-        wr_buf_differ = 0;
       } else {
         if scrn_wr_valid & scrn_wr_ready {
           scrn_wr_valid = 0;
@@ -347,9 +345,6 @@ module top (
         if uart_rx_full_sync {
           if uart_rx_ack {
             uart_rx_ack_dvi = 1; // 受信後、1クロック経過してから受信完了を通知
-            if scrn_wr_buf != uart_rx_data {
-              wr_buf_differ = 1; // デバッグ用
-            }
           } else {
             uart_rx_ack = 1;
             scrn_wr_buf = uart_rx_data;
