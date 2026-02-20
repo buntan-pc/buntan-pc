@@ -8,6 +8,7 @@ SRCS := src/port.cst \
 	src/ip/gowin_rpll_fclk/gowin_rpll_fclk.v \
 	src/veryl/top.veryl \
 	src/veryl/dvi.veryl \
+	src/veryl/scrn_mem.veryl \
 	../../cpu/simple_timer.sv
 
 VERYL_SRCS := $(filter %.veryl,$(SRCS))

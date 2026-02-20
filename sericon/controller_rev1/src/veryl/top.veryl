@@ -214,9 +214,8 @@ module top (
   const SCRN_H_PIX: u16 = 600;
   const SCRN_W_CHAR: u16 = SCRN_W_PIX / FONT_W;
   const SCRN_H_CHAR: u16 = SCRN_H_PIX / FONT_H;
+  const SCRN_ADDR_WIDTH: u8 = $clog2(SCRN_W_CHAR * SCRN_H_CHAR);
 
-  var scrn_mem: 'dvi u8[SCRN_W_CHAR * SCRN_H_CHAR];
-  var scrn_buf: 'dvi u8;
   var font_mem: 'dvi bit<FONT_W>[128 * FONT_H];
   var font_buf: 'dvi bit<FONT_W>;
 
@@ -228,11 +227,11 @@ module top (
     {name: 'pixel_h[2:0]',  wave: '========', data: [3, 4, 5, 6, 7, 0, 1, 2]},
     {name: '(pixel_h+3)>>3',wave: '=.=.....', data: ['k', 'k+1']},
     {name: 'scrn_addr',     wave: '=.=.....', data: ['128*m+k', '128*m+k+1']},
-    {name: 'scrn_mem',      wave: '=..=....', data: ["'A'", "'B'"]},
+    {name: 'scrn_data',     wave: '=..=....', data: ["'A'", "'B'"]},
     {name: 'ld_scrn_buf',   wave: '0..10...'},
     {name: 'scrn_buf',      wave: '=...=...', data: ["'A'", "'B'"]},
     {name: 'font_addr',     wave: '=...=...', data: ["('A'<<4)+n", "('B'<<4)+n"]},
-    {name: 'font_mem',      wave: '=....=..', data: ['Aの行n', 'Bの行n']},
+    {name: 'font_buf',      wave: '=....=..', data: ['Aの行n', 'Bの行n']},
   ]}
 
    */
@@ -242,61 +241,70 @@ module top (
   assign font_xpos = act_pixel_h[$clog2(FONT_W)-1:0];
   assign font_ypos = act_pixel_v[$clog2(FONT_H)-1:0];
 
-  var scrn_addr: 'dvi bit<$clog2(SCRN_W_CHAR * SCRN_H_CHAR)>;
+  var scrn_addr: 'dvi bit<SCRN_ADDR_WIDTH>;
   assign scrn_addr =
     (act_pixel_v >> 4) << $clog2(SCRN_W_CHAR)
     | (if state_h == DVIState::back_porch ? 0 : (act_pixel_h + 3) >> $clog2(FONT_W));
 
+  var scrn_buf: 'dvi bit<9>;
   var ld_scrn_buf: 'dvi logic;
   assign ld_scrn_buf = font_xpos == FONT_W - 2;
 
   var font_addr: 'dvi bit<$clog2(128 * FONT_H)>;
   assign font_addr = scrn_buf << $clog2(FONT_H) | font_ypos;
 
-  always_ff (pclk) {
-    font_buf = font_mem[font_addr];
-  }
+  var scrn_wen: bit;
+  var scrn_wr_pos: bit<SCRN_ADDR_WIDTH>;
+  var scrn_wr_data: bit<9>;
+  var scrn_data: 'dvi bit<9>;
+  inst scrn_mem: ScreenMemory#(
+    ADDR_WIDTH: SCRN_ADDR_WIDTH,
+  ) (
+    clk:  sys_clk,
+    rst:  rst_n,
+    wen:  scrn_wen,
+    addr: scrn_wr_pos,
+    din:  scrn_wr_data,
 
-  var scrn_wr_pos: 'dvi bit<$clog2(SCRN_W_CHAR * SCRN_H_CHAR)>;
-  var scrn_wr_valid: 'dvi bit;
-  var scrn_wr_ready: 'dvi bit;
-  var scrn_wr_buf: 'dvi bit<8>;
-
-  var scrn_wr_pos_line: 'dvi bit<$clog2(SCRN_H_CHAR)>;
-  assign scrn_wr_pos_line = scrn_wr_pos >> $clog2(SCRN_W_CHAR);
+    clk_dvi:  pclk,
+    rst_dvi:  dvi_rst_n,
+    addr_dvi: scrn_addr,
+    dout_dvi: scrn_data,
+  );
 
   always_ff (pclk, dvi_rst_n) {
     if_reset {
       scrn_buf = 0;
-      scrn_wr_pos = 0;
-      scrn_wr_ready = 0;
-    } else {
-      if scrn_wr_valid & scrn_wr_ready {
-        scrn_wr_ready = 0;
-      }
-
-      if ld_scrn_buf {
-        scrn_buf = scrn_mem[scrn_addr];
-      } else if scrn_wr_valid & ~scrn_wr_ready {
-        scrn_wr_ready = 1;
-
-        if scrn_wr_buf == 8'h0A {
-          if scrn_wr_pos_line <: SCRN_H_CHAR - 1 {
-            scrn_wr_pos = (scrn_wr_pos_line + 1) << $clog2(SCRN_W_CHAR);
-          } else {
-            scrn_wr_pos = 0; // 本来は画面をスクロールさせたいが、とりあえず先頭行に戻しておく
-          }
-        } else {
-          scrn_mem[scrn_wr_pos] = scrn_wr_buf;
-          scrn_wr_pos += 1;
-        }
-      }
+    } else if ld_scrn_buf {
+      scrn_buf = scrn_data;
     }
   }
 
+  always_ff (pclk) {
+    font_buf = font_mem[font_addr];
+  }
+
+  var scrn_marker_found_on_line: 'dvi bit;
+  always_ff (pclk, dvi_rst_n) {
+    if_reset {
+      scrn_marker_found_on_line = 0;
+    } else if state_h == DVIState::sync {
+      scrn_marker_found_on_line = 0;
+    } else if scrn_buf[8] {
+      scrn_marker_found_on_line = 1;
+    }
+  }
+
+  var scrn_wr_valid: 'dvi bit;
+  var scrn_wr_ready: 'dvi bit;
+  var scrn_wr_buf: 'dvi bit<8>;
+  var scrn_put_marker: 'dvi bit;
+
+  var scrn_wr_pos_line: bit<$clog2(SCRN_H_CHAR)>;
+  assign scrn_wr_pos_line = scrn_wr_pos >> $clog2(SCRN_W_CHAR);
+
   var uart_rx_data:  bit<8>;
   var uart_tx_data:  bit<8>;
-  var uart_rd:       bit;
   var uart_rx_full:  bit;
   var uart_wr:       bit;
   var uart_tx_ready: bit;
@@ -310,51 +318,46 @@ module top (
     tx:       uart_tx,
     rx_data:  uart_rx_data,
     tx_data:  uart_tx_data,
-    rd:       uart_rd,
+    rd:       uart_rx_full,
     rx_full:  uart_rx_full,
     wr:       uart_wr,
     tx_ready: uart_tx_ready,
   );
 
-  var uart_rx_full_sync: 'dvi bit;
-  var uart_rx_data_dvi: 'dvi bit<8>;
-  unsafe (cdc) {
-    always_ff (pclk, dvi_rst_n) {
-      if_reset {
-        uart_rx_full_sync = 0;
-      } else {
-        uart_rx_full_sync = uart_rx_full;
-        // 本来は 2 段以上の D-FF で同期すべきと言われているが、
-        // 1 段だけでも格段に安定度が向上したので、問題が出るまでは 1 段のままにする。
-      }
-    }
-    assign uart_rx_data_dvi = uart_rx_data;
+  enum ScrnRecvState: bit<2> {
+    idle,
+    recv,
+    mark,
   }
+  var scrn_recv_state: ScrnRecvState;
 
-  var uart_rx_ack: 'dvi bit;
-  var uart_rx_ack_dvi: 'dvi bit; // UART モジュールに対して受信完了を知らせる信号
-
-  always_ff (pclk, dvi_rst_n) {
+  always_ff (sys_clk, rst_n) {
     if_reset {
-      uart_rx_ack = 0;
-      scrn_wr_valid = 0;
-    } else {
-      if scrn_wr_valid & scrn_wr_ready {
-        scrn_wr_valid = 0;
-      }
+      scrn_wen = 0;
+      scrn_wr_data = 0;
+      scrn_recv_state = ScrnRecvState::idle;
+      scrn_wr_pos = 0;
+    } else if uart_rx_full {
+      scrn_wen = uart_rx_data != 8'h0A;
+      scrn_wr_data = {1'b0, uart_rx_data};
+      scrn_recv_state = ScrnRecvState::recv;
+    } else if scrn_recv_state == ScrnRecvState::recv {
+      scrn_wen = 1;
+      scrn_wr_data = {1'b1, 8'b0};
+      scrn_recv_state = ScrnRecvState::mark;
 
-      if uart_rx_full_sync {
-        if uart_rx_ack {
-          uart_rx_ack_dvi = 1; // 受信後、1クロック経過してから受信完了を通知
+      if uart_rx_data == 8'h0A {
+        if scrn_wr_pos_line <: SCRN_H_CHAR - 1 {
+          scrn_wr_pos = (scrn_wr_pos_line + 1) << $clog2(SCRN_W_CHAR);
         } else {
-          uart_rx_ack = 1;
-          scrn_wr_buf = uart_rx_data_dvi;
-          scrn_wr_valid = 1;
+          scrn_wr_pos = 0; // 本来は画面をスクロールさせたいが、とりあえず先頭行に戻しておく
         }
       } else {
-        uart_rx_ack = 0;
-        uart_rx_ack_dvi = 0; // uart_rx_full_sync が 0 になったことを確認し、受信完了信号をネゲート
+        scrn_wr_pos += 1;
       }
+    } else if scrn_recv_state == ScrnRecvState::mark {
+      scrn_wen = 0;
+      scrn_recv_state = ScrnRecvState::idle;
     }
   }
 
@@ -376,6 +379,7 @@ module top (
   var pixel_color: 'dvi bit<3, 8>; // B, G, R
   assign pixel_color = switch {
     hide_pixel:                       '0,
+    scrn_marker_found_on_line:        '0,
     font_buf[FONT_W - 1 - font_xpos]: 24'h66FF00,
     default:                          '0,
   };
@@ -390,16 +394,6 @@ module top (
     i_vsync: state_v == DVIState::sync,
     o_data: dvi_out_data,
   );
-
-  unsafe (cdc) {
-    always_ff (sys_clk, rst_n) {
-      if_reset {
-        uart_rd = 0;
-      } else {
-        uart_rd = uart_rx_ack_dvi;
-      }
-    }
-  }
 }
 
 

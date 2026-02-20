@@ -1,0 +1,52 @@
+// SPDX-License-Identifier: MIT
+/*
+ * Copyright (c) 2026 Kota UCHIDA
+ */
+
+module ScreenMemory #(
+  param ADDR_WIDTH: u8 = 13,
+) (
+  clk:  input  clock,
+  rst:  input  reset_async_low,
+  wen:  input  bit,
+  addr: input  bit<ADDR_WIDTH>,
+  din:  input  bit<9>,
+  dout: output bit<9>,
+
+  clk_dvi:  input  'dvi clock,
+  rst_dvi:  input  'dvi reset_async_low,
+  addr_dvi: input  'dvi bit<ADDR_WIDTH>,
+  dout_dvi: output 'dvi bit<9>,
+) {
+  const MEM_LEN: u32 = 1 << ADDR_WIDTH;
+  var mem: bit<9>[MEM_LEN];
+
+  always_ff (clk, rst) {
+    if_reset {
+      dout = 0;
+    } else if wen {
+      mem[addr] = din;
+    } else {
+      dout = mem[addr];
+    }
+  }
+
+  var dout_buf: 'dvi bit<9>;
+  unsafe (cdc) {
+    always_ff (clk_dvi, rst_dvi) {
+      if_reset {
+        dout_buf = 0;
+      } else {
+        dout_buf = mem[addr_dvi];
+      }
+    }
+  }
+
+  always_ff (clk_dvi, rst_dvi) {
+    if_reset {
+      dout_dvi = 0;
+    } else {
+      dout_dvi = dout_buf;
+    }
+  }
+}
