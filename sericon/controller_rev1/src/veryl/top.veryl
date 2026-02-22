@@ -13,6 +13,7 @@ module top (
   data_n: output 'dvi logic[3],
   uart_rx: input  bit,
   uart_tx: output bit,
+  dbg: output bit<16>,
 ) {
   struct DVIParamsSingle {
     bp : u16, // back porch
@@ -359,6 +360,13 @@ module top (
       scrn_wen = 0;
       scrn_recv_state = ScrnRecvState::idle;
     }
+  }
+
+  unsafe (cdc) {
+    assign dbg[15:12] = scrn_addr[3:0];
+    assign dbg[11:8] = act_pixel_h[3:0];
+    assign dbg[7] = ld_scrn_buf;
+    assign dbg[6:0] = scrn_data[6:0];
   }
 
   initial {
