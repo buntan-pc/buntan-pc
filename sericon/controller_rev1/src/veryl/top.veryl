@@ -256,6 +256,7 @@ module top (
 
   var scrn_wen: bit;
   var scrn_wr_pos: bit<SCRN_ADDR_WIDTH>;
+  var next_scrn_wr_pos: bit<SCRN_ADDR_WIDTH>;
   var scrn_wr_data: bit<9>;
   var scrn_data: 'dvi bit<9>;
   inst scrn_mem: ScreenMemory#(
@@ -329,34 +330,78 @@ module top (
     idle,
     recv,
     mark,
+    move, // カーソル移動処理
   }
   var scrn_recv_state: ScrnRecvState;
 
+  const ES_MAX_LEN: u8 = 8; // エスケープシーケンスの最長長さ
+  var es_buf: u8[ES_MAX_LEN];
+  var es_wr_pos: u8;
+
+  var csi_num: u16;
+  assign csi_num = switch {
+    es_wr_pos == 4 & es_buf[3] >= 8'h40: es_buf[2] - 8'h30,
+    es_wr_pos == 5 & es_buf[4] >= 8'h40: (es_buf[2] - 8'h30) * 10 + (es_buf[3] - 8'h30),
+    default: 0,
+  };
+
   always_ff (sys_clk, rst_n) {
     if_reset {
+      es_wr_pos = 0;
+
       scrn_wen = 0;
       scrn_wr_data = 0;
       scrn_recv_state = ScrnRecvState::idle;
       scrn_wr_pos = 0;
+      next_scrn_wr_pos = 0;
     } else if uart_rx_full {
-      scrn_wen = uart_rx_data != 8'h0A;
-      scrn_wr_data = {1'b0, uart_rx_data};
+      if es_wr_pos == 0 && uart_rx_data != 8'h1B {
+        scrn_wen = uart_rx_data != 8'h0A;
+        scrn_wr_data = {1'b0, uart_rx_data};
+      } else {
+        es_buf[es_wr_pos] = uart_rx_data;
+        es_wr_pos += 1;
+      }
       scrn_recv_state = ScrnRecvState::recv;
     } else if scrn_recv_state == ScrnRecvState::recv {
-      scrn_wen = 1;
-      scrn_wr_data = {1'b1, 8'b0};
-      scrn_recv_state = ScrnRecvState::mark;
+      if es_wr_pos == 0 {
+        scrn_wr_data = {1'b1, 8'b0};
+        scrn_recv_state = ScrnRecvState::mark;
 
-      if uart_rx_data == 8'h0A {
-        if scrn_wr_pos_line <: SCRN_H_CHAR - 1 {
-          scrn_wr_pos = (scrn_wr_pos_line + 1) << $clog2(SCRN_W_CHAR);
+        if uart_rx_data == 8'h0A {
+          if scrn_wr_pos_line <: SCRN_H_CHAR - 1 {
+            scrn_wr_pos = (scrn_wr_pos_line + 1) << $clog2(SCRN_W_CHAR);
+          } else {
+            scrn_wr_pos = 0; // 本来は画面をスクロールさせたいが、とりあえず先頭行に戻しておく
+          }
         } else {
-          scrn_wr_pos = 0; // 本来は画面をスクロールさせたいが、とりあえず先頭行に戻しておく
+          scrn_wr_pos += 1;
         }
-      } else {
-        scrn_wr_pos += 1;
+      } else { // エスケープシーケンスを受信中
+        if es_buf[0] == 8'h1B {
+          if es_wr_pos >= 2 && es_buf[1] == 8'h5B /* [ */ { // CSI
+            if (es_wr_pos == 4 && es_buf[3] == 8'h47 /* G */) ||
+               (es_wr_pos == 5 && es_buf[4] == 8'h47 /* G */) {
+              next_scrn_wr_pos = (scrn_wr_pos_line << $clog2(SCRN_W_CHAR)) + csi_num;
+              if scrn_wr_pos[$clog2(SCRN_W_CHAR)-1:0] <= csi_num {
+                // 現在位置より右に移動→マーカーを消す
+                scrn_wr_data = {1'b0, 8'b0};
+              } else {
+                // 現在位置より左に移動→マーカーを残す
+                scrn_wr_data = {1'b1, 8'b0};
+              }
+              scrn_wen = 1;
+              scrn_recv_state = ScrnRecvState::move;
+              es_wr_pos = 0;
+            }
+          }
+        }
       }
     } else if scrn_recv_state == ScrnRecvState::mark {
+      scrn_wen = 0;
+      scrn_recv_state = ScrnRecvState::idle;
+    } else if scrn_recv_state == ScrnRecvState::move {
+      scrn_wr_pos = next_scrn_wr_pos;
       scrn_wen = 0;
       scrn_recv_state = ScrnRecvState::idle;
     }

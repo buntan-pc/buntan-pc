@@ -31,22 +31,13 @@ module ScreenMemory #(
     }
   }
 
-  var dout_buf: 'dvi bit<9>;
   unsafe (cdc) {
     always_ff (clk_dvi, rst_dvi) {
       if_reset {
-        dout_buf = 0;
+        dout_dvi = 0;
       } else {
-        dout_buf = mem[addr_dvi];
+        dout_dvi = mem[addr_dvi];
       }
-    }
-  }
-
-  always_ff (clk_dvi, rst_dvi) {
-    if_reset {
-      dout_dvi = 0;
-    } else {
-      dout_dvi = dout_buf;
     }
   }
 }
