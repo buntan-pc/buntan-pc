@@ -257,7 +257,7 @@ module top (
   var scrn_wen: bit;
   var scrn_wr_pos: bit<SCRN_ADDR_WIDTH>;
   var next_scrn_wr_pos: bit<SCRN_ADDR_WIDTH>;
-  var scrn_wr_data: bit<9>;
+  var scrn_wr_data: bit<8>;
   var scrn_clear_cnt: u8;
   var scrn_data: 'dvi bit<9>;
   inst scrn_mem: ScreenMemory#(
@@ -267,7 +267,7 @@ module top (
     rst:  rst_n,
     wen:  scrn_wen,
     addr: scrn_wr_pos,
-    din:  scrn_wr_data,
+    din:  {0'b0, scrn_wr_data},
 
     clk_dvi:  pclk,
     rst_dvi:  dvi_rst_n,
@@ -355,7 +355,7 @@ module top (
           }
           default: {
             scrn_wen = 1;
-            scrn_wr_data = {1'b0, uart_rx_data};
+            scrn_wr_data = uart_rx_data;
           }
         }
       } else {
@@ -392,19 +392,13 @@ module top (
               if (es_wr_pos == 4 && es_buf[3] == 8'h47 /* G */) ||
                  (es_wr_pos == 5 && es_buf[4] == 8'h47 /* G */) {
                 next_scrn_wr_pos = (scrn_wr_pos_line << $clog2(SCRN_W_CHAR)) + csi_num;
-                if scrn_wr_pos[$clog2(SCRN_W_CHAR)-1:0] <= csi_num {
-                  // 現在位置より右に移動→マーカーを消す
-                  scrn_wr_data = {1'b0, 8'b0};
-                } else {
-                  // 現在位置より左に移動→マーカーを残す
-                  scrn_wr_data = {1'b1, 8'b0};
-                }
+                scrn_wr_data = 0;
                 scrn_wen = 1;
                 scrn_recv_state = ScrnRecvState::move;
                 es_wr_pos = 0;
               } else if es_wr_pos == 3 && es_buf[2] == 8'h58 /* X */ {
                 scrn_wen = 1;
-                scrn_wr_data = 9'b0;
+                scrn_wr_data = 0;
                 es_wr_pos = 0;
                 scrn_recv_state = ScrnRecvState::idle;
               } else if es_wr_pos == 3 && !(8'h30 <= es_buf[2] && es_buf[2] <= 8'h39) {
