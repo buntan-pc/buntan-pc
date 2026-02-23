@@ -346,13 +346,25 @@ module top (
       scrn_clear_cnt = 0;
     } else if uart_rx_full {
       if es_wr_pos == 0 && uart_rx_data != 8'h1B {
-        scrn_wen = uart_rx_data != 8'h0A;
-        scrn_wr_data = {1'b0, uart_rx_data};
+        case uart_rx_data {
+          8'h08: { // BS
+            scrn_wen = 0;
+          }
+          8'h0A: { // LF
+            scrn_wen = 0;
+          }
+          default: {
+            scrn_wen = 1;
+            scrn_wr_data = {1'b0, uart_rx_data};
+          }
+        }
       } else {
         es_buf[es_wr_pos] = uart_rx_data;
         es_wr_pos += 1;
       }
       scrn_recv_state = ScrnRecvState::recv;
+    } else if scrn_recv_state == ScrnRecvState::idle {
+      scrn_wen = 0;
     } else if scrn_recv_state == ScrnRecvState::recv {
       if es_wr_pos == 0 {
         if uart_rx_data == 8'h0A {
@@ -365,6 +377,9 @@ module top (
           scrn_wen = 1;
           scrn_clear_cnt = 127;
           scrn_recv_state = ScrnRecvState::clear;
+        } else if uart_rx_data == 8'h08 {
+          scrn_wr_pos -= 1;
+          scrn_recv_state = ScrnRecvState::idle;
         } else {
           scrn_wen = 0;
           scrn_wr_pos += 1;
@@ -372,19 +387,36 @@ module top (
         }
       } else { // エスケープシーケンスを受信中
         if es_buf[0] == 8'h1B {
-          if es_wr_pos >= 2 && es_buf[1] == 8'h5B /* [ */ { // CSI
-            if (es_wr_pos == 4 && es_buf[3] == 8'h47 /* G */) ||
-               (es_wr_pos == 5 && es_buf[4] == 8'h47 /* G */) {
-              next_scrn_wr_pos = (scrn_wr_pos_line << $clog2(SCRN_W_CHAR)) + csi_num;
-              if scrn_wr_pos[$clog2(SCRN_W_CHAR)-1:0] <= csi_num {
-                // 現在位置より右に移動→マーカーを消す
-                scrn_wr_data = {1'b0, 8'b0};
-              } else {
-                // 現在位置より左に移動→マーカーを残す
-                scrn_wr_data = {1'b1, 8'b0};
+          if es_wr_pos >= 2 {
+            if  es_buf[1] == 8'h5B /* [ */ { // CSI
+              if (es_wr_pos == 4 && es_buf[3] == 8'h47 /* G */) ||
+                 (es_wr_pos == 5 && es_buf[4] == 8'h47 /* G */) {
+                next_scrn_wr_pos = (scrn_wr_pos_line << $clog2(SCRN_W_CHAR)) + csi_num;
+                if scrn_wr_pos[$clog2(SCRN_W_CHAR)-1:0] <= csi_num {
+                  // 現在位置より右に移動→マーカーを消す
+                  scrn_wr_data = {1'b0, 8'b0};
+                } else {
+                  // 現在位置より左に移動→マーカーを残す
+                  scrn_wr_data = {1'b1, 8'b0};
+                }
+                scrn_wen = 1;
+                scrn_recv_state = ScrnRecvState::move;
+                es_wr_pos = 0;
+              } else if es_wr_pos == 3 && es_buf[2] == 8'h58 /* X */ {
+                scrn_wen = 1;
+                scrn_wr_data = 9'b0;
+                es_wr_pos = 0;
+                scrn_recv_state = ScrnRecvState::idle;
+              } else if es_wr_pos == 3 && !(8'h30 <= es_buf[2] && es_buf[2] <= 8'h39) {
+                // 未実装のエスケープシーケンス
+                scrn_wen = 0;
+                scrn_recv_state = ScrnRecvState::idle;
+                es_wr_pos = 0;
               }
-              scrn_wen = 1;
-              scrn_recv_state = ScrnRecvState::move;
+            } else {
+              // 未実装のエスケープシーケンス
+              scrn_wen = 0;
+              scrn_recv_state = ScrnRecvState::idle;
               es_wr_pos = 0;
             }
           }
