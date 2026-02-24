@@ -11,8 +11,10 @@ module top (
   clk_n: output 'dvi clock,
   data_p: output 'dvi logic[3],
   data_n: output 'dvi logic[3],
-  uart_rx: input  bit,
-  uart_tx: output bit,
+  uart3_rx:  input  bit,
+  uart3_tx:  output bit,
+  uart3b_rx: input  bit,
+  uart3b_tx: output bit,
   dbg: output bit<16>,
 ) {
   struct DVIParamsSingle {
@@ -300,6 +302,12 @@ module top (
   var uart_tx_ready: bit;
   assign uart_tx_data = 8'hA5;
   assign uart_wr = 0;
+
+  var uart_rx: bit;
+  var uart_tx: bit;
+  assign uart_rx = uart3_rx & uart3b_rx;
+  assign uart3_tx = uart_tx;
+  assign uart3b_tx = uart_tx;
 
   inst uart3b: Uart (
     clk:      sys_clk,
