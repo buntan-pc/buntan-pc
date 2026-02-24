@@ -71,7 +71,7 @@ module top (
     o_d: rst_n,
   );
 
-  assign onboard_led = if rst_n ? ~6'b000101 : '1;
+  //assign onboard_led = if rst_n ? ~6'b000101 : '1;
 
   var fclk : 'dvif clock;
   var pclk : 'dvi clock;
@@ -257,7 +257,8 @@ module top (
   assign font_addr = scrn_buf << $clog2(FONT_H) | font_ypos;
 
   var scrn_wen: bit;
-  var scrn_wr_pos: bit<SCRN_ADDR_WIDTH>;
+  var scrn_wr_pos: bit<SCRN_ADDR_WIDTH>[2];
+  var scrn_wr_pos_save: bit<SCRN_ADDR_WIDTH>;
   var scrn_wr_data: bit<8>;
   var scrn_clear_cnt: u8;
 
@@ -267,6 +268,7 @@ module top (
   var scrn_data: 'dvi bit<9>;
   var scrn_data_main: 'dvi bit<9>;
   var scrn_data_ext: 'dvi bit<9>;
+
   assign scrn_data = if use_extscrn_dvi ? scrn_data_ext : scrn_data_main;
 
   inst scrn_main: ScreenMemory#(
@@ -275,7 +277,7 @@ module top (
     clk:  sys_clk,
     rst:  rst_n,
     wen:  ~use_extscrn & scrn_wen,
-    addr: scrn_wr_pos,
+    addr: scrn_wr_pos[0],
     din:  {0'b0, scrn_wr_data},
 
     clk_dvi:  pclk,
@@ -289,7 +291,7 @@ module top (
     clk:  sys_clk,
     rst:  rst_n,
     wen:  use_extscrn & scrn_wen,
-    addr: scrn_wr_pos,
+    addr: scrn_wr_pos[1],
     din:  {0'b0, scrn_wr_data},
 
     clk_dvi:  pclk,
@@ -325,7 +327,7 @@ module top (
   var scrn_wr_buf: 'dvi bit<8>;
 
   var scrn_wr_pos_line: bit<$clog2(SCRN_H_CHAR)>;
-  assign scrn_wr_pos_line = scrn_wr_pos >> $clog2(SCRN_W_CHAR);
+  assign scrn_wr_pos_line = scrn_wr_pos[use_extscrn] >> $clog2(SCRN_W_CHAR);
 
   var uart_rx_data:  bit<8>;
   var uart_tx_data:  bit<8>;
@@ -381,7 +383,8 @@ module top (
       scrn_wen = 0;
       scrn_wr_data = 0;
       scrn_recv_state = ScrnRecvState::idle;
-      scrn_wr_pos = 0;
+      scrn_wr_pos[0] = 0;
+      scrn_wr_pos[1] = 0;
       scrn_clear_cnt = 0;
       use_extscrn = 0;
     } else if es_recog {
@@ -389,14 +392,14 @@ module top (
         escseq::Kind::NONE: case uart_rx_data {
           8'h08: { // BS
             scrn_wen = 0;
-            scrn_wr_pos -= 1;
+            scrn_wr_pos[use_extscrn] -= 1;
             scrn_recv_state = ScrnRecvState::idle;
           }
           8'h0A: { // LF
             if scrn_wr_pos_line <: SCRN_H_CHAR - 1 {
-              scrn_wr_pos = ((scrn_wr_pos_line + 1) << $clog2(SCRN_W_CHAR)) + 127;
+              scrn_wr_pos[use_extscrn] = ((scrn_wr_pos_line + 1) << $clog2(SCRN_W_CHAR)) + 127;
             } else {
-              scrn_wr_pos = 127; // 本来は画面をスクロールさせたいが、とりあえず先頭行に戻しておく
+              scrn_wr_pos[use_extscrn] = 127; // 本来は画面をスクロールさせたいが、とりあえず先頭行に戻しておく
             }
             scrn_wr_data = 0;
             scrn_wen = 1;
@@ -411,7 +414,16 @@ module top (
         }
         escseq::Kind::CHA: {
           scrn_wen = 0;
-          scrn_wr_pos = (scrn_wr_pos_line << $clog2(SCRN_W_CHAR)) + es_csinum[0];
+          scrn_wr_pos[use_extscrn] = (scrn_wr_pos_line << $clog2(SCRN_W_CHAR)) + (es_csinum[0] - 1);
+          scrn_recv_state = ScrnRecvState::idle;
+        }
+        escseq::Kind::CUP: {
+          scrn_wen = 0;
+          if es_csinum_len == 2 {
+            scrn_wr_pos[use_extscrn] = ((es_csinum[0] - 1) << $clog2(SCRN_W_CHAR)) + (es_csinum[1] - 1);
+          } else {
+            scrn_wr_pos[use_extscrn] = 0; // home position
+          }
           scrn_recv_state = ScrnRecvState::idle;
         }
         escseq::Kind::ECH: {
@@ -419,11 +431,21 @@ module top (
           scrn_wr_data = 0;
           scrn_recv_state = ScrnRecvState::idle;
         }
+        escseq::Kind::DECSC: {
+          scrn_wen = 0;
+          scrn_wr_pos_save = scrn_wr_pos[use_extscrn];
+          scrn_recv_state = ScrnRecvState::idle;
+        }
+        escseq::Kind::DECRC: {
+          scrn_wen = 0;
+          scrn_wr_pos[use_extscrn] = scrn_wr_pos_save;
+          scrn_recv_state = ScrnRecvState::idle;
+        }
         escseq::Kind::DECSET: {
           scrn_wen = 0;
           scrn_recv_state = ScrnRecvState::idle;
 
-          case es_csinum {
+          case es_csinum[0] {
             1049: { // XT_EXTSCRN
               use_extscrn = 1;
             }
@@ -447,22 +469,23 @@ module top (
         scrn_recv_state = ScrnRecvState::idle;
       } else {
         scrn_wen = 1;
-        scrn_wr_pos -= 1;
+        scrn_wr_pos[use_extscrn] -= 1;
         scrn_clear_cnt -= 1;
       }
     } else if scrn_recv_state == ScrnRecvState::inc {
       scrn_wen = 0;
-      scrn_wr_pos += 1;
+      scrn_wr_pos[use_extscrn] += 1;
       scrn_recv_state = ScrnRecvState::idle;
     }
   }
 
   unsafe (cdc) {
-    assign dbg[15:12] = scrn_addr[3:0];
-    assign dbg[11:8] = act_pixel_h[3:0];
-    assign dbg[7] = ld_scrn_buf;
-    assign dbg[6:0] = scrn_data[6:0];
+    assign dbg[15] = use_extscrn;
+    assign dbg[14:12] = scrn_wr_pos[use_extscrn][2:0];
+    assign dbg[11:7] = scrn_wr_pos[use_extscrn][11:7];
+    assign dbg[6:0] = scrn_wr_data[6:0];
   }
+  assign onboard_led = if rst_n ? ~{use_extscrn, scrn_wr_pos[use_extscrn][4:0]} : '1;
 
   initial {
     $readmemh("../hankaku.hex", font_mem);
@@ -476,7 +499,7 @@ module top (
     | (
       FONT_H * (scrn_wr_pos_line + 0) <= act_pixel_v &
       act_pixel_v <: FONT_H * (scrn_wr_pos_line + 1) &
-      FONT_W * scrn_wr_pos[$clog2(SCRN_W_CHAR)-1:0] <= act_pixel_h
+      FONT_W * scrn_wr_pos[use_extscrn][$clog2(SCRN_W_CHAR)-1:0] <= act_pixel_h
     ); // 現在 UART から受信した文字を書き込んでいる列より後ろの列
 
   var pixel_color: 'dvi bit<3, 8>; // B, G, R
