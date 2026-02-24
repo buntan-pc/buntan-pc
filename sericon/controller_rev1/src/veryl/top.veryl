@@ -260,20 +260,42 @@ module top (
   var scrn_wr_pos: bit<SCRN_ADDR_WIDTH>;
   var scrn_wr_data: bit<8>;
   var scrn_clear_cnt: u8;
+
+  var use_extscrn: bit; // 1 = 代替バッファ
+  var use_extscrn_dvi: 'dvi bit;
+
   var scrn_data: 'dvi bit<9>;
-  inst scrn_mem: ScreenMemory#(
+  var scrn_data_main: 'dvi bit<9>;
+  var scrn_data_ext: 'dvi bit<9>;
+  assign scrn_data = if use_extscrn_dvi ? scrn_data_ext : scrn_data_main;
+
+  inst scrn_main: ScreenMemory#(
     ADDR_WIDTH: SCRN_ADDR_WIDTH,
   ) (
     clk:  sys_clk,
     rst:  rst_n,
-    wen:  scrn_wen,
+    wen:  ~use_extscrn & scrn_wen,
     addr: scrn_wr_pos,
     din:  {0'b0, scrn_wr_data},
 
     clk_dvi:  pclk,
     rst_dvi:  dvi_rst_n,
     addr_dvi: scrn_addr,
-    dout_dvi: scrn_data,
+    dout_dvi: scrn_data_main,
+  );
+  inst scrn_ext: ScreenMemory#(
+    ADDR_WIDTH: SCRN_ADDR_WIDTH,
+  ) (
+    clk:  sys_clk,
+    rst:  rst_n,
+    wen:  use_extscrn & scrn_wen,
+    addr: scrn_wr_pos,
+    din:  {0'b0, scrn_wr_data},
+
+    clk_dvi:  pclk,
+    rst_dvi:  dvi_rst_n,
+    addr_dvi: scrn_addr,
+    dout_dvi: scrn_data_ext,
   );
 
   always_ff (pclk, dvi_rst_n) {
@@ -286,6 +308,16 @@ module top (
 
   always_ff (pclk) {
     font_buf = font_mem[font_addr];
+  }
+
+  unsafe (cdc) {
+    always_ff (pclk, dvi_rst_n) {
+      if_reset {
+        use_extscrn_dvi = 0;
+      } else if state_v == DVIState::sync {
+        use_extscrn_dvi = use_extscrn;
+      }
+    }
   }
 
   var scrn_wr_valid: 'dvi bit;
@@ -331,7 +363,8 @@ module top (
 
   var es_recog: bit;
   var es_kind:  escseq::Kind;
-  var es_csinum: u16;
+  var es_csinum: u16[2];
+  var es_csinum_len: u8;
   inst es_recognizer: ESRecognizer(
     i_clk:    sys_clk,
     i_rst_n:  rst_n,
@@ -340,6 +373,7 @@ module top (
     o_recog:  es_recog,
     o_kind:   es_kind,
     o_csinum: es_csinum,
+    o_csinum_len: es_csinum_len,
   );
 
   always_ff (sys_clk, rst_n) {
@@ -349,6 +383,7 @@ module top (
       scrn_recv_state = ScrnRecvState::idle;
       scrn_wr_pos = 0;
       scrn_clear_cnt = 0;
+      use_extscrn = 0;
     } else if es_recog {
       case es_kind {
         escseq::Kind::NONE: case uart_rx_data {
@@ -376,13 +411,31 @@ module top (
         }
         escseq::Kind::CHA: {
           scrn_wen = 0;
-          scrn_wr_pos = (scrn_wr_pos_line << $clog2(SCRN_W_CHAR)) + es_csinum;
+          scrn_wr_pos = (scrn_wr_pos_line << $clog2(SCRN_W_CHAR)) + es_csinum[0];
           scrn_recv_state = ScrnRecvState::idle;
         }
         escseq::Kind::ECH: {
           scrn_wen = 1;
           scrn_wr_data = 0;
           scrn_recv_state = ScrnRecvState::idle;
+        }
+        escseq::Kind::DECSET: {
+          scrn_wen = 0;
+          scrn_recv_state = ScrnRecvState::idle;
+
+          case es_csinum {
+            1049: { // XT_EXTSCRN
+              use_extscrn = 1;
+            }
+            default: {
+              // pass
+            }
+          }
+        }
+        escseq::Kind::DECSTBM: {
+          scrn_wen = 0;
+          scrn_recv_state = ScrnRecvState::idle;
+          // TODO implement
         }
       }
     } else if scrn_recv_state == ScrnRecvState::idle {

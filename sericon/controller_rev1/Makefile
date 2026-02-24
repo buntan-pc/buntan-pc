@@ -9,6 +9,7 @@ SRCS := src/port.cst \
 	src/veryl/top.veryl \
 	src/veryl/dvi.veryl \
 	src/veryl/scrn_mem.veryl \
+	src/veryl/escseq.veryl \
 	../../cpu/simple_timer.sv
 
 VERYL_SRCS := $(filter %.veryl,$(SRCS))

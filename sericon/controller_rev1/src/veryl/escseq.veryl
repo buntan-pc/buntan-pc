@@ -4,15 +4,17 @@
  */
 
 package escseq {
-  enum Kind: bit<2> {
+  enum Kind {
     NONE,
     CHA, // Cursor Horizontal Absolute
     ECH, // Erase Character
+    DECSET,
+    DECSTBM,
   }
 }
 
 module ESRecognizer #(
-  param ES_MAX_LEN: u8 = 8, // エスケープシーケンスの最長長さ
+  param MAX_CSINUM: u8 = 2, // CSI数値の最大個数
 ) (
   i_clk:    input clock,
   i_rst_n:  input reset_async_low,
@@ -20,31 +22,56 @@ module ESRecognizer #(
   i_char_v: input bit,    // i_char が有効なら 1
   o_recog:  output bit, // エスケープシーケンスの解釈が完了したら 1
   o_kind:   output escseq::Kind, // エスケープシーケンスの種類
-  o_csinum: output u16,
+  o_csinum: output u16[MAX_CSINUM],
+  o_csinum_len: output u8,
 ) {
   enum RecogState {
-    Init,    // 初期状態
-    Unknown, // 未実装のエスケープシーケンス
-    ESC,     // ESC 受信直後
-    CSI,     // ESC + [ 受信直後
-    CHA,     // CHA 受信直後
-    ECH,     // ECH 受信直後
-    Num,     // 数字受信中
+    Init,         // 初期状態
+    Unknown,      // 未実装のエスケープシーケンス
+    Num,          // 数字受信中
+
+    // 単純中間ステート
+    ESC,          // ESC 受信直後
+    CSI,          // ESC + [ 受信直後
+    CSIQuestion,  // CSI ?
+    NumSep,       // 数字の区切り文字 ;
+    EndOfIntermediateState,
+
+    // 最終ステート
+    CHA,          // CHA 受信直後
+    ECH,          // ECH 受信直後
+    DECSET,       // CSI ? Pn h
+    DECSTBM,      // CSI Pt ; Pb r
+  }
+
+  enum CSICommand {
+    Normal,   // 無印 CSI
+    Question, // CSI ?
   }
 
   var state: RecogState;
+  var csi_cmd: CSICommand;
   var new_state: RecogState;
-  assign new_state = Recognize(state, i_char);
+  assign new_state = Recognize(state, csi_cmd, i_char);
 
-  var csi_num: u16;
+  var csi_num: u16[MAX_CSINUM];
+  var csi_num_ind: u8;
 
   always_ff (i_clk, i_rst_n) {
     if_reset {
       o_recog = 0;
       o_kind = escseq::Kind::NONE;
       state = RecogState::Init;
-      csi_num = 0;
+      csi_num_ind = 0;
+      csi_cmd = CSICommand::Normal;
     } else if i_char_v {
+      if state == RecogState::CSI {
+        csi_cmd = case new_state {
+          RecogState::CSIQuestion:  CSICommand::Question,
+          default:                  CSICommand::Normal,
+        };
+      }
+
       case new_state {
         RecogState::Init: case state {
           RecogState::Init: {
@@ -57,38 +84,49 @@ module ESRecognizer #(
             state = RecogState::Init;
           }
         }
-        RecogState::ESC: {
+        RecogState::Unknown: {
           o_recog = 0;
-          state = RecogState::ESC;
-        }
-        RecogState::CSI: {
-          o_recog = 0;
-          state = RecogState::CSI;
-        }
-        RecogState::CHA ..= RecogState::ECH: {
-          o_recog = 1;
-          o_kind = case new_state {
-            RecogState::CHA: escseq::Kind::CHA,
-            default:         escseq::Kind::ECH,
-          };
-          if state == RecogState::Num {
-            o_csinum = csi_num;
-          } else {
-            o_csinum = 1;
-          }
           state = RecogState::Init;
         }
         RecogState::Num: {
           o_recog = 0;
-          if state == RecogState::Num {
-            csi_num = csi_num * 10 + (i_char - 8'h30);
-          } else {
-            csi_num = i_char - 8'h30;
+          case state {
+            RecogState::Num: {
+              csi_num[csi_num_ind] = csi_num[csi_num_ind] * 10 + (i_char - 8'h30);
+            }
+            RecogState::NumSep: {
+              o_csinum[csi_num_ind] = csi_num[csi_num_ind];
+              csi_num[csi_num_ind + 1] = i_char - 8'h30;
+              csi_num_ind += 1;
+            }
+            default: {
+              csi_num[0] = i_char - 8'h30;
+              csi_num_ind = 0;
+            }
           }
           state = RecogState::Num;
         }
-        default: {
+        // 単純中間ステート
+        RecogState::ESC .. RecogState::EndOfIntermediateState: {
           o_recog = 0;
+          state = new_state;
+        }
+        // 最終ステート
+        default: {
+          o_recog = 1;
+          o_kind = case new_state {
+            RecogState::CHA:      escseq::Kind::CHA,
+            RecogState::ECH:      escseq::Kind::ECH,
+            RecogState::DECSET:   escseq::Kind::DECSET,
+            RecogState::DECSTBM:  escseq::Kind::DECSTBM,
+            default:              escseq::Kind::NONE,
+          };
+          if state == RecogState::Num {
+            o_csinum[csi_num_ind] = csi_num[csi_num_ind];
+            o_csinum_len = csi_num_ind + 1;
+          } else {
+            o_csinum_len = 0;
+          }
           state = RecogState::Init;
         }
       }
@@ -97,7 +135,9 @@ module ESRecognizer #(
     }
   }
 
-  function Recognize(state: input RecogState, last: input u8) -> RecogState {
+  function Recognize(state: input RecogState,
+                     csi_cmd: input CSICommand,
+                     last: input u8) -> RecogState {
     return case state {
       RecogState::Init: case last {
         8'h1B:   RecogState::ESC,
@@ -111,12 +151,27 @@ module ESRecognizer #(
         8'h30..=8'h39: RecogState::Num,
         8'h47:         RecogState::CHA,
         8'h58:         RecogState::ECH,
+        8'h3F:         RecogState::CSIQuestion,
         default:       RecogState::Unknown,
       },
       RecogState::Num: case last {
         8'h30..=8'h39: RecogState::Num,
         8'h47:         RecogState::CHA,
         8'h58:         RecogState::ECH,
+        8'h68 /* h */: case csi_cmd {
+          CSICommand::Question: RecogState::DECSET,
+          default:              RecogState::Unknown,
+        },
+        8'h3B /* ; */: RecogState::NumSep,
+        8'h72 /* r */: RecogState::DECSTBM,
+        default:       RecogState::Unknown,
+      },
+      RecogState::CSIQuestion: case last {
+        8'h30..=8'h39: RecogState::Num,
+        default:       RecogState::Unknown,
+      },
+      RecogState::NumSep: case last {
+        8'h30..=8'h39: RecogState::Num,
         default:       RecogState::Unknown,
       },
       default: RecogState::Unknown,
