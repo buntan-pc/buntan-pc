@@ -1,0 +1,125 @@
+// SPDX-License-Identifier: MIT
+/*
+ * Copyright (c) 2026 Kota UCHIDA
+ */
+
+package escseq {
+  enum Kind: bit<2> {
+    NONE,
+    CHA, // Cursor Horizontal Absolute
+    ECH, // Erase Character
+  }
+}
+
+module ESRecognizer #(
+  param ES_MAX_LEN: u8 = 8, // エスケープシーケンスの最長長さ
+) (
+  i_clk:    input clock,
+  i_rst_n:  input reset_async_low,
+  i_char:   input bit<8>, // 受信した文字
+  i_char_v: input bit,    // i_char が有効なら 1
+  o_recog:  output bit, // エスケープシーケンスの解釈が完了したら 1
+  o_kind:   output escseq::Kind, // エスケープシーケンスの種類
+  o_csinum: output u16,
+) {
+  enum RecogState {
+    Init,    // 初期状態
+    Unknown, // 未実装のエスケープシーケンス
+    ESC,     // ESC 受信直後
+    CSI,     // ESC + [ 受信直後
+    CHA,     // CHA 受信直後
+    ECH,     // ECH 受信直後
+    Num,     // 数字受信中
+  }
+
+  var state: RecogState;
+  var new_state: RecogState;
+  assign new_state = Recognize(state, i_char);
+
+  var csi_num: u16;
+
+  always_ff (i_clk, i_rst_n) {
+    if_reset {
+      o_recog = 0;
+      o_kind = escseq::Kind::NONE;
+      state = RecogState::Init;
+      csi_num = 0;
+    } else if i_char_v {
+      case new_state {
+        RecogState::Init: case state {
+          RecogState::Init: {
+            o_recog = 1;
+            o_kind = escseq::Kind::NONE;
+            state = RecogState::Init;
+          }
+          default: {
+            o_recog = 0;
+            state = RecogState::Init;
+          }
+        }
+        RecogState::ESC: {
+          o_recog = 0;
+          state = RecogState::ESC;
+        }
+        RecogState::CSI: {
+          o_recog = 0;
+          state = RecogState::CSI;
+        }
+        RecogState::CHA ..= RecogState::ECH: {
+          o_recog = 1;
+          o_kind = case new_state {
+            RecogState::CHA: escseq::Kind::CHA,
+            default:         escseq::Kind::ECH,
+          };
+          if state == RecogState::Num {
+            o_csinum = csi_num;
+          } else {
+            o_csinum = 1;
+          }
+          state = RecogState::Init;
+        }
+        RecogState::Num: {
+          o_recog = 0;
+          if state == RecogState::Num {
+            csi_num = csi_num * 10 + (i_char - 8'h30);
+          } else {
+            csi_num = i_char - 8'h30;
+          }
+          state = RecogState::Num;
+        }
+        default: {
+          o_recog = 0;
+          state = RecogState::Init;
+        }
+      }
+    } else {
+      o_recog = 0;
+    }
+  }
+
+  function Recognize(state: input RecogState, last: input u8) -> RecogState {
+    return case state {
+      RecogState::Init: case last {
+        8'h1B:   RecogState::ESC,
+        default: RecogState::Init,
+      },
+      RecogState::ESC: case last {
+        8'h5B:   RecogState::CSI,
+        default: RecogState::Unknown,
+      },
+      RecogState::CSI: case last {
+        8'h30..=8'h39: RecogState::Num,
+        8'h47:         RecogState::CHA,
+        8'h58:         RecogState::ECH,
+        default:       RecogState::Unknown,
+      },
+      RecogState::Num: case last {
+        8'h30..=8'h39: RecogState::Num,
+        8'h47:         RecogState::CHA,
+        8'h58:         RecogState::ECH,
+        default:       RecogState::Unknown,
+      },
+      default: RecogState::Unknown,
+    };
+  }
+}
