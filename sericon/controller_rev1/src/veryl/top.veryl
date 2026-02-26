@@ -260,7 +260,8 @@ module top (
   var scrn_wr_pos: bit<SCRN_ADDR_WIDTH>[2];
   var scrn_wr_pos_save: bit<SCRN_ADDR_WIDTH>;
   var scrn_wr_data: bit<8>;
-  var scrn_clear_cnt: u8;
+  var scrn_rd_data: bit<9>;
+  var scrn_cnt: u8;
 
   var use_extscrn: bit; // 1 = 代替バッファ
   var use_extscrn_dvi: 'dvi bit;
@@ -279,6 +280,7 @@ module top (
     wen:  ~use_extscrn & scrn_wen,
     addr: scrn_wr_pos[0],
     din:  {0'b0, scrn_wr_data},
+    dout: scrn_rd_data,
 
     clk_dvi:  pclk,
     rst_dvi:  dvi_rst_n,
@@ -327,7 +329,9 @@ module top (
   var scrn_wr_buf: 'dvi bit<8>;
 
   var scrn_wr_pos_line: bit<$clog2(SCRN_H_CHAR)>;
+  var scrn_wr_pos_col: bit<$clog2(SCRN_W_CHAR)>;
   assign scrn_wr_pos_line = scrn_wr_pos[use_extscrn] >> $clog2(SCRN_W_CHAR);
+  assign scrn_wr_pos_col = scrn_wr_pos[use_extscrn][$clog2(SCRN_W_CHAR)-1:0];
 
   var uart_rx_data:  bit<8>;
   var uart_tx_data:  bit<8>;
@@ -360,8 +364,11 @@ module top (
     idle,
     inc,
     clear,
+    scroll_r,
   }
   var scrn_recv_state: ScrnRecvState;
+
+  var scrn_scroll_read: bit;
 
   var es_recog: bit;
   var es_kind:  escseq::Kind;
@@ -383,9 +390,10 @@ module top (
       scrn_wen = 0;
       scrn_wr_data = 0;
       scrn_recv_state = ScrnRecvState::idle;
+      scrn_scroll_read = 0;
       scrn_wr_pos[0] = 0;
       scrn_wr_pos[1] = 0;
-      scrn_clear_cnt = 0;
+      scrn_cnt = 0;
       use_extscrn = 0;
     } else if es_recog {
       case es_kind {
@@ -403,7 +411,7 @@ module top (
             }
             scrn_wr_data = 0;
             scrn_wen = 1;
-            scrn_clear_cnt = 127;
+            scrn_cnt = 127;
             scrn_recv_state = ScrnRecvState::clear;
           }
           8'h0D: { // CR
@@ -417,21 +425,23 @@ module top (
           }
         }
         escseq::Kind::ICH: {
-          scrn_wen = 1;
-          scrn_wr_data = 8'h20; // 空白を挿入
-          scrn_recv_state = ScrnRecvState::idle;
-          // TODO 本来はカーソルより右の文字を右にずらす必要がある
+          scrn_wen = 0;
+          //scrn_wr_data = 8'h20; // 空白を挿入
+          scrn_cnt = SCRN_W_CHAR - scrn_wr_pos_col - 1;
+          scrn_wr_pos[use_extscrn] += scrn_cnt - 1; // 画面右端から 1 文字左
+          scrn_recv_state = ScrnRecvState::scroll_r;
+          scrn_scroll_read = 1;
         }
         escseq::Kind::CUU: {
           scrn_wen = 0;
           scrn_wr_pos[use_extscrn] = ((scrn_wr_pos_line - 1) << $clog2(SCRN_W_CHAR)) +
-                                     scrn_wr_pos[use_extscrn][$clog2(SCRN_W_CHAR)-1:0];
+                                     scrn_wr_pos_col;
           scrn_recv_state = ScrnRecvState::idle;
         }
         escseq::Kind::CUD: {
           scrn_wen = 0;
           scrn_wr_pos[use_extscrn] = ((scrn_wr_pos_line + 1) << $clog2(SCRN_W_CHAR)) +
-                                     scrn_wr_pos[use_extscrn][$clog2(SCRN_W_CHAR)-1:0];
+                                     scrn_wr_pos_col;
           scrn_recv_state = ScrnRecvState::idle;
         }
         escseq::Kind::CUF: {
@@ -496,18 +506,34 @@ module top (
       scrn_wen = 0;
     } else if scrn_recv_state == ScrnRecvState::clear {
       scrn_wr_data = 0;
-      if scrn_clear_cnt == 0 {
+      if scrn_cnt == 0 {
         scrn_wen = 0;
         scrn_recv_state = ScrnRecvState::idle;
       } else {
         scrn_wen = 1;
         scrn_wr_pos[use_extscrn] -= 1;
-        scrn_clear_cnt -= 1;
+        scrn_cnt -= 1;
       }
     } else if scrn_recv_state == ScrnRecvState::inc {
       scrn_wen = 0;
       scrn_wr_pos[use_extscrn] += 1;
       scrn_recv_state = ScrnRecvState::idle;
+    } else if scrn_recv_state == ScrnRecvState::scroll_r {
+      if scrn_cnt == 0 {
+        scrn_wen = 1;
+        scrn_wr_data = 8'h25; // %
+        scrn_recv_state = ScrnRecvState::idle;
+      } else if scrn_scroll_read {
+        scrn_wen = 1;
+        scrn_wr_pos[use_extscrn] += 1;
+        scrn_wr_data = scrn_rd_data[7:0];
+        scrn_scroll_read = 0;
+      } else {
+        scrn_wen = 0;
+        scrn_wr_pos[use_extscrn] -= 2;
+        scrn_scroll_read = 1;
+        scrn_cnt -= 1;
+      }
     }
   }
 

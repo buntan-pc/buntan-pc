@@ -19,6 +19,7 @@ module ScreenMemory #(
   dout_dvi: output 'dvi bit<9>,
 ) {
   const MEM_LEN: u32 = 1 << ADDR_WIDTH;
+  /*
   var mem: bit<9>[MEM_LEN];
 
   always_ff (clk, rst) {
@@ -39,5 +40,38 @@ module ScreenMemory #(
         dout_dvi = mem[addr_dvi];
       }
     }
+  }
+  */
+
+  unsafe (cdc) {
+    inst mem: $sv::DPX9B #(
+      READ_MODE0: 1'b0, // bypass
+      READ_MODE1: 1'b0, // bypass
+      WRITE_MODE0: 2'b00, // normal
+      WRITE_MODE1: 2'b00, // normal
+      BIT_WIDTH_0: 9,
+      BIT_WIDTH_1: 9,
+      RESET_MODE: "ASYNC",
+    ) (
+      DIA: din,
+      ADA: addr,
+      BLKSELA: 0,
+      WREA: wen,
+      CEA: 1'b1,
+      CLKA: clk,
+      RESETA: ~rst,
+      OCEA: 1'b1,
+      DOA: dout,
+
+      DIB: 9'b0,
+      ADB: addr_dvi,
+      BLKSELB: 0,
+      WREB: 1'b0,
+      CEB: 1'b1,
+      CLKB: clk_dvi,
+      RESETB: ~rst_dvi,
+      OCEB: 1'b1,
+      DOB: dout_dvi,
+    );
   }
 }
