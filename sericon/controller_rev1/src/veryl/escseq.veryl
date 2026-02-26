@@ -6,6 +6,11 @@
 package escseq {
   enum Kind {
     NONE,
+    ICH, // Insert Character
+    CUU, // Cursor Up
+    CUD, // Cursor Down
+    CUF, // Cursor Forward
+    CUB, // Cursor Backward
     CHA, // Cursor Horizontal Absolute
     CUP, // Cursor Position
     ECH, // Erase Character
@@ -117,6 +122,11 @@ module ESRecognizer #(
           default: /* A-Z, a-z */ {
             o_recog = 1;
             o_kind = case i_char {
+              8'h40 /* @ */: escseq::Kind::ICH,
+              8'h41 /* A */: escseq::Kind::CUU,
+              8'h42 /* B */: escseq::Kind::CUD,
+              8'h43 /* C */: escseq::Kind::CUF,
+              8'h44 /* D */: escseq::Kind::CUB,
               8'h47 /* G */: escseq::Kind::CHA,
               8'h48 /* H */: escseq::Kind::CUP,
               8'h58 /* X */: escseq::Kind::ECH,

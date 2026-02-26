@@ -406,11 +406,43 @@ module top (
             scrn_clear_cnt = 127;
             scrn_recv_state = ScrnRecvState::clear;
           }
+          8'h0D: { // CR
+            scrn_wen = 0;
+            scrn_recv_state = ScrnRecvState::idle;
+          }
           default: {
             scrn_wen = 1;
             scrn_wr_data = uart_rx_data;
             scrn_recv_state = ScrnRecvState::inc;
           }
+        }
+        escseq::Kind::ICH: {
+          scrn_wen = 1;
+          scrn_wr_data = 8'h20; // 空白を挿入
+          scrn_recv_state = ScrnRecvState::idle;
+          // TODO 本来はカーソルより右の文字を右にずらす必要がある
+        }
+        escseq::Kind::CUU: {
+          scrn_wen = 0;
+          scrn_wr_pos[use_extscrn] = ((scrn_wr_pos_line - 1) << $clog2(SCRN_W_CHAR)) +
+                                     scrn_wr_pos[use_extscrn][$clog2(SCRN_W_CHAR)-1:0];
+          scrn_recv_state = ScrnRecvState::idle;
+        }
+        escseq::Kind::CUD: {
+          scrn_wen = 0;
+          scrn_wr_pos[use_extscrn] = ((scrn_wr_pos_line + 1) << $clog2(SCRN_W_CHAR)) +
+                                     scrn_wr_pos[use_extscrn][$clog2(SCRN_W_CHAR)-1:0];
+          scrn_recv_state = ScrnRecvState::idle;
+        }
+        escseq::Kind::CUF: {
+          scrn_wen = 0;
+          scrn_wr_pos[use_extscrn] += 1;
+          scrn_recv_state = ScrnRecvState::idle;
+        }
+        escseq::Kind::CUB: {
+          scrn_wen = 0;
+          scrn_wr_pos[use_extscrn] -= 1;
+          scrn_recv_state = ScrnRecvState::idle;
         }
         escseq::Kind::CHA: {
           scrn_wen = 0;
@@ -491,20 +523,8 @@ module top (
     $readmemh("../hankaku.hex", font_mem);
   }
 
-  var hide_pixel: 'dvi bit;
-  assign hide_pixel = (
-      FONT_H * (scrn_wr_pos_line + 1) <= act_pixel_v &
-      act_pixel_v <: FONT_H * (scrn_wr_pos_line + 2)
-    ) // 現在 UART から受信した文字を書き込んでいる行の次の行
-    | (
-      FONT_H * (scrn_wr_pos_line + 0) <= act_pixel_v &
-      act_pixel_v <: FONT_H * (scrn_wr_pos_line + 1) &
-      FONT_W * scrn_wr_pos[use_extscrn][$clog2(SCRN_W_CHAR)-1:0] <= act_pixel_h
-    ); // 現在 UART から受信した文字を書き込んでいる列より後ろの列
-
   var pixel_color: 'dvi bit<3, 8>; // B, G, R
   assign pixel_color = switch {
-    hide_pixel:                       '0,
     font_buf[FONT_W - 1 - font_xpos]: 24'h66FF00,
     default:                          '0,
   };
