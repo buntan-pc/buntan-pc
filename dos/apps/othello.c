@@ -1,7 +1,8 @@
 #include "syscall.h"
 
 unsigned int board[8];
-int cx, cy;
+int cx;
+int cy;
 int turn = 1; // 1=black 2=white
 int ai_turn = 2;
 
@@ -103,7 +104,8 @@ int buntan_main(int *info) {
     if (turn == ai_turn) {
       unsigned int board_ai[8];
       int max_rev_cnt = 0;
-      int max_x, max_y;
+      int max_x;
+      int max_y;
 
       for (int y = 0; y < 8; ++y) {
         for (int x = 0; x < 8; ++x) {
