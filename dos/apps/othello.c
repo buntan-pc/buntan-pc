@@ -3,6 +3,7 @@
 unsigned int board[8];
 int cx, cy;
 int turn = 1; // 1=black 2=white
+int ai_turn = 2;
 
 void print_board() {
   sys_put_string("turn: ", -1);
@@ -97,35 +98,60 @@ int buntan_main(int *info) {
   cx = 3;
   cy = 2;
 
-  print_board();
+  while (1) {
+    print_board();
+    if (turn == ai_turn) {
+      unsigned int board_ai[8];
+      int max_rev_cnt = 0;
+      int max_x, max_y;
 
-  int c;
-  while ((c = sys_getc()) > 0) {
-    if (cx > 0 && (c == 'h' || c == 0x1F)) {
-      --cx;
-    } else if (cy < 7 && (c == 'j' || c == 0x1D)) {
-      ++cy;
-    } else if (cy > 0 && (c == 'k' || c == 0x1C)) {
-      --cy;
-    } else if (cx < 7 && (c == 'l' || c == 0x1E)) {
-      ++cx;
-    } else if (c == ' ') {
-      if (get_stone(board, cx, cy) != 0) {
-        sys_put_string("cannot put a stone\n", -1);
-        continue;
-      } else {
-        if (try_put_stone(board, cx, cy) > 0) {
-          board[cy] |= turn << (2*cx);
-          turn = 3 - turn;
-        } else {
-          sys_put_string("cannot put a stone\n", -1);
+      for (int y = 0; y < 8; ++y) {
+        for (int x = 0; x < 8; ++x) {
+          for (int i = 0; i < 8; ++i) {
+            board_ai[i] = board[i];
+          }
+          int rev_cnt = try_put_stone(board_ai, x, y);
+          if (max_rev_cnt < rev_cnt) {
+            max_rev_cnt = rev_cnt;
+            max_x = x;
+            max_y = y;
+          }
         }
       }
-    } else {
-      continue;
-    }
 
-    print_board();
+      try_put_stone(board, max_x, max_y);
+      board[max_y] |= ai_turn << 2*max_x;
+      turn = 3 - turn;
+    } else {
+      int c = sys_getc();
+      if (c <= 0) {
+        return 0;
+      }
+
+      if (cx > 0 && (c == 'h' || c == 0x1F)) {
+        --cx;
+      } else if (cy < 7 && (c == 'j' || c == 0x1D)) {
+        ++cy;
+      } else if (cy > 0 && (c == 'k' || c == 0x1C)) {
+        --cy;
+      } else if (cx < 7 && (c == 'l' || c == 0x1E)) {
+        ++cx;
+      } else if (c == ' ') {
+        if (get_stone(board, cx, cy) != 0) {
+          sys_put_string("cannot put a stone\n", -1);
+          continue;
+        } else {
+          if (try_put_stone(board, cx, cy) > 0) {
+            board[cy] |= turn << (2*cx);
+            turn = 3 - turn;
+          } else {
+            sys_put_string("cannot put a stone\n", -1);
+          }
+        }
+      } else {
+        continue;
+      }
+    }
   }
   return 0;
 }
