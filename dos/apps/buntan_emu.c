@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <termios.h>
 #include <unistd.h>
 
 int buntan_main(int *info);
@@ -53,6 +54,24 @@ static int int2dec(int val, char *s, int n) {
     s[i] = ' ';
   }
   return i;
+}
+
+static int getchar_non_canonical() {
+  struct termios oldt, newt;
+
+  // 現在の設定を保存
+  tcgetattr(STDIN_FILENO, &oldt);
+  newt = oldt;
+
+  // 非カノニカル & エコーなし
+  newt.c_lflag &= ~(ICANON | ECHO);
+  tcsetattr(STDIN_FILENO, TCSANOW, &newt);
+
+  int c = getchar();
+
+  // 設定を戻す
+  tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
+  return c;
 }
 
 int buntan_syscall(int num, int *args) {
@@ -190,12 +209,13 @@ int buntan_syscall(int num, int *args) {
   case 8: // sys_int2dec
     return int2dec(args[0], (char*)args[1], args[2]);
   case 9: // sys_getc
-    return getchar();
+    return getchar_non_canonical();
   default:
     printf("syscall %d is not implemented\n", num);
     return -1;
   }
 }
+
 
 int main(int argc, char **argv) {
   int buntan_info[4] = {
