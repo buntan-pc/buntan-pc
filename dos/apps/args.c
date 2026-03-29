@@ -12,7 +12,7 @@ void print_hex(int val) {
   sys_put_string(buf, 4);
 }
 
-int main(int *info) {
+int buntan_main(int *info) {
   init_syscall(info);
   int argc = info[2];
   char **argv = info[3];

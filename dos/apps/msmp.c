@@ -234,7 +234,7 @@ void play_sound(int pulse_width, int pulse_count) {
   }
 }
 
-int main(int *info) {
+int buntan_main(int *info) {
   init_syscall(info);
 
   int i;

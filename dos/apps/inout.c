@@ -28,7 +28,7 @@ void int2hex(int val, char *s, int n) {
   }
 }
 
-int main(int *info) {
+int buntan_main(int *info) {
   char buf[5];
   led_port = 0;
 

@@ -242,7 +242,7 @@ void save_file(char *file_name, int *file_entry) {
   leave_status_mode();
 }
 
-int main(int *info) {
+int buntan_main(int *info) {
   init_syscall(info);
   int argc = info[2];
   char **argv = info[3];

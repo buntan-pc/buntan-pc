@@ -1255,10 +1255,10 @@ int main(int argc, char **argv) {
   }
 
   if (ret_from_start) {
-    InsnLabelStr(&gen_ctx, "call", "main");
+    InsnLabelStr(&gen_ctx, "call", "buntan_main");
     Insn(&gen_ctx, "ret");
   } else {
-    InsnLabelStr(&gen_ctx, "call", "main");
+    InsnLabelStr(&gen_ctx, "call", "buntan_main");
     InsnBaseOff(&gen_ctx, "st", NULL, 0x06); // UART へ出力
     AddLabelStr(&gen_ctx, "fin");
     InsnLabelStr(&gen_ctx, "jmp", "fin");

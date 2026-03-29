@@ -83,7 +83,7 @@ void draw_cursor(char x, char y, char pattern) {
 
 char patterns[4] = { 0xAA, 0xFF, 0xC3, 0x3C };
 
-int main(int *info) {
+int buntan_main(int *info) {
   init_syscall(info);
 
   sys_put_string("Q: quit\n", -1);

@@ -30,7 +30,7 @@ void int2hex(int val, char *s, int n) {
   }
 }
 
-int main(int *info) {
+int buntan_main(int *info) {
   init_syscall(info);
   sys_put_string("Sample application for read/write a file\n", -1);
   sys_put_string("Reading 'COUNTER.TXT'...\n", -1);

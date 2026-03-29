@@ -1,6 +1,6 @@
 #include "syscall.h"
 
-int main(int *info) {
+int buntan_main(int *info) {
   char block_buf[512];
   init_syscall(info);
   sys_put_string("fwrite.exe\n", -1);

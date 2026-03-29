@@ -55,7 +55,7 @@ void print_dec(int i) {
   sys_put_string(s + nzero, 6 - nzero);
 }
 
-int main(int *info) {
+int buntan_main(int *info) {
   char s[6];
   int adc;
 
