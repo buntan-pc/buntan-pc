@@ -6,10 +6,30 @@ int cy;
 int turn = 1; // 1=black 2=white
 int ai_turn = 2;
 
-void print_board() {
+void print_board_init() {
   sys_put_string("turn: ", -1);
   sys_put_string("*o" + (turn - 1), 1);
   sys_put_string("\n", 1);
+
+  for (int y = 0; y < 8; ++y) {
+    unsigned int line = board[y];
+    for (int x = 0; x < 8; ++x) {
+      if (cy == y && cx == x) {
+        sys_put_string(">", 1);
+      } else {
+        sys_put_string(" ", 1);
+      }
+      sys_put_string("_*o?" + (line & 3), 1);
+      line = line >> 2;
+    }
+    sys_put_string("\n", 1);
+  }
+}
+
+void print_board() {
+  sys_put_string("\x1B[1;7H", -1);  // カーソルを turn: の次へ
+  sys_put_string("*o" + (turn - 1), 1);
+  sys_put_string("\x1B[2;1H", -1); // カーソルを 1 行下に
 
   for (int y = 0; y < 8; ++y) {
     unsigned int line = board[y];
@@ -99,6 +119,9 @@ int buntan_main(int *info) {
   cx = 3;
   cy = 2;
 
+  sys_put_string("\x1b[?1049h", -1); // 代替バッファへ切り替え
+  print_board_init();
+
   while (1) {
     print_board();
     if (turn == ai_turn) {
@@ -127,7 +150,7 @@ int buntan_main(int *info) {
     } else {
       int c = sys_getc();
       if (c <= 0) {
-        return 0;
+        break;
       }
 
       if (cx > 0 && (c == 'h' || c == 0x1F)) {
@@ -155,5 +178,7 @@ int buntan_main(int *info) {
       }
     }
   }
+
+  sys_put_string("\x1b[?1049l", -1); // メインバッファへ戻す
   return 0;
 }
