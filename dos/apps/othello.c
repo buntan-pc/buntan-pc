@@ -126,6 +126,27 @@ int try_put_stone(unsigned int *board, int cx, int cy, int stone) {
   return rev_cnt;
 }
 
+// (x, y) に打った場合の評価値を計算
+// depth: 探索深さ。あとどれだけ深く探索するか。
+//        0なら、その手を打った際の評価値をそのまま返す。
+int eval_move(unsigned int *board, int x, int y, int stone, int depth) {
+  if (depth <= 0) {
+    int board_ai[8];
+    for (int i = 0; i < 8; ++i) {
+      board_ai[i] = board[i];
+    }
+    int rev_cnt = try_put_stone(board_ai, x, y, stone);
+    // とりあえず裏返せる数が一番多いときに評価値を最大とする
+    return rev_cnt;
+  } else { // depth > 0
+    int board_ai[8];
+    for (int i = 0; i < 8; ++i) {
+      board_ai[i] = board[i];
+    }
+    int rev_cnt = try_put_stone(board_ai, x, y, stone);
+  }
+}
+
 int buntan_main(int *info) {
   init_syscall(info);
 
