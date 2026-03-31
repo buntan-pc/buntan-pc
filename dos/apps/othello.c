@@ -6,8 +6,8 @@ int cx;
 int cy;
 int turn = 1; // 1=black 2=white
 int ai_turn = 2;
-int ai_lastx;
-int ai_lasty;
+int ai_lastx = -1;
+int ai_lasty = -1;
 
 void print_board_init() {
   sys_put_string("\x1B[H", -1);  // カーソルを左上へ
