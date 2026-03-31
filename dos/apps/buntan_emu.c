@@ -1,3 +1,6 @@
+/*
+ * Compiling this code on Ubuntu requires libc6-dev-x32 package.
+ */
 #include <fcntl.h>
 #include <stdint.h>
 #include <stdio.h>
