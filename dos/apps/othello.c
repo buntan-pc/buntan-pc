@@ -1,4 +1,5 @@
 #include "syscall.h"
+#include "mmio.h"
 
 unsigned int board[8];
 int cx;
@@ -164,6 +165,8 @@ int buntan_main(int *info) {
   while (1) {
     print_board();
     if (turn == ai_turn) {
+      timer_cnt = 10000; // 思考時間を計るためのタイマ初期値
+
       unsigned int board_ai[8];
       int max_rev_cnt = 0;
       int max_x;
@@ -189,6 +192,13 @@ int buntan_main(int *info) {
       try_put_stone(board, ai_lastx, ai_lasty, turn);
       board[ai_lasty] |= ai_turn << 2*ai_lastx;
       turn = 3 - turn;
+
+      unsigned int ai_time = 10000 - timer_cnt;
+      char s[8];
+      sys_int2dec(ai_time, s, 5);
+      sys_put_string("AI's think time: ", -1);
+      sys_put_string(s, 5);
+      sys_put_string("ms\n", -1);
     } else {
       int c = sys_getc();
       if (c <= 0) {
