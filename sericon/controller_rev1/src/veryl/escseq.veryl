@@ -11,8 +11,11 @@ package escseq {
     CUD, // Cursor Down
     CUF, // Cursor Forward
     CUB, // Cursor Backward
+    CNL, // Cursor Next Line
+    CPL, // Cursor Previous Line
     CHA, // Cursor Horizontal Absolute
     CUP, // Cursor Position
+    EL,  // Erace in Line
     ECH, // Erase Character
     DECSC,
     DECRC,
@@ -33,37 +36,16 @@ module ESRecognizer #(
   o_csinum: output u16[MAX_CSINUM],
   o_csinum_len: output u8,
 ) {
-  enum RecogState {
-    Init,         // 初期状態
-    Unknown,      // 未実装のエスケープシーケンス
-    Num,          // 数字受信中
-
-    // 単純中間ステート
-    ESC,          // ESC 受信直後
-    CSI,          // ESC + [ 受信直後
-    CSIQuestion,  // CSI ?
-    NumSep,       // 数字の区切り文字 ;
-    EndOfIntermediateState,
-
-    // 最終ステート
-    CHA,          // CHA 受信直後
-    ECH,          // ECH 受信直後
-    DECSET,       // CSI ? Pn h
-    DECSTBM,      // CSI Pt ; Pb r
-  }
-
   enum Mode {
     INIT,
     ESC,   // ESC
     CSI,   // ESC [
+    CSIN,  // CSI number を読み取り中
     CSIQ,  // CSI ?
   }
 
-  //var state: RecogState;
   var es_reading: bit;
   var mode: Mode;
-  //var new_state: RecogState;
-  //assign new_state = Recognize(state, csi_cmd, i_char);
 
   var csi_num: u16[MAX_CSINUM];
   var csi_num_ind: u8;
@@ -72,7 +54,6 @@ module ESRecognizer #(
     if_reset {
       o_recog = 0;
       o_kind = escseq::Kind::NONE;
-      //state = RecogState::Init;
       es_reading = 0;
       csi_num_ind = 0;
       mode = Mode::INIT;
@@ -105,6 +86,7 @@ module ESRecognizer #(
               }
               default: {
                 csi_num[csi_num_ind] = csi_num[csi_num_ind] * 10 + (i_char - 8'h30);
+                mode = Mode::CSIN;
               }
             }
           }
@@ -112,6 +94,7 @@ module ESRecognizer #(
             o_csinum[csi_num_ind] = csi_num[csi_num_ind];
             csi_num[csi_num_ind + 1] = 0;
             csi_num_ind += 1;
+            mode = Mode::CSI;
           }
           8'h3F /* ? */: {
             mode = Mode::CSIQ;
@@ -127,88 +110,27 @@ module ESRecognizer #(
               8'h42 /* B */: escseq::Kind::CUD,
               8'h43 /* C */: escseq::Kind::CUF,
               8'h44 /* D */: escseq::Kind::CUB,
+              8'h45 /* E */: escseq::Kind::CNL,
+              8'h46 /* F */: escseq::Kind::CPL,
               8'h47 /* G */: escseq::Kind::CHA,
               8'h48 /* H */: escseq::Kind::CUP,
+              8'h4B /* K */: escseq::Kind::EL,
               8'h58 /* X */: escseq::Kind::ECH,
               8'h68 /* h */: escseq::Kind::DECSET,
               8'h72 /* r */: escseq::Kind::DECSTBM,
               default:       escseq::Kind::NONE,
             };
-            o_csinum[csi_num_ind] = csi_num[csi_num_ind];
-            o_csinum_len = csi_num_ind + 1;
+            if mode == Mode::CSIN {
+              o_csinum[csi_num_ind] = csi_num[csi_num_ind];
+              o_csinum_len = csi_num_ind + 1;
+            } else {
+              o_csinum_len = csi_num_ind;
+            }
             es_reading = 0;
             mode = Mode::INIT;
           }
         }
       }
-
-      /*
-      if state == RecogState::CSI {
-        csi_cmd = case new_state {
-          RecogState::CSIQuestion:  CSICommand::Question,
-          default:                  CSICommand::Normal,
-        };
-      }
-
-      case new_state {
-        RecogState::Init: case state {
-          RecogState::Init: {
-            o_recog = 1;
-            o_kind = escseq::Kind::NONE;
-            state = RecogState::Init;
-          }
-          default: {
-            o_recog = 0;
-            state = RecogState::Init;
-          }
-        }
-        RecogState::Unknown: {
-          o_recog = 0;
-          state = RecogState::Init;
-        }
-        RecogState::Num: {
-          o_recog = 0;
-          case state {
-            RecogState::Num: {
-              csi_num[csi_num_ind] = csi_num[csi_num_ind] * 10 + (i_char - 8'h30);
-            }
-            RecogState::NumSep: {
-              o_csinum[csi_num_ind] = csi_num[csi_num_ind];
-              csi_num[csi_num_ind + 1] = i_char - 8'h30;
-              csi_num_ind += 1;
-            }
-            default: {
-              csi_num[0] = i_char - 8'h30;
-              csi_num_ind = 0;
-            }
-          }
-          state = RecogState::Num;
-        }
-        // 単純中間ステート
-        RecogState::ESC .. RecogState::EndOfIntermediateState: {
-          o_recog = 0;
-          state = new_state;
-        }
-        // 最終ステート
-        default: {
-          o_recog = 1;
-          o_kind = case new_state {
-            RecogState::CHA:      escseq::Kind::CHA,
-            RecogState::ECH:      escseq::Kind::ECH,
-            RecogState::DECSET:   escseq::Kind::DECSET,
-            RecogState::DECSTBM:  escseq::Kind::DECSTBM,
-            default:              escseq::Kind::NONE,
-          };
-          if state == RecogState::Num {
-            o_csinum[csi_num_ind] = csi_num[csi_num_ind];
-            o_csinum_len = csi_num_ind + 1;
-          } else {
-            o_csinum_len = 0;
-          }
-          state = RecogState::Init;
-        }
-      }
-      */
     } else {
       o_recog = 0;
     }
