@@ -328,6 +328,8 @@ module top (
 
   var scrn_wr_pos_line: bit<$clog2(SCRN_H_CHAR)>;
   assign scrn_wr_pos_line = scrn_wr_pos[use_extscrn] >> $clog2(SCRN_W_CHAR);
+  var scrn_wr_pos_col: bit<$clog2(SCRN_W_CHAR)>;
+  assign scrn_wr_pos_col = scrn_wr_pos[use_extscrn][$clog2(SCRN_W_CHAR)-1:0];
 
   var uart_rx_data:  bit<8>;
   var uart_tx_data:  bit<8>;
@@ -425,13 +427,13 @@ module top (
         escseq::Kind::CUU: {
           scrn_wen = 0;
           scrn_wr_pos[use_extscrn] = ((scrn_wr_pos_line - 1) << $clog2(SCRN_W_CHAR)) +
-                                     scrn_wr_pos[use_extscrn][$clog2(SCRN_W_CHAR)-1:0];
+                                     scrn_wr_pos_col;
           scrn_recv_state = ScrnRecvState::idle;
         }
         escseq::Kind::CUD: {
           scrn_wen = 0;
           scrn_wr_pos[use_extscrn] = ((scrn_wr_pos_line + 1) << $clog2(SCRN_W_CHAR)) +
-                                     scrn_wr_pos[use_extscrn][$clog2(SCRN_W_CHAR)-1:0];
+                                     scrn_wr_pos_col;
           scrn_recv_state = ScrnRecvState::idle;
         }
         escseq::Kind::CUF: {
@@ -442,6 +444,16 @@ module top (
         escseq::Kind::CUB: {
           scrn_wen = 0;
           scrn_wr_pos[use_extscrn] -= 1;
+          scrn_recv_state = ScrnRecvState::idle;
+        }
+        escseq::Kind::CNL: {
+          scrn_wen = 0;
+          scrn_wr_pos[use_extscrn] = (scrn_wr_pos_line + (if es_csinum_len == 0 ? 1 : es_csinum[0])) << $clog2(SCRN_W_CHAR);
+          scrn_recv_state = ScrnRecvState::idle;
+        }
+        escseq::Kind::CPL: {
+          scrn_wen = 0;
+          scrn_wr_pos[use_extscrn] = (scrn_wr_pos_line - (if es_csinum_len == 0 ? 1 : es_csinum[0])) << $clog2(SCRN_W_CHAR);
           scrn_recv_state = ScrnRecvState::idle;
         }
         escseq::Kind::CHA: {
@@ -457,6 +469,19 @@ module top (
             scrn_wr_pos[use_extscrn] = 0; // home position
           }
           scrn_recv_state = ScrnRecvState::idle;
+        }
+        escseq::Kind::EL: {
+          scrn_wr_data = 0;
+          scrn_wen = 1;
+          scrn_recv_state = ScrnRecvState::clear;
+
+          if es_csinum_len == 0 || es_csinum[0] == 0 {
+            // カーソルから右を消去
+            scrn_clear_cnt = 127 - scrn_wr_pos_col;
+            scrn_wr_pos[use_extscrn][$clog2(SCRN_W_CHAR)-1:0] = 127;
+          } else {
+            // not implemented
+          }
         }
         escseq::Kind::ECH: {
           scrn_wen = 1;

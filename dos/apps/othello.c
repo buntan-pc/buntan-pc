@@ -38,7 +38,7 @@ void print_board_init() {
 void print_board() {
   sys_put_string("\x1B[4;15H", -1);  // カーソルを turn: の次へ
   sys_put_string("*o" + (turn - 1), 1);
-  sys_put_string("\n", 1);
+  sys_put_string("\x1B[E", -1); // カーソルを次の行の左端へ
 
   for (int y = 0; y < 8; ++y) {
     unsigned int line = board[y];
@@ -61,7 +61,7 @@ void print_board() {
       sys_put_string(&st, 1);
       line = line >> 2;
     }
-    sys_put_string("\n", 1);
+    sys_put_string("\x1B[E", -1); // カーソルを次の行の左端へ
   }
 }
 
