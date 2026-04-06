@@ -5,7 +5,7 @@
 module uart_mux_tb();
 
 logic rst, clk;
-logic rx, tx, rd, rx_full, wr, tx_ready, prog_recv, end_prog_recv;
+logic rx, tx, rd, rx_full, wr, tx_ready, img_recv, end_img_recv;
 logic [7:0] rx_data, tx_data;
 
 integer i;
@@ -16,9 +16,9 @@ initial begin
   rx <= 1;
   rd <= 0;
   wr <= 0;
-  end_prog_recv <= 0;
-  $monitor("%7t: rst=%d rx=%d data=%x full=%d rd=%d prog_recv=%d end=%d",
-           $time, rst, rx, rx_data, rx_full, rd, prog_recv, end_prog_recv,
+  end_img_recv <= 0;
+  $monitor("%7t: rst=%d rx=%d data=%x full=%d rd=%d img_recv=%d end=%d",
+           $time, rst, rx, rx_data, rx_full, rd, img_recv, end_img_recv,
            " tx=%d data=%x ready=%d wr=%d",
            tx, tx_data, tx_ready, wr
            );
@@ -69,10 +69,10 @@ initial begin
   recv_byte(8'h55);
   #25000; // 25ms 経過。
   $display("25ms from 55 received");
-  if (prog_recv !== 0) $error("prog_recv must be 0");
+  if (img_recv !== 0) $error("img_recv must be 0");
   recv_byte(8'hAA);
   #50;
-  if (prog_recv !== 0) $error("prog_recv must be 0");
+  if (img_recv !== 0) $error("img_recv must be 0");
   test_read(8'h55);
   @(posedge clk)
   test_read(8'hAA);
@@ -81,10 +81,10 @@ initial begin
   recv_byte(8'h55);
   #2500; // 2.5ms 経過。
   $display("2.5ms from 55 received");
-  if (prog_recv !== 0) $error("prog_recv must be 0");
+  if (img_recv !== 0) $error("img_recv must be 0");
   recv_byte(8'hAA);
   #50;
-  if (prog_recv !== 1) $error("prog_recv must be 1");
+  if (img_recv !== 1) $error("img_recv must be 1");
 
   #100;
 
@@ -92,7 +92,7 @@ initial begin
   #50;
   test_read(8'h23);
 
-  // prog_recv == 1 のときは 55 もすぐ受信する
+  // img_recv == 1 のときは 55 もすぐ受信する
   recv_byte(8'h55);
   #50;
   test_read(8'h55);
@@ -101,21 +101,21 @@ initial begin
   #50;
   test_read(8'hAA);
 
-  // end_prog_recv == 1 になるまでプログラム転送モードが継続
+  // end_img_recv == 1 になるまでプログラム転送モードが継続
   #100;
-  if (prog_recv !== 1) $error("prog_recv must be 1");
+  if (img_recv !== 1) $error("img_recv must be 1");
   recv_byte(8'h7F);
   recv_byte(8'hFF);
   #50;
   test_read(8'h7F);
   @(posedge clk);
   test_read(8'hFF);
-  if (prog_recv !== 1) $error("prog_recv must be 1");
+  if (img_recv !== 1) $error("img_recv must be 1");
 
   // 7F FF でプログラム転送モードを止めるのは uart_mux より外の機能
-  end_prog_recv <= 1;
+  end_img_recv <= 1;
   repeat(2) @(posedge clk);
-  if (prog_recv !== 0) $error("prog_recv must be 0");
+  if (img_recv !== 0) $error("img_recv must be 0");
 
   recv_byte(8'h55);
   #25000; // 25ms 経過。

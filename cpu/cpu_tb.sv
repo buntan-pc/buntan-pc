@@ -9,7 +9,7 @@ module cpu_tb;
 logic rst, clk, irq, dmem_ren, dmem_wen, dmem_byt, pmem_wenh, pmem_wenl;
 logic [`ADDR_WIDTH-1:0] dmem_addr, last_wr_addr, pmem_addr;
 logic [15:0] dmem_rdata, dmem_wdata, last_wr_data;
-logic [17:0] pmem_rdata;
+logic [17:0] pmem_rdata, pmem_wdata;
 logic [5:0] alu_sel;
 
 cpu#(.CLOCK_HZ(1000)) cpu(.*);
