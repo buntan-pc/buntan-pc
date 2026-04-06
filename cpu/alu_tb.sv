@@ -76,9 +76,6 @@ initial begin
   #1 sel <= `ALU_MUL;
   #1 if (out !== 16'h4FFF) $error("out must be 0x4FFF");
 
-  #1 sel <= `ALU_LT;
-  #1 if (out !== 16'h0001) $error("out must be 0x0001");
-
   #1 sel <= `ALU_EQ;
   #1 if (out !== 16'h0000) $error("out must be 0x0000");
 
@@ -96,6 +93,26 @@ initial begin
 
   #1 cond <= 1'b0;
   #1 if (out !== 16'h70FF) $error("out must be 0x70FF");
+
+  a <= 16'hDEAD;
+  b <= 16'h0002;
+
+  // b < a  (LT は signed の比較)
+  #1 sel <= `ALU_LT;
+  #1 if (out !== 16'h0000) $error("out must be 0x0000");
+
+  // b < a  (BT は unsigned の比較)
+  #1 sel <= `ALU_BT;
+  #1 if (out !== 16'h0001) $error("out must be 0x0001");
+
+  a <= 16'h7FFF;
+  b <= 16'h8000;
+
+  #1 sel <= `ALU_LT;
+  #1 if (out !== 16'h0001) $error("out must be 0x0001");
+
+  #1 sel <= `ALU_BT;
+  #1 if (out !== 16'h0000) $error("out must be 0x0000");
 end
 
 endmodule
