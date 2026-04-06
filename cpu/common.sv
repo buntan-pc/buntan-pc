@@ -23,9 +23,12 @@
 `define ALU_ADD   6'h20
 `define ALU_SUB   6'h21
 `define ALU_MUL   6'h22
-`define ALU_LT    6'h28
-`define ALU_EQ    6'h29
-`define ALU_NEQ   6'h2a
+`define ALU_EQ    6'h28
+`define ALU_NEQ   6'h29
+`define ALU_LT    6'h2a
+`define ALU_LE    6'h2b
+`define ALU_BT    6'h2c
+`define ALU_BE    6'h2d
 `define ALU_ADDZ  6'h30
 `define ALU_ADDNZ 6'h31
 
