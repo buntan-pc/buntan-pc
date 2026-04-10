@@ -8,7 +8,8 @@ module decoder_tb;
 
 logic [17:0] insn;
 logic sign, wr_stk1, pop, push, load_stk, load_fp, load_gp, load_ip, load_isr,
-  cpop, cpush, byt, dmem_ren, dmem_wen, set_ien, clear_ien, call, pmem_wenh, pmem_wenl;
+  cpop, cpush, byt, dmem_ren, dmem_wen, set_ien, clear_ien, call,
+  pmem_wenh, pmem_wenl, load_sr, rst_sr;
 logic [15:0] imm_mask;
 logic [2:0] src_a;
 logic [1:0] src_b;

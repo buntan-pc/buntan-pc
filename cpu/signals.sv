@@ -30,20 +30,23 @@ module signals(
   output dmem_wen,
   output set_ien, clear_ien,
   output [1:0] phase,
-  output pmem_wenh, pmem_wenl
+  output pmem_wenh, pmem_wenl,
+  output load_sr, rst_sr
 );
 
-logic src_a_fp, src_a_gp, src_a_ip, src_a_cstk;
+logic src_a_fp, src_a_gp, src_a_ip, src_a_cstk, src_a_sr;
 
 assign src_a_sel = src_a_fp ? `SRCA_FP
                    : src_a_gp ? `SRCA_GP
                    : src_a_ip ? `SRCA_IP
                    : src_a_cstk ? `SRCA_CSTK
+                   : src_a_sr ? `SRCA_SR
                    : `SRCA_STK0;
 assign src_a_fp = phase_half & (insn_src_a === `SRCA_FP) & ~irq_pend;
 assign src_a_gp = phase_half & (insn_src_a === `SRCA_GP) & ~irq_pend;
 assign src_a_ip = ~phase_half | (insn_src_a === `SRCA_IP) | irq_pend | (insn_call & phase_decode);
 assign src_a_cstk = phase_half & (insn_src_a === `SRCA_CSTK) & ~irq_pend;
+assign src_a_sr = phase_half & (insn_src_a === `SRCA_SR) & ~irq_pend;
 assign src_b_sel = irq_pend ? `SRCB_ISR : insn_src_b;
 assign alu_sel = phase_exec ? (irq_pend ? `ALU_B : insn_alu_sel) : phase_fetch ? `ALU_INC : `ALU_A;
 assign pop = (insn_pop & ~irq_pend) & phase_exec;
@@ -66,6 +69,8 @@ assign phase = phase_decode ? 2'd0
              : phase_rdmem ? 2'd2 : 2'd3;
 assign pmem_wenh = (insn_pmem_wenh & ~irq_pend) & phase_exec;
 assign pmem_wenl = (insn_pmem_wenl & ~irq_pend) & phase_exec;
+assign load_sr = (insn_load_sr & ~irq_pend) & phase_exec;
+assign rst_sr = (insn_rst_sr & ~irq_pend) & phase_exec;
 
 logic phase_decode, phase_exec, phase_rdmem, phase_fetch, irq_pend;
 signalizer signalizer(.*);
@@ -75,7 +80,8 @@ logic [1:0] insn_src_b;
 logic [5:0] insn_alu_sel;
 logic insn_pop, insn_push, insn_stk, insn_fp, insn_gp, insn_ip, insn_isr,
   insn_cpop, insn_cpush, insn_byt, insn_dmem_ren, insn_dmem_wen,
-  insn_set_ien, insn_clear_ien, insn_call, insn_pmem_wenh, insn_pmem_wenl;
+  insn_set_ien, insn_clear_ien, insn_call, insn_pmem_wenh, insn_pmem_wenl,
+  insn_load_sr, insn_rst_sr;
 decoder decoder(
   .insn(insn),
   .sign(sign),
@@ -100,7 +106,9 @@ decoder decoder(
   .clear_ien(insn_clear_ien),
   .call(insn_call),
   .pmem_wenh(insn_pmem_wenh),
-  .pmem_wenl(insn_pmem_wenl)
+  .pmem_wenl(insn_pmem_wenl),
+  .load_sr(insn_load_sr),
+  .rst_sr(insn_rst_sr)
 );
 
 logic reload_ip;

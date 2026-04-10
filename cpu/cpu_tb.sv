@@ -184,7 +184,41 @@ initial begin
     if (cpu.stack1 !== 16'h00FF) $error("stack1 must be 0x00FF");
 
   @(posedge cpu.load_insn)
-    pmem_rdata <= 18'h3CAFE; // 043: PUSH 0xCAFE
+    pmem_rdata <= 18'h05FF0; // 043: ADD FP,-16
+    if (cpu.fp    !== 16'h4000) $error("fp must be 0x4000");
+    if (cpu.fpmin !== 16'h4000) $error("fpmin must be 0x4000");
+
+  @(posedge cpu.load_insn)
+    pmem_rdata <= 18'h05008; // 044: ADD FP,8
+    if (cpu.fp    !== 16'h3FF0) $error("fp must be 0x3FF0");
+    if (cpu.fpmin !== 16'h3FF0) $error("fpmin must be 0x3FF0");
+
+  @(posedge cpu.load_insn)
+    pmem_rdata <= 18'h30000; // 045: PUSH 0x0000
+    if (cpu.fp    !== 16'h3FF8) $error("fp must be 0x3FF8");
+    if (cpu.fpmin !== 16'h3FF0) $error("fpmin must be 0x3FF0");
+
+  @(posedge cpu.load_insn)
+    pmem_rdata <= 18'h1C804; // 046: RDSR
+    if (cpu.stack0 !== 16'h0000) $error("stack0 must be 0x0000");
+
+  @(posedge cpu.load_insn)
+    pmem_rdata <= 18'h3BEEF; // 047: PUSH 0xBEEF
+    if (cpu.stack0 !== 16'h3FF0) $error("stack0 must be 0x3FF0");
+
+  @(posedge cpu.load_insn)
+    pmem_rdata <= 18'h30000; // 048: PUSH 0x0000
+    if (cpu.stack0 !== 16'hBEEF) $error("stack0 must be 0xBEEF");
+
+  @(posedge cpu.load_insn)
+    pmem_rdata <= 18'h1C806; // 049: RSTSR
+    if (cpu.stack0 !== 16'h0000) $error("stack0 must be 0x0000");
+    if (cpu.fpmin  !== 16'h3FF0) $error("fpmin must be 0x3FF0");
+
+  @(posedge cpu.load_insn)
+    pmem_rdata <= 18'h3CAFE; // 050: PUSH 0xCAFE
+    if (cpu.stack0 !== 16'hBEEF) $error("stack0 must be 0xBEEF");
+    if (cpu.fpmin  !== 16'h3FF8) $error("fpmin must be 0x3FF8");
 
   @(posedge cpu.load_insn)
     pmem_rdata <= 18'h30123; // 044: PUSH 0x0123
