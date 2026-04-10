@@ -630,6 +630,14 @@ unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass val
           Insn(ctx, "spla");
         } else if (is_bif && strcmp(sym->name->raw, "__builtin_set_isr") == 0) {
           InsnReg(ctx, "pop", "isr");
+        } else if (is_bif && strcmp(sym->name->raw, "__builtin_get_fp") == 0) {
+          InsnReg(ctx, "push", "fp+0");
+        } else if (is_bif && strcmp(sym->name->raw, "__builtin_get_sr") == 0) {
+          Insn(ctx, "rdsr");
+        } else if (is_bif && strcmp(sym->name->raw, "__builtin_set_sr") == 0) {
+          Insn(ctx, "wrsr");
+        } else if (is_bif && strcmp(sym->name->raw, "__builtin_reset_sr") == 0) {
+          Insn(ctx, "rstsr");
         } else if (sym && (sym->kind == kSymGVar || sym->kind == kSymLVar) && sym->type->kind == kTypePtr) {
           Generate(ctx, node->lhs, VC_RVAL, 1);
           Insn(ctx, "call");
@@ -1060,6 +1068,10 @@ struct Symbol *make_builtin_syms() {
   sym = AppendBifSymbol(sym, "__builtin_set_gp", NewType(kTypeVoid));
   sym = AppendBifSymbol(sym, "__builtin_write_pmem", type_uint);
   sym = AppendBifSymbol(sym, "__builtin_set_isr", NewType(kTypeVoid));
+  sym = AppendBifSymbol(sym, "__builtin_get_fp", type_uint);
+  sym = AppendBifSymbol(sym, "__builtin_get_sr", type_uint);
+  sym = AppendBifSymbol(sym, "__builtin_set_sr", type_uint);
+  sym = AppendBifSymbol(sym, "__builtin_reset_sr", NewType(kTypeVoid));
 
   return builtin_syms;
 }

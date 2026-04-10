@@ -38,6 +38,7 @@
 `define SRCA_GP   3'h2
 `define SRCA_IP   3'h3
 `define SRCA_CSTK 3'h4
+`define SRCA_SR   3'h5
 `define SRCA_X    3'hx
 
 // Source B
@@ -45,5 +46,8 @@
 `define SRCB_IMM  2'h1
 `define SRCB_ISR  2'h2
 `define SRCB_X    2'hx
+
+// System Registers
+`define SR_FPMIN  16'h0000
 
 `endif // `ifndef COMMON_SV
