@@ -113,8 +113,10 @@ initial begin
            mcu.cpu.alu_out, mcu.cpu.stack0, mcu.cpu.stack1, mcu.cpu.stack_in, mcu.cpu.fp,
            //" cstk{%02x %02x} irq=%d cdt=%04x",
            //mcu.cpu.cstack.data[0], mcu.cpu.cstack.data[1], mcu.cpu.irq, mcu.cdtimer_cnt,
-           " mcu_uart_rx=%d cur_uart_in=%02x rx_data=%x rx_full=%d",
-           mcu_uart_rx, cur_uart_in, mcu.uart_mux.rx_data, mcu.uart_mux.rx_full
+           //" mcu_uart_rx=%d cur_uart_in=%02x rx_data=%x rx_full=%d",
+           //mcu_uart_rx, cur_uart_in, mcu.uart_mux.rx_data, mcu.uart_mux.rx_full
+           " load_sr=%d rst_sr=%d fpmin=%04x",
+           mcu.cpu.load_sr, mcu.cpu.rst_sr, mcu.cpu.fpmin
          );
   $dumpvars(1, mcu.cpu, mcu.cpu.signals.decoder);
 
@@ -235,7 +237,7 @@ always @(posedge clk) begin
       18'b00_00xx_xxxx_xxxx_xxxx: insn_name <= "call";
       18'b00_0100_xxxx_xxxx_xxxx: insn_name <= "jmp";
       18'b00_0101_xxxx_xxxx_xxxx: insn_name <= "addfp";
-      18'b00_0110_xxxx_xxxx_xxx0: insn_name <= "jz";
+      18'b00_0110_xxxx_xxxx_xxxx: insn_name <= "jz";
       18'b00_10xx_xxxx_xxxx_xxxx: insn_name <= "ld1";
       18'b00_11xx_xxxx_xxxx_xxxx: insn_name <= "st1";
       18'b01_00xx_xxxx_xxxx_xxx0: insn_name <= "ld";
@@ -267,6 +269,9 @@ always @(posedge clk) begin
       18'b01_11xx_1000_0000_0001: insn_name <= "call";
       18'b01_11xx_1000_0000_0010: insn_name <= "cpop";
       18'b01_11xx_1000_0000_0011: insn_name <= "cpush";
+      18'b01_11xx_1000_0000_0100: insn_name <= "rdsr";
+      18'b01_11xx_1000_0000_0101: insn_name <= "wrsr";
+      18'b01_11xx_1000_0000_0110: insn_name <= "rstsr";
       18'b01_11xx_1000_0000_1000: insn_name <= "ldd";
       18'b01_11xx_1000_0000_1100: insn_name <= "sta";
       18'b01_11xx_1000_0000_1110: insn_name <= "std";

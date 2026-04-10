@@ -12,7 +12,7 @@ logic sign,
   wr_stk1, pop, push,
   load_stk, load_fp, load_gp, load_ip, load_insn, load_isr,
   cpop, cpush, byt, dmem_ren, dmem_wen,
-  set_ien, clear_ien, pmem_wenh, pmem_wenl;
+  set_ien, clear_ien, pmem_wenh, pmem_wenl, load_sr, rst_sr;
 logic [2:0] src_a_sel;
 logic [1:0] src_b_sel;
 logic [15:0] imm_mask;

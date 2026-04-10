@@ -570,6 +570,12 @@ int ProcessTextSection(FILE *input_file, FILE *map_file,
         exit(1);
       }
       pmem[ip] = 0x1c803;
+    } else if (strcmp(al->mnemonic, "rdsr") == 0) {
+      pmem[ip] = 0x1c804;
+    } else if (strcmp(al->mnemonic, "wrsr") == 0) {
+      pmem[ip] = 0x1c805;
+    } else if (strcmp(al->mnemonic, "rstsr") == 0) {
+      pmem[ip] = 0x1c806;
     } else if (strcmp(al->mnemonic, "ldd") == 0) {
       pmem[ip] = 0x1c808;
     } else if (strcmp(al->mnemonic, "ldd1") == 0) {
