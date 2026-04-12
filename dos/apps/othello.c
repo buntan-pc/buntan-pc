@@ -235,6 +235,7 @@ int eval_move(unsigned int *board, int x, int y, int stone, int depth) {
 
 int buntan_main(int *info) {
   init_syscall(info);
+  __builtin_reset_sr(0);
 
   for (int i = 0; i < 8; ++i) {
     board[i] = 0x5555;
@@ -327,5 +328,12 @@ int buntan_main(int *info) {
   }
 
   sys_put_string("\x1b[?1049l", -1); // メインバッファへ戻す
+
+  unsigned int fpmin = __builtin_get_sr(0);
+  char s[4];
+  sys_int2hex(fpmin, s, 4);
+  sys_put_string("FPMIN=", -1);
+  sys_put_string(s, 4);
+  sys_put_string("\n", 1);
   return 0;
 }
