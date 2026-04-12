@@ -1,10 +1,12 @@
 #include "syscall.h"
 #include "mmio.h"
 
+//#include <stdio.h>
+
 unsigned int board[8];
 int cx;
 int cy;
-int turn = 1; // 1=black 2=white
+int turn = 0; // 0=black 1=none 2=white
 int ai_turn = 2;
 int ai_lastx = -1;
 int ai_lasty = -1;
@@ -12,12 +14,12 @@ int ai_lasty = -1;
 void print_board_init() {
   sys_put_string("\x1B[H", -1);  // カーソルを左上へ
   sys_put_string("ai_turn: ", -1);
-  sys_put_string("*o" + (ai_turn - 1), 1);
+  sys_put_string("*?o" + ai_turn, 1);
   sys_put_string("\n", 1);
   sys_put_string("O/@: AI's last move\n\n", -1);
 
   sys_put_string("current turn: ", -1);
-  sys_put_string("*o" + (turn - 1), 1);
+  sys_put_string("*?o" + turn, 1);
   sys_put_string("\n", 1);
 
   for (int y = 0; y < 8; ++y) {
@@ -28,7 +30,7 @@ void print_board_init() {
       } else {
         sys_put_string(" ", 1);
       }
-      sys_put_string("_*o?" + (line & 3), 1);
+      sys_put_string("*_o?" + (line & 3), 1);
       line = line >> 2;
     }
     sys_put_string("\n", 1);
@@ -37,7 +39,7 @@ void print_board_init() {
 
 void print_board() {
   sys_put_string("\x1B[4;15H", -1);  // カーソルを turn: の次へ
-  sys_put_string("*o" + (turn - 1), 1);
+  sys_put_string("*?o" + turn, 1);
   sys_put_string("\x1B[E", -1); // カーソルを次の行の左端へ
 
   for (int y = 0; y < 8; ++y) {
@@ -56,7 +58,7 @@ void print_board() {
           st = 'O';
         }
       } else {
-        st = "_*o?"[line & 3];
+        st = "*_o?"[line & 3];
       }
       sys_put_string(&st, 1);
       line = line >> 2;
@@ -69,8 +71,12 @@ int get_stone(unsigned int *board, int x, int y) {
   return (board[y] >> 2*x) & 3;
 }
 
+void put_stone(unsigned int *board, int x, int y, int stone) {
+  board[y] = (board[y] & ~(3 << 2*x)) | (stone << 2*x);
+}
+
 int try_put_stone(unsigned int *board, int cx, int cy, int stone) {
-  if (get_stone(board, cx, cy) != 0) {
+  if (get_stone(board, cx, cy) != 1) {
     return -1;
   }
 
@@ -92,7 +98,7 @@ int try_put_stone(unsigned int *board, int cx, int cy, int stone) {
     int x = cx + dx;
     int y = cy + dy;
     int prev_st = get_stone(board, x, y);
-    if (prev_st == 0) {
+    if (prev_st == 1) {
       continue;
     }
 
@@ -103,16 +109,16 @@ int try_put_stone(unsigned int *board, int cx, int cy, int stone) {
 
     while (0 <= x && x <= 7 && 0 <= y && y <= 7) {
       int st = get_stone(board, x, y);
-      if (st == 0) {
+      if (st == 1) {
         break;
       } else if (st == stone) {
-        if (prev_st == 3 - stone) {
+        if (prev_st == 2 - stone) {
           rev_cnt += i;
         }
         int putx = x - dx;
         int puty = y - dy;
         for (int j = 0; j < i; ++j) {
-          board[puty] = (board[puty] & ~(3 << 2*putx)) | (stone << 2*putx);
+          put_stone(board, putx, puty, stone);
           putx = putx - dx;
           puty = puty - dy;
         }
@@ -124,27 +130,106 @@ int try_put_stone(unsigned int *board, int cx, int cy, int stone) {
     }
   }
 
+  if (rev_cnt > 0) {
+    put_stone(board, cx, cy, stone);
+  }
+
   return rev_cnt;
+}
+
+// もし AI が黒番 => return black=+1, white=-1
+// もし AI が白番 => return black=-1, white=+1
+int st2ev(int stone) {
+  return (ai_turn - 1) * (stone - 1);
+}
+
+// 黒番から見た盤面評価値を計算
+int eval_board(unsigned int *board) {
+  int eval = 0;
+
+  // 四隅
+  eval += st2ev(get_stone(board, 0, 0)) * 3;
+  eval += st2ev(get_stone(board, 7, 0)) * 3;
+  eval += st2ev(get_stone(board, 0, 7)) * 3;
+  eval += st2ev(get_stone(board, 7, 7)) * 3;
+
+  // 辺
+  for (int i = 1; i < 7; ++i) {
+    eval += st2ev(get_stone(board, i, 0)) * 2;
+    eval += st2ev(get_stone(board, i, 7)) * 2;
+    eval += st2ev(get_stone(board, 0, i)) * 2;
+    eval += st2ev(get_stone(board, 7, i)) * 2;
+  }
+
+  // その他
+  for (int y = 1; y < 7; ++y) {
+    for (int x = 1; x < 7; ++x) {
+      eval += st2ev(get_stone(board, x, y));
+    }
+  }
+
+  return eval;
 }
 
 // (x, y) に打った場合の評価値を計算
 // depth: 探索深さ。あとどれだけ深く探索するか。
 //        0なら、その手を打った際の評価値をそのまま返す。
 int eval_move(unsigned int *board, int x, int y, int stone, int depth) {
+  //fprintf(stderr, "eval_move: %d,%d stone=%d depth=%d\n", x, y, stone, depth);
+
   if (depth <= 0) {
-    int board_ai[8];
+    int board_next[8];
     for (int i = 0; i < 8; ++i) {
-      board_ai[i] = board[i];
+      board_next[i] = board[i];
     }
-    int rev_cnt = try_put_stone(board_ai, x, y, stone);
-    // とりあえず裏返せる数が一番多いときに評価値を最大とする
-    return rev_cnt;
+    int rev_cnt = try_put_stone(board_next, x, y, stone);
+    if (rev_cnt <= 0) {
+      return -30000;
+    }
+    int ev = eval_board(board_next);
+    //fprintf(stderr, "eval_move(%d,%d,stone=%d): eval_board -> %d\n", x, y, stone, ev);
+    return ev;
   } else { // depth > 0
-    int board_ai[8];
+    int board_next[8];
     for (int i = 0; i < 8; ++i) {
-      board_ai[i] = board[i];
+      board_next[i] = board[i];
     }
-    int rev_cnt = try_put_stone(board_ai, x, y, stone);
+    int rev_cnt = try_put_stone(board_next, x, y, stone);
+    if (rev_cnt <= 0) {
+      // ここは石を置けない場所だった
+      return -30000;
+    }
+
+    int board_nn[8];
+
+    // 相手のターン
+    int max_ev = -30000;
+    int min_ev = 30000;
+    for (int oy = 0; oy < 8; ++oy) {
+      for (int ox = 0; ox < 8; ++ox) {
+        for (int i = 0; i < 8; ++i) {
+          board_nn[i] = board_next[i];
+        }
+        int ev = eval_move(board_nn, ox, oy, 2 - stone, depth - 1);
+        if (ev == -30000) {
+          continue;
+        }
+        if (max_ev < ev) {
+          max_ev = ev;
+        }
+        if (min_ev > ev) {
+          min_ev = ev;
+        }
+      }
+    }
+
+    if (stone == ai_turn && ai_turn == 0) {
+      // AI の手番の評価、かつ AI が黒石
+      // 相手=白 は評価値が最低になるように打つと考える
+      return min_ev;
+    } else {
+      return max_ev;
+    }
   }
 }
 
@@ -152,10 +237,10 @@ int buntan_main(int *info) {
   init_syscall(info);
 
   for (int i = 0; i < 8; ++i) {
-    board[i] = 0;
+    board[i] = 0x5555;
   }
-  board[3] = 0x0180;
-  board[4] = 0x0240;
+  board[3] = 0x5495;
+  board[4] = 0x5615;
   cx = 3;
   cy = 2;
 
@@ -168,7 +253,7 @@ int buntan_main(int *info) {
       timer_cnt = 10000; // 思考時間を計るためのタイマ初期値
 
       unsigned int board_ai[8];
-      int max_rev_cnt = 0;
+      int max_ev = -30000;
       int max_x;
       int max_y;
 
@@ -177,9 +262,14 @@ int buntan_main(int *info) {
           for (int i = 0; i < 8; ++i) {
             board_ai[i] = board[i];
           }
-          int rev_cnt = try_put_stone(board_ai, x, y, turn);
-          if (max_rev_cnt < rev_cnt) {
-            max_rev_cnt = rev_cnt;
+          int st = get_stone(board_ai, x, y);
+          int ev = eval_move(board_ai, x, y, turn, 1);
+          if (st != 1 && ev != -30000) {
+            //fprintf(stderr, "err\n");
+          }
+          if (max_ev < ev) {
+            //fprintf(stderr, "eval_move (max renewed): %d,%d -> %d\n", x, y, ev);
+            max_ev = ev;
             max_x = x;
             max_y = y;
           }
@@ -190,8 +280,7 @@ int buntan_main(int *info) {
       ai_lasty = max_y;
 
       try_put_stone(board, ai_lastx, ai_lasty, turn);
-      board[ai_lasty] |= ai_turn << 2*ai_lastx;
-      turn = 3 - turn;
+      turn = 2 - turn;
 
       unsigned int ai_time = 10000 - timer_cnt;
       char s[8];
@@ -217,13 +306,12 @@ int buntan_main(int *info) {
       } else if (cx < 7 && (c == 'l' || c == 0x1E)) {
         ++cx;
       } else if (c == ' ') {
-        if (get_stone(board, cx, cy) != 0) {
+        if (get_stone(board, cx, cy) != 1) {
           sys_put_string("cannot put a stone\n", -1);
           continue;
         } else {
           if (try_put_stone(board, cx, cy, turn) > 0) {
-            board[cy] |= turn << (2*cx);
-            turn = 3 - turn;
+            turn = 2 - turn;
           } else {
             sys_put_string("cannot put a stone\n", -1);
           }
