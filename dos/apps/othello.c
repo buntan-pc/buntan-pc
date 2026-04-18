@@ -4,6 +4,7 @@
 //#include <stdio.h>
 
 unsigned int board[8];
+unsigned int board_prev[8];
 int cx;
 int cy;
 int turn = 0; // 0=black 1=none 2=white
@@ -42,7 +43,7 @@ void print_board_init() {
   }
 }
 
-void print_board() {
+void print_board(unsigned int *board) {
   sys_put_string("\x1B[4;15H", -1);  // カーソルを turn: の次へ
   sys_put_string("*?o" + turn, 1);
   sys_put_string("\x1B[E", -1); // カーソルを次の行の左端へ
@@ -60,15 +61,15 @@ void print_board() {
       } else {
         sys_put_string(" ", 1);
       }
-      int st;
-      if (ai_lasty == y && ai_lastx == x) {
+      int st = line & 3;
+      if (st != 1 && ai_lasty == y && ai_lastx == x) {
         if (ai_turn == 0) {
           st = '@';
         } else {
           st = 'O';
         }
       } else {
-        st = "*_o?"[line & 3];
+        st = "*_o?"[st];
       }
       sys_put_string(&st, 1);
       line = line >> 2;
@@ -276,7 +277,7 @@ int buntan_main(int *info) {
   print_board_init();
 
   while (1) {
-    print_board();
+    print_board(board);
     if (turn == ai_turn) {
       timer_cnt = 10000; // 思考時間を計るためのタイマ初期値
 
@@ -306,6 +307,10 @@ int buntan_main(int *info) {
 
       ai_lastx = max_x;
       ai_lasty = max_y;
+
+      for (int i = 0; i < 8; ++i) {
+        board_prev[i] = board[i];
+      }
 
       try_put_stone(board, ai_lastx, ai_lasty, turn);
       turn = 2 - turn;
@@ -345,6 +350,11 @@ int buntan_main(int *info) {
         --cy;
       } else if (cx < 7 && (c == 'l' || c == 0x1E)) {
         ++cx;
+      } else if (c == 'p') {
+        print_board(board_prev);
+        sys_put_string("press any key to continue", -1);
+        sys_getc();
+        sys_put_string("\x1B[1G\x1B[K", -1);
       } else if (c == ' ') {
         if (get_stone(board, cx, cy) != 1) {
           sys_put_string("cannot put a stone\n", -1);
