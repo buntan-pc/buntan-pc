@@ -244,7 +244,19 @@ int eval_move(unsigned int *board, int x, int y, int stone, int depth) {
   }
 }
 
+void print_kifu(unsigned char *kifu, unsigned int len) {
+  char s[2];
+  for (int i = 0; i < len; ++i) {
+    s[0] = 'a' + (kifu[i] >> 4);
+    s[1] = '0' + (kifu[i] & 0x0f);
+    sys_put_string(s, 2);
+  }
+}
+
 int buntan_main(int *info) {
+  char kifu[60];
+  unsigned int kifu_len = 0;
+
   init_syscall(info);
   //__builtin_reset_sr(0);
 
@@ -313,6 +325,7 @@ int buntan_main(int *info) {
       }
 
       try_put_stone(board, ai_lastx, ai_lasty, turn);
+      kifu[kifu_len++] = (ai_lastx << 4) | ai_lasty;
       turn = 2 - turn;
 
       char s[8];
@@ -355,12 +368,15 @@ int buntan_main(int *info) {
         sys_put_string("press any key to continue", -1);
         sys_getc();
         sys_put_string("\x1B[1G\x1B[K", -1);
+      } else if (c == 'r') {
+        print_kifu(kifu, kifu_len);
       } else if (c == ' ') {
         if (get_stone(board, cx, cy) != 1) {
           sys_put_string("cannot put a stone\n", -1);
           continue;
         } else {
           if (try_put_stone(board, cx, cy, turn) > 0) {
+            kifu[kifu_len++] = (cx << 4) | cy;
             turn = 2 - turn;
           } else {
             sys_put_string("cannot put a stone\n", -1);
@@ -377,6 +393,10 @@ int buntan_main(int *info) {
   }
 
   sys_put_string("\x1b[?1049l", -1); // メインバッファへ戻す
+
+  sys_put_string("kifu:\n", -1);
+  print_kifu(kifu, kifu_len);
+  sys_put_string("\n", 1);
 
   //unsigned int fpmin = __builtin_get_sr(0);
   //char s[4];
