@@ -62,7 +62,7 @@ void print_board() {
       }
       int st;
       if (ai_lasty == y && ai_lastx == x) {
-        if (ai_turn == 1) {
+        if (ai_turn == 0) {
           st = '@';
         } else {
           st = 'O';
@@ -246,6 +246,23 @@ int eval_move(unsigned int *board, int x, int y, int stone, int depth) {
 int buntan_main(int *info) {
   init_syscall(info);
   //__builtin_reset_sr(0);
+
+  turn = 0;
+  ai_turn = 2;
+  ai_lastx = -1;
+  ai_lasty = -1;
+
+  int argc = info[2];
+  char **argv = info[3];
+  char *arg1 = argv[1];
+  if (argc >= 2) {
+    int ai_init = arg1[0];
+    if (ai_init == 'b') {
+      ai_turn = 0;
+    } else if (ai_init == 'w') {
+      ai_turn = 2;
+    }
+  }
 
   for (int i = 0; i < 8; ++i) {
     board[i] = 0x5555;
