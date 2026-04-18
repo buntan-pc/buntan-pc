@@ -14,7 +14,7 @@ SRCS := src/port.cst src/timing.sdc src/main.sv \
 all: $(TARGET)
 
 $(TARGET): $(SRCS) $(SRC_LIST) Makefile
-	@./gw_sh_1.9.8.03.exe < syn-pnr.tcl 2>&1 | { \
+	@$(GW_SH) < syn-pnr.tcl 2>&1 | { \
 		err=0; \
 		while IFS= read -r line; do \
 		    /usr/bin/echo "$$line"; \
