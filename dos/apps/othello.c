@@ -22,8 +22,13 @@ void print_board_init() {
   sys_put_string("*?o" + turn, 1);
   sys_put_string("\n", 1);
 
+  char line_name[2];
+  sys_put_string("   A B C D E F G H\n", -1);
   for (int y = 0; y < 8; ++y) {
     unsigned int line = board[y];
+    line_name[0] = '1' + y;
+    line_name[1] = ' ';
+    sys_put_string(line_name, 2);
     for (int x = 0; x < 8; ++x) {
       if (cy == y && cx == x) {
         sys_put_string(">", 1);
@@ -42,8 +47,13 @@ void print_board() {
   sys_put_string("*?o" + turn, 1);
   sys_put_string("\x1B[E", -1); // カーソルを次の行の左端へ
 
+  char line_name[2];
+  sys_put_string("   A B C D E F G H\n", -1);
   for (int y = 0; y < 8; ++y) {
     unsigned int line = board[y];
+    line_name[0] = '1' + y;
+    line_name[1] = ' ';
+    sys_put_string(line_name, 2);
     for (int x = 0; x < 8; ++x) {
       if (cy == y && cx == x) {
         sys_put_string(">", 1);
@@ -235,7 +245,7 @@ int eval_move(unsigned int *board, int x, int y, int stone, int depth) {
 
 int buntan_main(int *info) {
   init_syscall(info);
-  __builtin_reset_sr(0);
+  //__builtin_reset_sr(0);
 
   for (int i = 0; i < 8; ++i) {
     board[i] = 0x5555;
@@ -283,8 +293,20 @@ int buntan_main(int *info) {
       try_put_stone(board, ai_lastx, ai_lasty, turn);
       turn = 2 - turn;
 
-      unsigned int ai_time = 10000 - timer_cnt;
       char s[8];
+      sys_put_string("AI's move: ", -1);
+      s[0] = 'A' + ai_lastx;
+      s[1] = '1' + ai_lasty;
+      sys_put_string(s, 2);
+      sys_put_string(" (x=", -1);
+      s[0] = '0' + ai_lastx;
+      s[1] = '0' + ai_lasty;
+      sys_put_string(s + 0, 1);
+      sys_put_string(",y=", -1);
+      sys_put_string(s + 1, 1);
+      sys_put_string(")\n", -1);
+
+      unsigned int ai_time = 10000 - timer_cnt;
       sys_int2dec(ai_time, s, 5);
       sys_put_string("AI's think time: ", -1);
       sys_put_string(s, 5);
@@ -329,11 +351,11 @@ int buntan_main(int *info) {
 
   sys_put_string("\x1b[?1049l", -1); // メインバッファへ戻す
 
-  unsigned int fpmin = __builtin_get_sr(0);
-  char s[4];
-  sys_int2hex(fpmin, s, 4);
-  sys_put_string("FPMIN=", -1);
-  sys_put_string(s, 4);
-  sys_put_string("\n", 1);
+  //unsigned int fpmin = __builtin_get_sr(0);
+  //char s[4];
+  //sys_int2hex(fpmin, s, 4);
+  //sys_put_string("FPMIN=", -1);
+  //sys_put_string(s, 4);
+  //sys_put_string("\n", 1);
   return 0;
 }
