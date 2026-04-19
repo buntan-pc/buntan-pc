@@ -155,7 +155,7 @@ test_value 03 'int buntan_main() {if (-1 < 0) { return 3; } else { return 5; }}'
 test_value 85 'int buntan_main() {return 0xaf & 0xc1 | 0xfb ^ 255;}'
 test_value dc 'int buntan_main() {char c = ~043; return c;}'
 test_value 37 'int buntan_main() {int i; int s=0; for(i=0;i<20;i++){if(i>10){continue;} s+=i;} return s;}'
-test_value 03 'int buntan_main() {int a[2] = {1, 3,}; return a[1];}'
+test_value 03 'int buntan_main() {int a[2] = {1, 3,}; int *p = &a; int **q = &p; return q[0][1];}'
 test_value 05 'int buntan_main() {int a[2]; a[0] = 1; *(a+1) = 4; return *a + a[a[0]];}'
 test_value 0f 'int buntan_main() {int a[3]; int *p = a+1; p[0] = 5; p[1] = 3; return a[1] * a[2];}'
 test_value 05 'int buntan_main() {int *p=0x06; int s=0; int c=0; while(1){while((p[1]&1)==0); c=p[0]; if(c==0xfe)break; s+=c;} return s;}' "02 03 fe"

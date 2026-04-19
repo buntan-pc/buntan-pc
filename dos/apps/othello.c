@@ -267,9 +267,8 @@ int buntan_main(int *info) {
 
   int argc = info[2];
   char **argv = info[3];
-  char *arg1 = argv[1];
   if (argc >= 2) {
-    int ai_init = arg1[0];
+    int ai_init = argv[1][0];
     if (ai_init == 'b') {
       ai_turn = 0;
     } else if (ai_init == 'w') {
