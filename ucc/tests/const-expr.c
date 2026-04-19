@@ -1,3 +1,3 @@
-int main() {
+int buntan_main() {
   return 2 + 3 * 4;
 }

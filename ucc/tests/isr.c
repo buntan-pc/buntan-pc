@@ -1,6 +1,6 @@
 void _ISRfoo() {
 }
-int main() {
+int buntan_main() {
   asm("push _ISRfoo\n\t"
       "isr\n\t");
   return 0;

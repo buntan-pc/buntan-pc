@@ -1,4 +1,4 @@
-int main() {
+int buntan_main() {
   char ac[2] = {3, 5};
   int ai[3] = {2, 3};
   int *p = ai;
