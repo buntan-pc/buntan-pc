@@ -20,8 +20,8 @@ all: $(EXES) Makefile
 
 # for emulation on Linux
 %.elf: %.c buntan_emu.c Makefile
-	$(CC_LINUX) -mx32 -c -Dmain=buntan_main -Wno-int-conversion -Wno-incompatible-pointer-types -o $*.o $<
-	$(CC_LINUX) -mx32 -o $@ $*.o buntan_emu.c
+	$(CC_LINUX) -g -mx32 -c -Dmain=buntan_main -Wno-int-conversion -Wno-incompatible-pointer-types -o $*.o $<
+	$(CC_LINUX) -g -mx32 -o $@ $*.o buntan_emu.c
 
 .PHONY: clean
 clean:
