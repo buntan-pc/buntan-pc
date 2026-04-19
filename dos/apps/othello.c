@@ -253,6 +253,75 @@ void print_kifu(unsigned char *kifu, unsigned int len) {
   }
 }
 
+char *append_str(char *dst, char *src) {
+  while (*src) {
+    *dst++ = *src++;
+  }
+  return dst;
+}
+
+void save_kifu(unsigned char *kifu, unsigned int len) {
+  char player_name[16];
+  int file_entry[16] = {};
+  char block[512] = {};
+  char *p = block;
+
+  sys_put_string("player name: ", -1);
+  int player_name_len = sys_get_string(player_name, 7);
+  if (player_name_len >= 7) {
+    player_name_len = 6;
+    player_name[player_name_len] = 0;
+    sys_put_string("player name is truncated to 6 bytes: ", -1);
+    sys_put_string(player_name, -1);
+    sys_put_string("\n", 1);
+  }
+
+  p = append_str(p, "player_black: ");
+  if (ai_turn == 0) { // AI is black
+    p = append_str(p, "AI\n");
+  } else {
+    p = append_str(p, player_name);
+    p = append_str(p, "\n");
+  }
+
+  p = append_str(p, "player_white: ");
+  if (ai_turn == 2) { // AI is white
+    p = append_str(p, "AI\n");
+  } else {
+    p = append_str(p, player_name);
+    p = append_str(p, "\n");
+  }
+
+  p = append_str(p, "kifu: ");
+  for (int i = 0; i < len; ++i) {
+    *p++ = 'a' + (kifu[i] >> 4);
+    *p++ = '0' + (kifu[i] & 0x0f);
+  }
+  *p++ = '\n';
+
+  sys_put_string("kifu file postfix: ", -1);
+  int postfix_len = sys_get_string(player_name + player_name_len, 2);
+  *append_str(player_name + player_name_len + postfix_len, ".kif") = 0;
+  sys_open_entry_fatsd(player_name, file_entry);
+
+  file_entry[14] = (p - block); // file size low
+  file_entry[15] = 0; // file size high
+
+  if (sys_write_entry_fatsd(file_entry, 3) < 0) {
+    sys_put_string("failed to save file entry: ", -1);
+    sys_put_string(player_name, -1);
+    sys_put_string("\n", 1);
+    return;
+  }
+
+  if (sys_write_block_fatsd(file_entry, block, 0, 1) < 0) {
+    sys_put_string("failed to write file: ", -1);
+    sys_put_string(player_name, -1);
+    sys_put_string("\n", 1);
+    return;
+  }
+}
+
 int buntan_main(int *info) {
   char kifu[60];
   unsigned int kifu_len = 0;
@@ -382,8 +451,10 @@ int buntan_main(int *info) {
           }
         }
       } else if (c == 'q') {
-        sys_put_string("Quitting. Please press a key...\n", -1);
-        sys_getc();
+        sys_put_string("write kifu to file? [y/n]\n", -1);
+        if (sys_getc() == 'y') {
+          save_kifu(kifu, kifu_len);
+        }
         break;
       } else {
         continue;
