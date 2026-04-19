@@ -2,11 +2,11 @@ section .data
 
 section .text
 start:
-	call main
+	call buntan_main
 	st 6
 fin:
 	jmp fin
-main:
+buntan_main:
 	add fp,-10
 	push 3
 	st1 fp+0

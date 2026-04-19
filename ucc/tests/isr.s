@@ -2,13 +2,13 @@ section .data
 
 section .text
 start:
-	call main
+	call buntan_main
 	st 6
 fin:
 	jmp fin
 _ISRfoo:
 	iret
-main:
+buntan_main:
 	push _ISRfoo
 	isr
 

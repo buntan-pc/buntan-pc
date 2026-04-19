@@ -6,6 +6,6 @@ int f(int i) {
   }
 }
 
-int main() {
+int buntan_main() {
   return f(0);
 }
