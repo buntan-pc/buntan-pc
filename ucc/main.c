@@ -406,8 +406,10 @@ unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass val
       // オフセットが 12 ビットに収まらない場合は最適化を諦める
     } else { // kTypePtr
       Generate(ctx, node->lhs, VC_CONTENT, 1);
-      InsnInt(ctx, "push", element_size * index);
-      Insn(ctx, "add");
+      if (index != 0) {
+        InsnInt(ctx, "push", element_size * index);
+        Insn(ctx, "add");
+      }
       return gen_result;
     }
   }
@@ -572,7 +574,14 @@ unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass val
     break;
   case kNodeDeref:
     {
-      Generate(ctx, node->rhs, VC_CONTENT, 1);
+      if (node->rhs->kind == kNodeAdd &&
+          node->rhs->rhs->kind == kNodeInteger &&
+          node->rhs->rhs->token->value.as_int == 0) { // *(foo + 0)
+
+        Generate(ctx, node->rhs->lhs, VC_CONTENT, 1);
+      } else {
+        Generate(ctx, node->rhs, VC_CONTENT, 1);
+      }
       int byt = SizeofType(node->rhs->type->base) == 1;
       if (value_class == VC_CONTENT) {
         EmitOptimalLdSt(ctx, 0, byt, 0);
