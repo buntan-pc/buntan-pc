@@ -691,55 +691,59 @@ struct Node *Postfix(struct ParseContext *ctx) {
   struct Node *node = Primary(ctx);
 
   struct Token *op;
-  if ((op = Consume(kTokenInc))) {
-    node = NewNodeBinOp(kNodeInc, op, node, NULL);
-    node->type = node->lhs->type;
-  } else if ((op = Consume(kTokenDec))) {
-    node = NewNodeBinOp(kNodeDec, op, node, NULL);
-    node->type = node->lhs->type;
-  } else if ((op = Consume('['))) {
-    struct Type *array_type = node->type;
-    struct Node *ind = NewNodeBinOp(kNodeAdd, op, node, Expression(ctx));
-    ind->type = array_type;
-    Expect(']');
+  while (1) {
+    if ((op = Consume(kTokenInc))) {
+      node = NewNodeBinOp(kNodeInc, op, node, NULL);
+      node->type = node->lhs->type;
+    } else if ((op = Consume(kTokenDec))) {
+      node = NewNodeBinOp(kNodeDec, op, node, NULL);
+      node->type = node->lhs->type;
+    } else if ((op = Consume('['))) {
+      struct Type *array_type = node->type;
+      struct Node *ind = NewNodeBinOp(kNodeAdd, op, node, Expression(ctx));
+      ind->type = array_type;
+      Expect(']');
 
-    node = NewNodeBinOp(kNodeDeref, op, NULL, ind);
-    if (ctx->pass == kPPMain) {
-      node->type = array_type->base;
-    }
-  } else if ((op = Consume('('))) {
-    struct Token *id = node->token;
-    node = NewNodeBinOp(kNodeCall, op, node, NULL);
-    if (ctx->pass == kPPMain) {
-      struct Symbol *func = FindSymbol(ctx->scope, id);
-      if (!func) {
-        fprintf(stderr, "symbol not found\n");
-        Locate(id->raw);
-        exit(1);
+      node = NewNodeBinOp(kNodeDeref, op, NULL, ind);
+      if (ctx->pass == kPPMain) {
+        node->type = array_type->base;
       }
-
-      // 関数の戻り値型を取得
-      if (func->kind == kSymFunc || func->kind == kSymBif) {
-        node->type = func->def->lhs->type;
-      } else if (func->kind == kSymLVar || func->kind == kSymGVar) {
-        if (func->type->kind == kTypePtr) {
-          node->type = func->type->base;
-        } else {
-          fprintf(stderr, "failed to determine the return type\n");
-          Locate(node->token->raw);
+    } else if ((op = Consume('('))) {
+      struct Token *id = node->token;
+      node = NewNodeBinOp(kNodeCall, op, node, NULL);
+      if (ctx->pass == kPPMain) {
+        struct Symbol *func = FindSymbol(ctx->scope, id);
+        if (!func) {
+          fprintf(stderr, "symbol not found\n");
+          Locate(id->raw);
           exit(1);
         }
-      }
-    }
 
-    if (!Consume(')')) {
-      node->rhs = Expression(ctx);
-      struct Node *arg = node->rhs;
-      while (Consume(',')) {
-        arg->next = Expression(ctx);
-        arg = arg->next;
+        // 関数の戻り値型を取得
+        if (func->kind == kSymFunc || func->kind == kSymBif) {
+          node->type = func->def->lhs->type;
+        } else if (func->kind == kSymLVar || func->kind == kSymGVar) {
+          if (func->type->kind == kTypePtr) {
+            node->type = func->type->base;
+          } else {
+            fprintf(stderr, "failed to determine the return type\n");
+            Locate(node->token->raw);
+            exit(1);
+          }
+        }
       }
-      Expect(')');
+
+      if (!Consume(')')) {
+        node->rhs = Expression(ctx);
+        struct Node *arg = node->rhs;
+        while (Consume(',')) {
+          arg->next = Expression(ctx);
+          arg = arg->next;
+        }
+        Expect(')');
+      }
+    } else {
+      break;
     }
   }
 

@@ -206,8 +206,8 @@ struct Label *AddLabelCase(struct GenContext *ctx, int no, int val) {
   } while (0)
 
 enum ValueClass {
-  VC_RVAL,
-  VC_LVAL,
+  VC_CONTENT,
+  VC_ADDRESS,
   VC_NO_NEED,
 };
 
@@ -319,7 +319,7 @@ void GenVarInit(struct GenContext *ctx, struct Symbol *var) {
   }
 
   if (init->kind != kNodeIList) {
-    Generate(ctx, init, VC_RVAL, 1);
+    Generate(ctx, init, VC_CONTENT, 1);
     InsnBaseOff(ctx, insn_st, base, var->offset);
   } else {
     assert(var->type->kind == kTypeArray);
@@ -327,7 +327,7 @@ void GenVarInit(struct GenContext *ctx, struct Symbol *var) {
     int inc = SizeofType(var->type->base);
     int i = 0;
     for (; init_val; ++i) {
-      Generate(ctx, init_val, VC_RVAL, 1);
+      Generate(ctx, init_val, VC_CONTENT, 1);
       InsnBaseOff(ctx, insn_st, base, var->offset + inc * i);
       init_val = init_val->next;
     }
@@ -343,14 +343,9 @@ void GenNodeId(struct GenContext *ctx, struct Symbol *sym, enum ValueClass value
   const char *base = GetBaseReg(sym);
 
   if (sym->type->kind == kTypeArray) {
-    if (value_class == VC_LVAL) {
-      fprintf(stderr, "array itself cannot be l-value: %.*s\n",
-              sym->name->len, sym->name->raw);
-      exit(1);
-    }
     InsnBaseOff(ctx, "push", base, sym->offset);
   } else {
-    if (value_class == VC_LVAL) {
+    if (value_class == VC_ADDRESS) {
       InsnBaseOff(ctx, "push", base, sym->offset);
     } else {
       // value_class == VC_NO_NEED だとしても ld 命令は発効する。
@@ -410,7 +405,7 @@ unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass val
       }
       // オフセットが 12 ビットに収まらない場合は最適化を諦める
     } else { // kTypePtr
-      Generate(ctx, node->lhs, VC_RVAL, 1);
+      Generate(ctx, node->lhs, VC_CONTENT, 1);
       InsnInt(ctx, "push", element_size * index);
       Insn(ctx, "add");
       return gen_result;
@@ -421,15 +416,15 @@ unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass val
     struct Instruction *lhs_insn, *rhs_insn;
 
     switch (value_class) {
-    case VC_RVAL:
-      lhs_res = Generate(ctx, node->lhs, VC_RVAL, 0);
+    case VC_CONTENT:
+      lhs_res = Generate(ctx, node->lhs, VC_CONTENT, 0);
       if (node->lhs->type->kind == kTypeChar &&
           (node->lhs->type->attr & TYPE_ATTR_SIGNED) != 0) { // signed char
         Insn(ctx, "exts")->kind = GetLastInsn(ctx)->kind;
       }
       lhs_insn = GetLastInsn(ctx);
 
-      rhs_res = Generate(ctx, node->rhs, VC_RVAL, 0);
+      rhs_res = Generate(ctx, node->rhs, VC_CONTENT, 0);
       if (node->rhs->type->kind == kTypeChar &&
           (node->rhs->type->attr & TYPE_ATTR_SIGNED) != 0) { // signed char
         Insn(ctx, "exts")->kind = GetLastInsn(ctx)->kind;
@@ -445,7 +440,7 @@ unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass val
         rhs_insn->kind = kInsnInterpResult;
       }
       break;
-    case VC_LVAL:
+    case VC_ADDRESS:
       fprintf(stderr, "standard binary expression cannot be an lvalue\n");
       Locate(node->token->raw);
       exit(1);
@@ -464,7 +459,7 @@ unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass val
 
   switch (node->kind) {
   case kNodeInteger:
-    if (value_class == VC_RVAL) {
+    if (value_class == VC_CONTENT) {
       if (req_onstack) {
         InsnInt(ctx, "push", node->token->value.as_int & 0xffff);
       } else {
@@ -544,7 +539,7 @@ unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass val
   case kNodeDec:
     if (node->lhs) { // 後置インクリメント 'exp ++'
       PRINT_NODE_COMMENT(ctx, node, "Inc/Dec (postfix))");
-      Generate(ctx, node->lhs, VC_RVAL, 1);
+      Generate(ctx, node->lhs, VC_CONTENT, 1);
       size_t scale = CalcAddScale(node->lhs->type);
       if (value_class == VC_NO_NEED) {
         InsnInt(ctx, "push", scale);
@@ -554,15 +549,15 @@ unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass val
         InsnInt(ctx, "push", scale);
       }
       Insn(ctx, node->kind == kNodeInc ? "add" : "sub");
-      Generate(ctx, node->lhs, VC_LVAL, 1);
+      Generate(ctx, node->lhs, VC_ADDRESS, 1);
       EmitOptimalLdSt(ctx, 1, SizeofType(node->lhs->type) == 1, 1);
     } else { // 前置インクリメント '++ exp'
       PRINT_NODE_COMMENT(ctx, node, "Inc/Dec (prefix))");
-      Generate(ctx, node->rhs, VC_RVAL, 1);
+      Generate(ctx, node->rhs, VC_CONTENT, 1);
       int scale = CalcAddScale(node->rhs->type);
       InsnInt(ctx, "push", scale);
       Insn(ctx, node->kind == kNodeInc ? "add" : "sub");
-      Generate(ctx, node->rhs, VC_LVAL, 1);
+      Generate(ctx, node->rhs, VC_ADDRESS, 1);
       int byt = SizeofType(node->rhs->type) == 1;
       if (value_class == VC_NO_NEED) {
         node->type = NewType(kTypeVoid);
@@ -573,13 +568,13 @@ unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass val
     }
     break;
   case kNodeRef:
-    Generate(ctx, node->rhs, value_class == VC_NO_NEED ? VC_NO_NEED : VC_LVAL, 1);
+    Generate(ctx, node->rhs, value_class == VC_NO_NEED ? VC_NO_NEED : VC_ADDRESS, 1);
     break;
   case kNodeDeref:
     {
-      Generate(ctx, node->rhs, VC_RVAL, 1);
+      Generate(ctx, node->rhs, VC_CONTENT, 1);
       int byt = SizeofType(node->rhs->type->base) == 1;
-      if (value_class == VC_RVAL) {
+      if (value_class == VC_CONTENT) {
         EmitOptimalLdSt(ctx, 0, byt, 0);
       } else if (value_class == VC_NO_NEED) {
         node->type = NewType(kTypeVoid);
@@ -592,7 +587,7 @@ unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass val
     if (value_class == VC_NO_NEED) {
       Generate(ctx, node->rhs, VC_NO_NEED, 0);
     } else {
-      rhs_res = Generate(ctx, node->rhs, VC_RVAL, 0);
+      rhs_res = Generate(ctx, node->rhs, VC_CONTENT, 0);
       Insn(ctx, "not")->kind = kInsnInterp;
       if (!(rhs_res & GEN_INTERP)) {
         GetLastInsn(ctx)->kind = kInsnNormal;
@@ -618,7 +613,7 @@ unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass val
         args[num_args++] = arg;
       }
       for (int i = 0; i < num_args; i++) {
-        Generate(ctx, args[num_args - 1 - i], VC_RVAL, 1);
+        Generate(ctx, args[num_args - 1 - i], VC_CONTENT, 1);
       }
       if (node->lhs->kind == kNodeId) {
         struct Symbol *sym = FindSymbol(ctx->scope, node->lhs->token);
@@ -639,7 +634,7 @@ unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass val
         } else if (is_bif && strcmp(sym->name->raw, "__builtin_reset_sr") == 0) {
           Insn(ctx, "rstsr");
         } else if (sym && (sym->kind == kSymGVar || sym->kind == kSymLVar) && sym->type->kind == kTypePtr) {
-          Generate(ctx, node->lhs, VC_RVAL, 1);
+          Generate(ctx, node->lhs, VC_CONTENT, 1);
           Insn(ctx, "call");
         } else {
           InsnLabelToken(ctx, "call", node->lhs->token);
@@ -669,12 +664,12 @@ unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass val
       int label_false = GenLabel(ctx);
       int label_end = GenLabel(ctx);
       PRINT_NODE_COMMENT(ctx, node, "LAnd (eval lhs)");
-      if (!(Generate(ctx, node->lhs, VC_RVAL, 1) & GEN_BOOL)) {
+      if (!(Generate(ctx, node->lhs, VC_CONTENT, 1) & GEN_BOOL)) {
         ConvertToBoolean(ctx);
       }
       InsnLabelAutoL(ctx, "jz", label_false);
       PRINT_NODE_COMMENT(ctx, node, "LAnd (eval rhs)");
-      if (!(Generate(ctx, node->rhs, VC_RVAL, 1) & GEN_BOOL)) {
+      if (!(Generate(ctx, node->rhs, VC_CONTENT, 1) & GEN_BOOL)) {
         ConvertToBoolean(ctx);
       }
       InsnLabelAutoL(ctx, "jz", label_false);
@@ -695,11 +690,11 @@ unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass val
       int label_true = GenLabel(ctx);
       int label_end = GenLabel(ctx);
       PRINT_NODE_COMMENT(ctx, node, "LOr (eval lhs)");
-      Generate(ctx, node->lhs, VC_RVAL, 1);
+      Generate(ctx, node->lhs, VC_CONTENT, 1);
       Insn(ctx, "not");
       InsnLabelAutoL(ctx, "jz", label_true);
       PRINT_NODE_COMMENT(ctx, node, "LOr (eval rhs)");
-      Generate(ctx, node->rhs, VC_RVAL, 1);
+      Generate(ctx, node->rhs, VC_CONTENT, 1);
       Insn(ctx, "not");
       InsnLabelAutoL(ctx, "jz", label_true);
       PRINT_NODE_COMMENT(ctx, node, "LOr (false)");
@@ -716,13 +711,13 @@ unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass val
     break;
   case kNodeAssign:
     PRINT_NODE_COMMENT(ctx, node, "Assign");
-    Generate(ctx, node->rhs, VC_RVAL, 1);
-    Generate(ctx, node->lhs, VC_LVAL, 1);
+    Generate(ctx, node->rhs, VC_CONTENT, 1);
+    Generate(ctx, node->lhs, VC_ADDRESS, 1);
     {
       int byt = SizeofType(node->lhs->type) == 1;
-      if (value_class == VC_LVAL) {
+      if (value_class == VC_ADDRESS) {
         Insn(ctx, byt ? "sta1" : "sta");
-      } else if (value_class == VC_RVAL) {
+      } else if (value_class == VC_CONTENT) {
         Insn(ctx, byt ? "std1" : "std");
       } else { // VC_NO_NEED
         EmitOptimalLdSt(ctx, 1, byt, 1);
@@ -871,7 +866,7 @@ unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass val
     break;
   case kNodeReturn:
     if (node->lhs) {
-      Generate(ctx, node->lhs, VC_RVAL, 1);
+      Generate(ctx, node->lhs, VC_CONTENT, 1);
     }
     if (ctx->frame_size > 0) {
       InsnRegInt(ctx, "add", "fp", 0 /* ダミーの値 */);
@@ -896,7 +891,7 @@ unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass val
       int label_else = node->rhs ? GenLabel(ctx) : -1;
       int label_end = GenLabel(ctx);
       PRINT_NODE_COMMENT(ctx, node, "If (cond eval)");
-      if (!(Generate(ctx, node->cond, VC_RVAL, 1) & GEN_BOOL)) {
+      if (!(Generate(ctx, node->cond, VC_CONTENT, 1) & GEN_BOOL)) {
         PRINT_NODE_COMMENT(ctx, node, "If (cond to bool)");
         ConvertToBoolean(ctx);
       }
@@ -927,8 +922,8 @@ unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass val
       while (stmt) {
         if (stmt->kind == kNodeCase) {
           if (stmt->cond) {
-            Generate(ctx, node->cond, VC_RVAL, 1);
-            Generate(ctx, stmt->cond, VC_RVAL, 1);
+            Generate(ctx, node->cond, VC_CONTENT, 1);
+            Generate(ctx, stmt->cond, VC_CONTENT, 1);
             Insn(ctx, "neq");
             InsnLabelCase(ctx, "jz", label_case, stmt->cond->token->value.as_int);
           } else { // default ラベル
@@ -975,7 +970,7 @@ unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass val
       PRINT_NODE_COMMENT(ctx, node, "For (eval init)");
       Generate(ctx, node->lhs, VC_NO_NEED, 1);
       AddLabelAutoL(ctx, label_cond);
-      if (!(Generate(ctx, node->cond, VC_RVAL, 1) & GEN_BOOL)) {
+      if (!(Generate(ctx, node->cond, VC_CONTENT, 1) & GEN_BOOL)) {
         ConvertToBoolean(ctx);
       }
       InsnLabelAutoL(ctx, "jz", label_end);
@@ -1000,7 +995,7 @@ unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass val
 
       PRINT_NODE_COMMENT(ctx, node, "While");
       AddLabelAutoL(ctx, label_cond);
-      if (!(Generate(ctx, node->cond, VC_RVAL, 1) & GEN_BOOL)) {
+      if (!(Generate(ctx, node->cond, VC_CONTENT, 1) & GEN_BOOL)) {
         ConvertToBoolean(ctx);
       }
       InsnLabelAutoL(ctx, "jz", label_end);
