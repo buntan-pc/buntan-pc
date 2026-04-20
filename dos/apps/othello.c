@@ -109,7 +109,8 @@ int try_put_stone(unsigned int *board, int cx, int cy, int stone) {
     int x = cx + dx;
     int y = cy + dy;
     int prev_st = get_stone(board, x, y);
-    if (prev_st == 1) {
+    if (prev_st == 1 || prev_st == stone) {
+      // 隣に石が無いか、自分の石があるなら、ひっくり返せない
       continue;
     }
 
@@ -123,9 +124,7 @@ int try_put_stone(unsigned int *board, int cx, int cy, int stone) {
       if (st == 1) {
         break;
       } else if (st == stone) {
-        if (prev_st == 2 - stone) {
-          rev_cnt += i;
-        }
+        rev_cnt += i;
         int putx = x - dx;
         int puty = y - dy;
         for (int j = 0; j < i; ++j) {
@@ -248,7 +247,7 @@ void print_kifu(unsigned char *kifu, unsigned int len) {
   char s[2];
   for (int i = 0; i < len; ++i) {
     s[0] = 'a' + (kifu[i] >> 4);
-    s[1] = '0' + (kifu[i] & 0x0f);
+    s[1] = '1' + (kifu[i] & 0x0f);
     sys_put_string(s, 2);
   }
 }
@@ -295,7 +294,7 @@ void save_kifu(unsigned char *kifu, unsigned int len) {
   p = append_str(p, "kifu: ");
   for (int i = 0; i < len; ++i) {
     *p++ = 'a' + (kifu[i] >> 4);
-    *p++ = '0' + (kifu[i] & 0x0f);
+    *p++ = '1' + (kifu[i] & 0x0f);
   }
   *p++ = '\n';
 
