@@ -55,32 +55,12 @@ always @(posedge rst, posedge clk) begin
   end
 end
 
-/*
-SP #(
-  .READ_MODE(1'b0),
-  .WRITE_MODE(2'b00),
-  .BIT_WIDTH(8),
-  .RESET_MODE("ASYNC")
-) mem_data_lo (
-  .DO(out_lo),
-  .DI(in_lo),
-  .AD(addr_lo),
-  .WRE(wen_lo),
-  .CE(1'b1),
-  .CLK(clk),
-  .RESET(rst),
-  .OCE(1'b0),
-  .BLKSEL(3'd0)
-);
-*/
-
 initial begin
   $readmemh("./ipl.dmem_lo.hex", mem_lo, `ADDR_WIDTH'h100 >> 1);
   $readmemh("./ipl.dmem_hi.hex", mem_hi, `ADDR_WIDTH'h100 >> 1);
 end
 
 endmodule
-
 
 // program memory
 module pmem(
@@ -92,34 +72,38 @@ module pmem(
   output logic [17:0] data_out
 );
 
-logic [17:0] mem[0:`ADDR_WIDTH'h3fff];
+genvar i;
+logic [17:0] pmem_out [15:0];
+logic pmem_wre;
 
-always @(posedge rst, posedge clk) begin
-  if (rst) begin
-  end
-  else begin
-    /*
-    if (wenh)
-      mem[addr][17:16] <= data_in[17:16];
-    if (wenl)
-      mem[addr][15:0] <= data_in[15:0];
-    */
-    mem[addr] <= data_in;
-    //mem[addr] <= (data_in & (({2{wenh}} << 16) | {16{wenl}})) |
-    //  (mem[addr] & ~(({2{wenh}} << 16) | {16{wenl}}));
-  end
-end
+assign data_out = pmem_out[addr[13:10]];
 
-always @(posedge rst, posedge clk) begin
-  if (rst) begin
-    data_out <= 18'd0;
-  end
-  else
-    data_out <= mem[addr];
+generate
+for (i = 0; i < 16; i = i + 1) begin: genpmem
+  SPX9#(
+    .READ_MODE(1'b0),
+    .WRITE_MODE(2'b00),
+    .BIT_WIDTH(18),
+    .BLK_SEL(i[2:0]),
+    .RESET_MODE("ASYNC")
+  ) pmem(
+    .DO(pmem_out[i]),
+    .CLK(clk),
+    .OCE(1'b0),
+    .CE(1'b1),
+    .RESET(rst),
+    .WRE(addr[13] == i[3] & pmem_wre),
+    .BLKSEL(addr[12:10]),
+    .AD(addr[9:0]),
+    .DI(data_in)
+  );
 end
+endgenerate
 
-initial begin
-  $readmemh("./ipl.pmem.hex", mem, 0);
-end
+`include "pmem_init.sv"
+
+//initial begin
+//  $readmemh("./ipl.pmem.hex", mem, 0);
+//end
 
 endmodule

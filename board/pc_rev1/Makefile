@@ -9,7 +9,7 @@ SRCS := src/port.cst src/timing.sdc src/main.sv \
 	$(addprefix ../../cpu/, \
 	sim.sv cpu.sv mem.sv alu.sv stack.sv signals.sv cdtimer.sv \
 	signalizer.sv decoder.sv mcu.sv uart.sv uart_mux.sv adc.sv \
-	simple_timer.sv spi.sv kbc.sv i2c.sv)
+	simple_timer.sv spi.sv kbc.sv i2c.sv pmem_init.sv)
 
 all: $(TARGET)
 
@@ -22,6 +22,9 @@ $(TARGET): $(SRCS) $(SRC_LIST) Makefile
 		done; \
 		[ $$err -eq 0 ] || exit 1; \
 	}
+
+../../cpu/pmem_init.sv: ../../cpu/ipl.pmem.hex Makefile
+	../../cpu/hex2meminit.py $< pmem --gen-block genpmem > $@
 
 # $(file >$@) で SRC_LIST を空にしてから、
 # SRCS の各要素を 1 行ずつ書き出す。
