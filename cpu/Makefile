@@ -40,6 +40,9 @@ spi_tb.exe: spi_tb.sv spi.sv simple_timer.sv
 i2c_tb.exe: i2c_tb.sv i2c.sv simple_timer.sv
 	iverilog -g2012 -o $@ $^
 
+pmem_init.sv: ipl.pmem.hex hex2meminit.py Makefile
+	./hex2meminit.py $< pmem 1024 --gen-block genpmem > $@
+
 .PHONY: clean
 clean:
 	rm -f *.exe

@@ -73,10 +73,10 @@ module pmem(
 );
 
 genvar i;
-logic [17:0] pmem_out [15:0];
+logic [35:0] pmem_out [15:0];
 logic pmem_wre;
 
-assign data_out = pmem_out[addr[13:10]];
+assign data_out = pmem_out[addr[13:10]][17:0];
 
 generate
 for (i = 0; i < 16; i = i + 1) begin: genpmem
@@ -85,7 +85,71 @@ for (i = 0; i < 16; i = i + 1) begin: genpmem
     .WRITE_MODE(2'b00),
     .BIT_WIDTH(18),
     .BLK_SEL(i[2:0]),
-    .RESET_MODE("ASYNC")
+    .RESET_MODE("ASYNC"),
+    .INIT_RAM_00(pmem_init_values[(i << 6) | 0]),
+    .INIT_RAM_01(pmem_init_values[(i << 6) | 1]),
+    .INIT_RAM_02(pmem_init_values[(i << 6) | 2]),
+    .INIT_RAM_03(pmem_init_values[(i << 6) | 3]),
+    .INIT_RAM_04(pmem_init_values[(i << 6) | 4]),
+    .INIT_RAM_05(pmem_init_values[(i << 6) | 5]),
+    .INIT_RAM_06(pmem_init_values[(i << 6) | 6]),
+    .INIT_RAM_07(pmem_init_values[(i << 6) | 7]),
+    .INIT_RAM_08(pmem_init_values[(i << 6) | 8]),
+    .INIT_RAM_09(pmem_init_values[(i << 6) | 9]),
+    .INIT_RAM_0A(pmem_init_values[(i << 6) | 10]),
+    .INIT_RAM_0B(pmem_init_values[(i << 6) | 11]),
+    .INIT_RAM_0C(pmem_init_values[(i << 6) | 12]),
+    .INIT_RAM_0D(pmem_init_values[(i << 6) | 13]),
+    .INIT_RAM_0E(pmem_init_values[(i << 6) | 14]),
+    .INIT_RAM_0F(pmem_init_values[(i << 6) | 15]),
+    .INIT_RAM_10(pmem_init_values[(i << 6) | 16]),
+    .INIT_RAM_11(pmem_init_values[(i << 6) | 17]),
+    .INIT_RAM_12(pmem_init_values[(i << 6) | 18]),
+    .INIT_RAM_13(pmem_init_values[(i << 6) | 19]),
+    .INIT_RAM_14(pmem_init_values[(i << 6) | 20]),
+    .INIT_RAM_15(pmem_init_values[(i << 6) | 21]),
+    .INIT_RAM_16(pmem_init_values[(i << 6) | 22]),
+    .INIT_RAM_17(pmem_init_values[(i << 6) | 23]),
+    .INIT_RAM_18(pmem_init_values[(i << 6) | 24]),
+    .INIT_RAM_19(pmem_init_values[(i << 6) | 25]),
+    .INIT_RAM_1A(pmem_init_values[(i << 6) | 26]),
+    .INIT_RAM_1B(pmem_init_values[(i << 6) | 27]),
+    .INIT_RAM_1C(pmem_init_values[(i << 6) | 28]),
+    .INIT_RAM_1D(pmem_init_values[(i << 6) | 29]),
+    .INIT_RAM_1E(pmem_init_values[(i << 6) | 30]),
+    .INIT_RAM_1F(pmem_init_values[(i << 6) | 31]),
+    .INIT_RAM_20(pmem_init_values[(i << 6) | 32]),
+    .INIT_RAM_21(pmem_init_values[(i << 6) | 33]),
+    .INIT_RAM_22(pmem_init_values[(i << 6) | 34]),
+    .INIT_RAM_23(pmem_init_values[(i << 6) | 35]),
+    .INIT_RAM_24(pmem_init_values[(i << 6) | 36]),
+    .INIT_RAM_25(pmem_init_values[(i << 6) | 37]),
+    .INIT_RAM_26(pmem_init_values[(i << 6) | 38]),
+    .INIT_RAM_27(pmem_init_values[(i << 6) | 39]),
+    .INIT_RAM_28(pmem_init_values[(i << 6) | 40]),
+    .INIT_RAM_29(pmem_init_values[(i << 6) | 41]),
+    .INIT_RAM_2A(pmem_init_values[(i << 6) | 42]),
+    .INIT_RAM_2B(pmem_init_values[(i << 6) | 43]),
+    .INIT_RAM_2C(pmem_init_values[(i << 6) | 44]),
+    .INIT_RAM_2D(pmem_init_values[(i << 6) | 45]),
+    .INIT_RAM_2E(pmem_init_values[(i << 6) | 46]),
+    .INIT_RAM_2F(pmem_init_values[(i << 6) | 47]),
+    .INIT_RAM_30(pmem_init_values[(i << 6) | 48]),
+    .INIT_RAM_31(pmem_init_values[(i << 6) | 49]),
+    .INIT_RAM_32(pmem_init_values[(i << 6) | 50]),
+    .INIT_RAM_33(pmem_init_values[(i << 6) | 51]),
+    .INIT_RAM_34(pmem_init_values[(i << 6) | 52]),
+    .INIT_RAM_35(pmem_init_values[(i << 6) | 53]),
+    .INIT_RAM_36(pmem_init_values[(i << 6) | 54]),
+    .INIT_RAM_37(pmem_init_values[(i << 6) | 55]),
+    .INIT_RAM_38(pmem_init_values[(i << 6) | 56]),
+    .INIT_RAM_39(pmem_init_values[(i << 6) | 57]),
+    .INIT_RAM_3A(pmem_init_values[(i << 6) | 58]),
+    .INIT_RAM_3B(pmem_init_values[(i << 6) | 59]),
+    .INIT_RAM_3C(pmem_init_values[(i << 6) | 60]),
+    .INIT_RAM_3D(pmem_init_values[(i << 6) | 61]),
+    .INIT_RAM_3E(pmem_init_values[(i << 6) | 62]),
+    .INIT_RAM_3F(pmem_init_values[(i << 6) | 63])
   ) pmem(
     .DO(pmem_out[i]),
     .CLK(clk),
@@ -94,16 +158,12 @@ for (i = 0; i < 16; i = i + 1) begin: genpmem
     .RESET(rst),
     .WRE(addr[13] == i[3] & pmem_wre),
     .BLKSEL(addr[12:10]),
-    .AD(addr[9:0]),
-    .DI(data_in)
+    .AD({addr[9:0], 4'd0}),
+    .DI({18'd0, data_in})
   );
 end
 endgenerate
 
 `include "pmem_init.sv"
-
-//initial begin
-//  $readmemh("./ipl.pmem.hex", mem, 0);
-//end
 
 endmodule

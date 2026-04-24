@@ -23,8 +23,10 @@ $(TARGET): $(SRCS) $(SRC_LIST) Makefile
 		[ $$err -eq 0 ] || exit 1; \
 	}
 
-../../cpu/pmem_init.sv: ../../cpu/ipl.pmem.hex Makefile
-	../../cpu/hex2meminit.py $< pmem --gen-block genpmem > $@
+.PHONY: FORCE
+
+../../cpu/pmem_init.sv: FORCE
+	make -C ../../cpu pmem_init.sv
 
 # $(file >$@) で SRC_LIST を空にしてから、
 # SRCS の各要素を 1 行ずつ書き出す。
