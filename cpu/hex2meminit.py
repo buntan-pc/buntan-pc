@@ -1,24 +1,23 @@
 #!/usr/bin/python3
 
 '''
-hex ファイルから defparam 行を生成する。
+hex ファイルから初期値の配列を生成する。
 
 hex ファイルは 16 進数値が空白（改行）区切りで並んでいるのを想定。
-
-pmem 用 hex ファイルの場合の例
+pmem 用 hex ファイルの場合の例:
 
     1C800
     3DEAD
     ...
 
-生成される defparam 行は次のようになる。
+生成される配列は次のようになる。
 
-    defparam xxx.INIT_RAM_00 = 288'h...72003DEAD;
+    parameter [288-1:0] INSTANCE_init_values [...:0] = '{
+      default: 288'h0,
+      0: 288'h...72003DEAD,
+      1: 288'h...
+    };
     ...
-
-`xxx` は BSRAM のインスタンス名で、<INSTANCE>_<num> というフォーマットになる。
-- INSTANCE はコマンドライン引数で指定。
-- num は連番（0～F）となる。
 '''
 
 from argparse import ArgumentParser
