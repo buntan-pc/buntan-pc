@@ -20,6 +20,9 @@ module cpu#(
   output [`ADDR_WIDTH-1:0] pmem_addr,
   input  [17:0] pmem_rdata, // プログラムメモリからの読み込みデータ
   output [17:0] pmem_wdata  // プログラムメモリへの書き込みデータ
+  , output load_insn
+  , output [17:0] reg_insn
+  , output logic [`ADDR_WIDTH-1:0] load_addr
 );
 
 /*
@@ -364,7 +367,11 @@ always @(posedge clk, posedge rst) begin
 end
 
 always @(posedge clk, posedge rst) begin
-  if (rst | load_insn)
+  //if (rst | load_insn)
+  //  insn <= pmem_rdata;
+  if (rst)
+    insn <= 18'd0;
+  else if (load_insn)
     insn <= pmem_rdata;
 end
 
@@ -414,5 +421,13 @@ function [15:0] get_sysreg(input [15:0] sr_addr, input [15:0] fpmin);
     default:   return 16'h0000;
   endcase
 endfunction
+
+always @(posedge clk, posedge rst) begin
+  if (rst)
+    load_addr <= 18'd0;
+  else if (load_insn)
+    load_addr <= pmem_addr;
+end
+assign reg_insn = insn;
 
 endmodule

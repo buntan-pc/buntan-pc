@@ -73,7 +73,7 @@ def main():
                                    args.bit_width)
     array_name = f'{args.INSTANCE}_init_values'
     print(f'''\
-parameter [{line_bit_width}-1:0] {array_name} [{args.LENGTH}-1:0] = '{{
+parameter bit [{line_bit_width}-1:0] {array_name} [{args.LENGTH}-1:0] = '{{
   default: {line_bit_width}'h0,
   {',\n  '.join(f'{i}:{v}' for i,v in enumerate(init_values))}
 }};''')

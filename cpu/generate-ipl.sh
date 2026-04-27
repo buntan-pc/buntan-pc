@@ -7,9 +7,14 @@ dosc=$dos_dir/dos.c
 dmem=$dos_dir/dos.dmem.hex
 pmem=$dos_dir/dos.pmem.hex
 
-if [ $dosc -nt $dmem ] || [ $dosc -nt $pmem ]
+if [ ! -e $dmem ] || [ $dosc -nt $dmem ]
 then
-  echo "You may need to rebuild DOS. 'dos.c' is newer than hex files."
+  make -C $dos_dir dos.dmem.hex
+fi
+
+if [ ! -e $pmem ] || [ $dosc -nt $pmem ]
+then
+  make -C $dos_dir dos.pmem.hex
 fi
 
 cat $dos_dir/dos.dmem.hex | $script_dir/separate-dmemhex.py $script_dir/ipl.dmem

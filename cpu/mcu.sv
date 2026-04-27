@@ -28,12 +28,15 @@ module mcu#(
   output spi_cs,
   output spi_sclk, spi_mosi,
   input  spi_miso,
-  input  [7:0] key_col_n,
+  inout  [7:0] key_col_n,
   output [7:0] key_row,
-  inout  i2c_scl, i2c_sda
+  inout  i2c_scl, i2c_sda,
+  output dbgio
 );
 
 localparam DMEM_GVAR_START = `ADDR_WIDTH'h0100;
+localparam KEY_ROW_FOR_DEBUG = 1;
+localparam KEY_COL_FOR_DEBUG = 1;
 
 // CPU コア
 logic [`ADDR_WIDTH-1:0] cpu_dmem_addr, dmem_addr_d, cpu_pmem_addr, pmem_addr;
@@ -45,6 +48,10 @@ logic cpu_rst, cpu_pmem_wenh, cpu_pmem_wenl, pmem_wenh, pmem_wenl;
 logic [17:0] recv_data, pmem_wdata;
 logic [`ADDR_WIDTH-1:0] img_recv_addr, pmem_size, dmem_size;
 logic [15:0] dmem_rdata_mem, dmem_rdata_mem_d;
+
+logic cpu_load_insn;
+logic [17:0] cpu_reg_insn;
+logic [`ADDR_WIDTH-1:0] cpu_load_addr;
 
 assign uart_recv_data = recv_data;
 assign img_pmem_size = pmem_size;
@@ -70,7 +77,6 @@ logic recv_data_v, recv_compl, uart_rx_ready;
 localparam CLK_DIV = 1;
 logic [25:0] clk_div_cnt;
 logic clk_div, cpu_clk;
-
 
 always @(posedge rst, posedge clk) begin
   if (rst)
@@ -122,6 +128,9 @@ cpu#(.CLOCK_HZ(CLOCK_HZ)) cpu(
   .pmem_addr(cpu_pmem_addr),
   .pmem_rdata(cpu_pmem_rdata),
   .pmem_wdata(cpu_pmem_wdata)
+  , .load_insn(cpu_load_insn)
+  , .reg_insn(cpu_reg_insn)
+  , .load_addr(cpu_load_addr)
 );
 
 // データメモリ
@@ -318,12 +327,13 @@ end
 // MCU 内蔵周辺機能：KBC
 logic kbc_queue_len, kbc_queue_ren;
 logic [7:0] kbc_queue;
+logic [7:0] kbc_key_row;
 
 kbc kbc(
   .rst(rst),
   .clk(clk),
   .key_col_n(key_col_n),
-  .key_row(key_row),
+  .key_row(kbc_key_row),
   .queue_len(kbc_queue_len),
   .queue_ren(kbc_queue_ren),
   .queue(kbc_queue)
@@ -567,5 +577,16 @@ always @(posedge cpu_rst, posedge clk) begin
   else if (cpu_dmem_wen & dmem_addr === `ADDR_WIDTH'h008)
     uart_rx_ready <= cpu_dmem_wdata[0];
 end
+
+// デバッグ
+logic [7:0] debug_a, debug_b;
+assign key_row = KEY_ROW_FOR_DEBUG != 0 ? debug_a : kbc_key_row;
+assign key_col_n = KEY_COL_FOR_DEBUG != 0 ? debug_b : 8'hzz;
+
+//assign debug_a = {cpu_load_addr[11:10], cpu_load_addr[5:0]};
+assign debug_a = cpu_load_addr[7:0];
+//assign debug_b = {cpu_reg_insn[3:0], 4'd0};
+assign debug_b = {cpu_reg_insn[11:8], 4'd0};
+assign dbgio = cpu_load_insn;
 
 endmodule

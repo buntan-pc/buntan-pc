@@ -10,7 +10,7 @@ module main(
   output [5:0] onboard_led,
   input  uart_rx, uart2_rx, uart3_rx, uart3b_rx,
   output uart_tx, uart2_tx, uart3_tx, uart3b_tx,
-  input  [7:0] key_col_n,
+  inout  [7:0] key_col_n,
   output [7:0] key_row,
   input  adc_cmp,     // ADC のコンパレータ出力
   output adc_sh_ctl,  // ADC のサンプル&ホールドスイッチ制御
@@ -19,7 +19,8 @@ module main(
   input  tf_miso,
   inout  scl, sda,    // I2C Clock & Data
   output [7:0] gpio,
-  input  stop_n_raw
+  input  stop_n_raw,
+  output dbgio
 );
 
 // logic 定義
@@ -148,7 +149,8 @@ mcu mcu(
   .key_col_n(key_col_n),
   .key_row(key_row),
   .i2c_scl(scl),
-  .i2c_sda(sda)
+  .i2c_sda(sda),
+  .dbgio(dbgio)
 );
 
 function [15:0] io_mux(

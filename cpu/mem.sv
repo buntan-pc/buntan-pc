@@ -69,14 +69,26 @@ module pmem(
   input [`ADDR_WIDTH-1:0] addr,
   input wenh, wenl,
   input [17:0] data_in,
-  output logic [17:0] data_out
+  output [17:0] data_out
 );
 
 genvar i;
 logic [35:0] pmem_out [15:0];
-logic pmem_wre;
+logic [1:0] pmem_buf;
 
 assign data_out = pmem_out[addr[13:10]][17:0];
+
+always @(posedge clk, posedge rst) begin
+  if (rst) begin
+    pmem_buf <= 18'd0;
+  end
+  else begin
+    if (wenh) begin
+      pmem_buf <= data_in[1:0];
+    end
+  end
+end
+
 
 generate
 for (i = 0; i < 16; i = i + 1) begin: genpmem
@@ -85,7 +97,7 @@ for (i = 0; i < 16; i = i + 1) begin: genpmem
     .WRITE_MODE(2'b00),
     .BIT_WIDTH(18),
     .BLK_SEL(i[2:0]),
-    .RESET_MODE("ASYNC"),
+    .RESET_MODE("SYNC"),
     .INIT_RAM_00(pmem_init_values[(i << 6) | 0]),
     .INIT_RAM_01(pmem_init_values[(i << 6) | 1]),
     .INIT_RAM_02(pmem_init_values[(i << 6) | 2]),
@@ -156,10 +168,10 @@ for (i = 0; i < 16; i = i + 1) begin: genpmem
     .OCE(1'b0),
     .CE(1'b1),
     .RESET(rst),
-    .WRE(addr[13] == i[3] & pmem_wre),
+    .WRE((addr[13] == i[3]) & wenl),
     .BLKSEL(addr[12:10]),
     .AD({addr[9:0], 4'd0}),
-    .DI({18'd0, data_in})
+    .DI({18'd0, pmem_buf, data_in[15:0]})
   );
 end
 endgenerate
