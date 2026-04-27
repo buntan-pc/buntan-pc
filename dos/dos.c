@@ -1152,7 +1152,7 @@ unsigned int find_free_cluster(unsigned int *block_buf) {
   return 0;
 }
 
-int main() {
+int buntan_main() {
   int i;
   unsigned int block_len;
   char buf[5];
