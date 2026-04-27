@@ -10,10 +10,13 @@ dos.pmem.hex: dos.hexfile
 	$(ASM) --pmem $*.pmem.hex --dmem $*.dmem.hex $<
 
 %.exe: %.s Makefile
-	$(ASM) -o $@ $<
+	$(ASM) --list $*.lst -o $@ $<
 
 %.s: %.c Makefile
 	$(CC) -o $@ $<
+
+%.lst: %.s Makefile
+	$(ASM) --list $@ -o $*.exe $<
 
 .PHONY: run clean
 run: dos.pmem.hex dos.dmem.hex
