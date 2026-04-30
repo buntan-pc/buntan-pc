@@ -43,6 +43,9 @@ i2c_tb.exe: i2c_tb.sv i2c.sv simple_timer.sv
 pmem_init.sv: ipl.pmem.hex hex2meminit.py Makefile
 	./hex2meminit.py $< pmem 1024 --gen-block genpmem > $@
 
+ipl.pmem.hex: ../dos/dos.c Makefile
+	./generate-ipl.sh
+
 .PHONY: clean
 clean:
 	rm -f *.exe

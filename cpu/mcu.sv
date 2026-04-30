@@ -586,7 +586,7 @@ assign key_col_n = KEY_COL_FOR_DEBUG != 0 ? debug_b : 8'hzz;
 //assign debug_a = {cpu_load_addr[11:10], cpu_load_addr[5:0]};
 assign debug_a = cpu_load_addr[7:0];
 //assign debug_b = {cpu_reg_insn[3:0], 4'd0};
-assign debug_b = {cpu_reg_insn[11:8], 4'd0};
+assign debug_b = {cpu_load_addr[11:8], 4'd0};
 assign dbgio = cpu_load_insn;
 
 endmodule
