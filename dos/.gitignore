@@ -1,4 +1,5 @@
 *.s
 *.exe
+*.lst
 *.pmem.hex
 *.dmem.hex
