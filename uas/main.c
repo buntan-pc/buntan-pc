@@ -12,7 +12,14 @@
 #define MAX_BP 512
 #define MAX_LABEL 1024
 #define MAX_LINE 512
+#define MAX_LINES (16*1024)
+#define MAX_SRC_LEN (128*1024)
 #define LIST_LEFT_LEN 12
+
+char *src_orig;  // ソースコード全体の先頭
+size_t src_len;  // ソースコードのバイト長
+char **src_lines; // ソースコード行から行先頭を引くための表
+size_t src_lines_len;
 
 // 文字列をすべて小文字にする
 void ToLower(char *s) {
@@ -283,35 +290,48 @@ int SetLabel(struct LabelAddr *la, const char *label, int addr) {
   return 0;
 }
 
-struct FileLine {
-  FILE *fp;
-  size_t line_num;
-  char line_buf[MAX_LINE];
-};
-
-char *ReadLine(struct FileLine *fl) {
-  ++fl->line_num;
-  return fgets(fl->line_buf, MAX_LINE, fl->fp);
+// 次行の先頭あるいは EOF を指すポインタを返す。
+// src が最終行だった場合 NULL を返す。
+char *ReadLine(char *src) {
+  char *src_end = src_orig + src_len;
+  if (src >= src_end - 1) {
+    return NULL;
+  }
+  src_lines[src_lines_len] = src;
+  ++src_lines_len;
+  while (src < src_end && *src != '\n') {
+    ++src;
+  }
+  if (src < src_end && *src == '\n') {
+    *src = '\0';
+    ++src;
+  }
+  return src;
 }
 
 // .data セクションを処理し、バイト数を返す
 //
-// input_fl: ソースコード
+// src: ソースコードの現在位置
 // list_file: リストファイル（機械語とアセンブリ言語が併記されたファイル）
 // dmem: データメモリへのポインタ
 // al: "section .data" 行
 //   関数の終了時には al に次のセクション定義行が格納された状態になっている
 // labels: 発見したラベルとそのときのデータメモリアドレスの組を記録
-int ProcessDataSection(struct FileLine *input_fl, FILE *list_file,
+int ProcessDataSection(char **src, FILE *list_file,
                        uint8_t *dmem, struct AsmLine *al,
                        struct LabelAddr *labels, int *num_labels, int exe_mode) {
   int size = 0;
   int first_label = 1;
-  while (ReadLine(input_fl) != NULL) {
-    char line_original[MAX_LINE];
-    strcpy(line_original, input_fl->line_buf);
 
-    SplitOpcode(input_fl->line_buf, al);
+  char *cur_line, *next_line;
+  while ((next_line = ReadLine(*src)) != NULL) {
+    cur_line = *src;
+    *src = next_line;
+
+    char line[MAX_LINE];
+    strcpy(line, cur_line);
+
+    SplitOpcode(line, al);
     if (first_label && al->label) {
       if (exe_mode && strcmp(al->label, "pmem_len") != 0) {
         // exe_mode の場合、先頭 4 バイトを pmem_len & dmem_len に強制する
@@ -325,9 +345,9 @@ int ProcessDataSection(struct FileLine *input_fl, FILE *list_file,
 
     if (list_file) {
       if (al->label) {
-        fprintf(list_file, "%04X%*s%05zu  %s", size, LIST_LEFT_LEN - 4, "", input_fl->line_num, line_original);
+        fprintf(list_file, "%04X%*s%05zu  %s\n", size, LIST_LEFT_LEN - 4, "", src_lines_len, cur_line);
       } else {
-        fprintf(list_file, "%*s%05zu  %s", LIST_LEFT_LEN, "", input_fl->line_num, line_original);
+        fprintf(list_file, "%*s%05zu  %s\n", LIST_LEFT_LEN, "", src_lines_len, cur_line);
       }
     }
 
@@ -364,12 +384,12 @@ int ProcessDataSection(struct FileLine *input_fl, FILE *list_file,
 
 // .text セクションを処理し、命令数を返す
 //
-// input_fl: ソースコード
-// list_file: リストファイル（機械語とアセンブリ言語が併記されたファイル）
+// src: ソースコードの現在位置
+// line_pmem: ソースコード行と pmem 番地の対応表
 // pmem: プログラムメモリへのポインタ
 // al: "section .text" 行
 // labels: 発見したラベルとそのときの IP の組を記録
-int ProcessTextSection(struct FileLine *input_fl, FILE *list_file,
+int ProcessTextSection(char **src, uint16_t *line_pmem,
                        uint32_t *pmem, struct AsmLine *al,
                        struct LabelAddr *labels, int *num_labels) {
   int ip = 0;
@@ -379,25 +399,20 @@ int ProcessTextSection(struct FileLine *input_fl, FILE *list_file,
 
   struct Interp interp;
 
-  while (ReadLine(input_fl) != NULL) {
-    char line_original[MAX_LINE];
-    strcpy(line_original, input_fl->line_buf);
+  char *next_line;
+  while ((next_line = ReadLine(*src)) != NULL) {
+    char line[MAX_LINE];
+    strcpy(line, *src);
+    *src = next_line;
 
-    SplitOpcode(input_fl->line_buf, al);
+    SplitOpcode(line, al);
     *num_labels += SetLabel(labels + *num_labels, al->label, ip);
     if (al->mnemonic == NULL) {
-      if (list_file) {
-        fprintf(list_file, "%*s%05zu  %s", LIST_LEFT_LEN, "", input_fl->line_num, line_original);
-      }
       continue;
     }
 
     if (al->mnemonic[0] == '.') {
       // 内蔵インタプリタ用命令
-      if (list_file) {
-        fprintf(list_file, "%*s%05zu  %s", LIST_LEFT_LEN, "", input_fl->line_num, line_original);
-      }
-
       if (strcmp(al->mnemonic + 1, "push") == 0) {
         Push(&interp, GET_LONG_NO_BP(0));
       } else if (strcmp(al->mnemonic + 1, "sign") == 0) {
@@ -624,10 +639,7 @@ int ProcessTextSection(struct FileLine *input_fl, FILE *list_file,
       exit(1);
     }
 
-    if (list_file) {
-      fprintf(list_file, "%04X %05X %*s%05zu  %s", ip, pmem[ip], LIST_LEFT_LEN - 5 - 6, "", input_fl->line_num, line_original);
-    }
-
+    line_pmem[src_lines_len - 1] = ip;
     ip++;
   }
 
@@ -734,22 +746,31 @@ int main(int argc, char **argv) {
   int num_labels = 0;
   int dmem_size = 0, num_insn = 0;
 
-  struct FileLine input_fl = { input_file, 0, {} };
+  src_orig = malloc(MAX_SRC_LEN);
+  src_len = fread(src_orig, 1, MAX_SRC_LEN, input_file);
+  src_lines = malloc(sizeof(char*) * MAX_LINES);
+
+  char *src = src_orig;
+  uint16_t *line_pmem = malloc(sizeof(uint16_t) * MAX_LINES);
+  size_t text_line_num = 0; // 'section .text' の行番号 (1-indexed)
+  memset(line_pmem, 0xff, sizeof(uint16_t) * MAX_LINES);
 
   fprintf(list_file, "ADDR  INSN   LINE  FILE_CONTENT\n");
 
-  if (ReadLine(&input_fl) != NULL) {
+  char *next_line;
+  if ((next_line = ReadLine(src)) != NULL) {
     if (list_file) {
-      fprintf(list_file, "%*s%05zu  %s", LIST_LEFT_LEN, "", input_fl.line_num, input_fl.line_buf);
+      fprintf(list_file, "%*s%05zu  %s\n", LIST_LEFT_LEN, "", src_lines_len, src);
     }
 
-    SplitOpcode(input_fl.line_buf, &al);
+    SplitOpcode(src, &al);
     if (strcmp(al.mnemonic, "section") != 0 ||
         strcmp(al.operands[0], ".data") != 0) {
       fprintf(stderr, "first line must be 'section .data'\n");
       exit(1);
     }
-    dmem_size = ProcessDataSection(&input_fl, list_file, dmem, &al,
+    src = next_line;
+    dmem_size = ProcessDataSection(&src, list_file, dmem, &al,
                                    labels, &num_labels, exe_file != NULL);
 
     if (strcmp(al.mnemonic, "section") != 0 ||
@@ -757,7 +778,8 @@ int main(int argc, char **argv) {
       fprintf(stderr, ".text section must come just after .data\n");
       exit(1);
     }
-    num_insn = ProcessTextSection(&input_fl, list_file, pmem, &al,
+    text_line_num = src_lines_len;
+    num_insn = ProcessTextSection(&src, line_pmem, pmem, &al,
                                   labels, &num_labels);
   }
 
@@ -817,5 +839,18 @@ int main(int argc, char **argv) {
       fwrite(buf, 1, 3, exe_file);
     }
   }
+
+  if (list_file) {
+    for (size_t i = text_line_num; i < src_lines_len; i++) {
+      uint16_t pmem_addr = line_pmem[i];
+      if (pmem_addr == 0xffff) {
+        fprintf(list_file, "%*s%05zu  %s\n", LIST_LEFT_LEN, "", i + 1, src_lines[i]);
+      } else {
+        fprintf(list_file, "%04X %05X%*s%05zu  %s\n", pmem_addr, pmem[pmem_addr],
+                LIST_LEFT_LEN - 5 - 5, "", i + 1, src_lines[i]);
+      }
+    }
+  }
+
   return 0;
 }
