@@ -705,6 +705,7 @@ int main(int argc, char **argv) {
   const char *input_filename = NULL;
   const char *dmem_filename = NULL;
   const char *pmem_filename = NULL;
+  const char *map_filename = NULL;
   const char *list_filename = NULL;
   const char *exe_filename = NULL;
 
@@ -716,6 +717,8 @@ int main(int argc, char **argv) {
       ARG_FILE(dmem);
     } else if (strcmp(argv[i], "--pmem") == 0) {
       ARG_FILE(pmem);
+    } else if (strcmp(argv[i], "--map") == 0) {
+      ARG_FILE(map);
     } else if (strcmp(argv[i], "--list") == 0) {
       ARG_FILE(list);
     } else if (strcmp(argv[i], "-o") == 0) {
@@ -726,7 +729,7 @@ int main(int argc, char **argv) {
   }
 
   FILE *input_file = stdin;
-  FILE *pmem_file = NULL, *dmem_file = NULL, *list_file = NULL;
+  FILE *pmem_file = NULL, *dmem_file = NULL, *map_file = NULL, *list_file = NULL;
   FILE *exe_file = NULL;
   if (input_filename && strcmp(input_filename, "-") != 0) {
     input_file = fopen(input_filename, "r");
@@ -736,6 +739,9 @@ int main(int argc, char **argv) {
   }
   if (dmem_filename) {
     dmem_file = fopen(dmem_filename, "w");
+  }
+  if (map_filename) {
+    map_file = fopen(map_filename, "w");
   }
   if (list_filename) {
     list_file = fopen(list_filename, "w");
@@ -749,7 +755,7 @@ int main(int argc, char **argv) {
   uint8_t dmem[16 * 1024]; // 16KBytes
   uint32_t pmem[16 * 1024]; // 16KWords
   struct LabelAddr labels[MAX_LABEL];
-  int num_labels = 0;
+  int num_labels = 0, num_data_labels = 0;
   int dmem_size = 0, num_insn = 0;
 
   src_orig = malloc(MAX_SRC_LEN);
@@ -780,6 +786,7 @@ int main(int argc, char **argv) {
     src = next_line;
     dmem_size = ProcessDataSection(&src, list_file, dmem, &al,
                                    labels, &num_labels, exe_file != NULL);
+    num_data_labels = num_labels;
 
     if (strcmp(al.mnemonic, "section") != 0 ||
         strcmp(al.operands[0], ".text") != 0) {
@@ -845,6 +852,22 @@ int main(int argc, char **argv) {
         (pmem[i] >> 16) & 0xff
       };
       fwrite(buf, 1, 3, exe_file);
+    }
+  }
+
+  if (map_file) {
+    fprintf(map_file, "section .data\nADDR LABEL\n----------\n");
+    int i = 0;
+    for (; i < num_data_labels; ++i) {
+      fprintf(map_file, "%04X %s\n", labels[i].addr, labels[i].label);
+    }
+    fprintf(map_file, "\nsection .text\nADDR LABEL\n----------\n");
+    for (; i < num_labels; ++i) {
+      const char *label = labels[i].label;
+      if (strncmp(label, "L_", 2) == 0 || strncmp(label, "CASE_", 5) == 0) {
+        continue;
+      }
+      fprintf(map_file, "%04X %s\n", labels[i].addr, label);
     }
   }
 

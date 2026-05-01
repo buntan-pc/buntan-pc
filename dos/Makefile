@@ -15,6 +15,9 @@ dos.pmem.hex: dos.hexfile
 %.s: %.c Makefile
 	$(CC) -o $@ $<
 
+%.map: %.s Makefile
+	$(ASM) --map $@ -o $*.exe $<
+
 %.lst: %.s Makefile
 	$(ASM) --list $@ -o $*.exe $<
 
