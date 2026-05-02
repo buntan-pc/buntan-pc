@@ -5,11 +5,13 @@ from bisect import bisect_right
 from collections import namedtuple
 from contextlib import nullcontext
 import sys
+import unittest
 
 
 ADDRESS_COLUMN = "Parallel: Items"
 DEBUG_COLUMN = "Function"
 AddrLabel = namedtuple("AddrLabel", ["addr", "label"])
+Record = namedtuple("Record", ["csv_line", "func"])
 
 
 def load_addr_label_from_map(map_file):
@@ -83,22 +85,142 @@ def find_current_function(addr: int, addrlabels) -> str:
     return addrlabels[index].label
 
 
-def add_debug_column(csv_file, out_file, addrlabels):
-    header = csv_file.readline().strip()
-    fieldnames = header.split(",")
-
-    if ADDRESS_COLUMN not in fieldnames:
-        raise RuntimeError(f"CSVに '{ADDRESS_COLUMN}' 列が見つかりません。")
-
-    out_file.write(header + "," + DEBUG_COLUMN + "\n")
-
+def add_debug_column(csv_file, addrlabels) -> list[Record]:
     for line in csv_file:
         line = line.rstrip()
-        # line: index,time,=pmem_addr
+        # line: index,time,pmem_addr
         comma = line.rfind(",")
         addr = int(line[comma+1:], 16)
         func = find_current_function(addr, addrlabels)
-        out_file.write(line + "," + func + "\n")
+        yield Record(line, func)
+
+
+def unique(records: list[Record]) -> list[Record]:
+    prev_func = None
+    for r in records:
+        if prev_func == r.func:
+            continue
+        prev_func = r.func
+        yield r
+
+
+def collapse_repeats(records: list[Record]) -> list[Record]:
+    pattern = []  # [Record]
+    repeat_candidate = []  # [Record]
+    repeat_count = -1
+
+    for r in records:
+        if len(pattern) == 0:
+            pattern.append(r)
+            continue
+
+        if repeat_count == -1:
+            func_i = next(
+                (i for i, elem in enumerate(pattern) if elem.func == r.func),
+                -1
+            )
+            if func_i >= 0:
+                # 繰り返しが始まった可能性
+                for rec in pattern[:func_i]:
+                    yield rec
+                pattern = pattern[func_i:]
+                if len(pattern) == 1 and pattern[0].func == r.func:
+                    repeat_candidate = []
+                    repeat_count = 1
+                else:
+                    repeat_candidate = [r]
+                    repeat_count = 0
+            else:
+                if len(pattern) == 20:
+                    yield pattern[0]
+                    pattern.pop(0)
+                pattern.append(r)
+        elif repeat_count >= 0:
+            if pattern[len(repeat_candidate)].func == r.func:
+                # まだ繰り返しの可能性が続いている
+                repeat_candidate.append(r)
+                if len(pattern) == len(repeat_candidate):
+                    repeat_candidate = []
+                    repeat_count += 1
+            elif repeat_count == 0:
+                # 結局、繰り返しは無かった
+                for rec in pattern:
+                    yield rec
+                pattern = repeat_candidate
+                pattern.append(r)
+                repeat_candidate = []
+                repeat_count = -1
+            else: # repeat_count >= 1
+                # 繰り返しが終わった
+                yield Record(f"[repeat x{repeat_count+1} total]", None)
+                for rec in pattern:
+                    yield rec
+                yield Record("[/repeat]", None)
+                for rec in repeat_candidate:
+                    yield rec
+                repeat_candidate = []
+                pattern = [r]
+                repeat_count = -1
+
+    if repeat_count >= 0:
+        yield Record(f"[repeat x{repeat_count+1} total]", None)
+    for rec in pattern:
+        yield rec
+    if repeat_count >= 0:
+        yield Record(f"[/repeat]", None)
+    for rec in repeat_candidate:
+        yield rec
+
+
+class TestCollapseRepeats(unittest.TestCase):
+
+    def test_true_candidate(self):
+        records = [Record(f"{i},2", func) for i, func in enumerate("abcabcf")]
+        want = [
+            Record("[repeat x2 total]", None),
+            Record("0,2", "a"),
+            Record("1,2", "b"),
+            Record("2,2", "c"),
+            Record("[/repeat]", None),
+            Record("6,2", "f"),
+        ]
+        self.assertEqual(want, list(collapse_repeats(records)))
+
+    def test_false_repeat_candidate(self):
+        records = [Record(f"{i},2", func) for i, func in enumerate("abcdcecef")]
+        want = [
+            Record("0,2", "a"),
+            Record("1,2", "b"),
+            Record("2,2", "c"),
+            Record("3,2", "d"),
+            Record("[repeat x2 total]", None),
+            Record("4,2", "c"),
+            Record("5,2", "e"),
+            Record("[/repeat]", None),
+            Record("8,2", "f"),
+        ]
+        self.assertEqual(want, list(collapse_repeats(records)))
+
+    def test_endswith_repeat(self):
+        records = [Record(f"{i},2", func) for i, func in enumerate("abab")]
+        want = [
+            Record("[repeat x2 total]", None),
+            Record("0,2", "a"),
+            Record("1,2", "b"),
+            Record("[/repeat]", None),
+        ]
+        self.assertEqual(want, list(collapse_repeats(records)))
+
+    def test_endswith_candidate(self):
+        records = [Record(f"{i},2", func) for i, func in enumerate("ababa")]
+        want = [
+            Record("[repeat x2 total]", None),
+            Record("0,2", "a"),
+            Record("1,2", "b"),
+            Record("[/repeat]", None),
+            Record("4,2", "a"),
+        ]
+        self.assertEqual(want, list(collapse_repeats(records)))
 
 
 def main():
@@ -134,6 +256,10 @@ map ファイルのフォーマット：
     parser.add_argument("csv", help="入力 CSV ファイル")
     parser.add_argument("map", help="uas 出力の map ファイル")
     parser.add_argument("-o", "--output", help="出力 CSV ファイル")
+    parser.add_argument("--unique", action="store_true",
+                        help="関数が連続する区間は最初の行だけ残す")
+    parser.add_argument("--collapse-repeats", action="store_true",
+                        help="同じ関数の組が連続する区間を省略する")
 
     args = parser.parse_args()
 
@@ -147,7 +273,22 @@ map ファイルのフォーマット：
 
     with open_or_use(args.csv, "r", sys.stdin) as csv_file, \
          open_or_use(args.output, "w", sys.stdout) as out_file:
-        add_debug_column(csv_file, out_file, addrlabels)
+        header = csv_file.readline().strip()
+        fieldnames = header.split(",")
+
+        if ADDRESS_COLUMN not in fieldnames:
+            raise RuntimeError(f"CSVに '{ADDRESS_COLUMN}' 列が見つかりません。")
+
+        out_file.write(header + "," + DEBUG_COLUMN + "\n")
+
+        records = add_debug_column(csv_file, addrlabels)
+        if args.unique:
+            records = unique(records)
+        if args.collapse_repeats:
+            records = collapse_repeats(records)
+
+        for r in records:
+            out_file.write(r.csv_line + ("," + r.func if r.func else "") + "\n")
 
 
 if __name__ == "__main__":
