@@ -53,7 +53,7 @@ logic [`ADDR_WIDTH-1:0] img_pmem_size;
 
 logic [7:0] io_led, io_gpio;
 logic clk125;
-logic clk20;
+logic clk_cpu;
 
 // 継続代入
 assign dmem_rdata_io = io_mux(dmem_addr_d, io_led, io_gpio, ~stop_n);
@@ -85,8 +85,8 @@ always @(posedge sys_clk, negedge rst_n) begin
 end
 
 // CPU 用クロック
-Gowin_rPLL_20mhz your_instance_name(
-  .clkout(clk20), //output clkout
+Gowin_rPLL_10mhz clk_cpu_pll(
+  .clkout(clk_cpu), //output clkout
   .lock(),        //output lock
   .clkin(sys_clk) //input clkin
 );
@@ -121,11 +121,12 @@ assign uart3b_tx = uart3_tx_common;
 
 // 自作 CPU を接続する
 mcu#(
-  .CLOCK_HZ(20_250_000)
+  //.CLOCK_HZ(20_250_000)
+  .CLOCK_HZ(10_125_000)
 ) mcu(
   .rst(~rst_n),
   //.clk(sys_clk),
-  .clk(clk20),
+  .clk(clk_cpu),
   .uart_rx(uart_rx),
   .uart2_rx(uart2_rx),
   .uart3_rx(uart3_rx_common),

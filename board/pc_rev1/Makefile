@@ -5,7 +5,9 @@ TARGET := impl/pnr/pc_rev1.fs
 SRC_LIST := src/pc_rev1.f
 
 SRCS := src/port.cst src/timing.sdc src/main.sv \
-	src/gowin_osc/gowin_osc.v src/gowin_rpll/gowin_rpll_20mhz.v \
+	src/gowin_osc/gowin_osc.v \
+	src/gowin_rpll/gowin_rpll_20mhz.v \
+	src/gowin_rpll/gowin_rpll_10mhz.v \
 	$(addprefix ../../cpu/, \
 	sim.sv cpu.sv mem.sv alu.sv stack.sv signals.sv cdtimer.sv \
 	signalizer.sv decoder.sv mcu.sv uart.sv uart_mux.sv adc.sv \
