@@ -85,23 +85,25 @@ def find_current_function(addr: int, addrlabels) -> str:
     return addrlabels[index].label
 
 
-def add_debug_column(csv_file, addrlabels) -> list[Record]:
+def add_debug_column(csv_file, addrlabels: list[AddrLabel], func_entry_only) -> list[Record]:
+    addr_label_map = {}
+    for addr, label in addrlabels:
+        addr_label_map[addr] = label
+
     for line in csv_file:
         line = line.rstrip()
         # line: index,time,pmem_addr
         comma = line.rfind(",")
-        addr = int(line[comma+1:], 16)
-        func = find_current_function(addr, addrlabels)
+        # 観測される addr は実行中命令の次を指すので、
+        # 実行中命令のアドレスを求めるために 1 を引く
+        addr = int(line[comma+1:], 16) - 1
+        if func_entry_only:
+            func = addr_label_map.get(addr, None)
+            if func is None:
+                continue
+        else:
+            func = find_current_function(addr, addrlabels)
         yield Record(line, func)
-
-
-def unique(records: list[Record]) -> list[Record]:
-    prev_func = None
-    for r in records:
-        if prev_func == r.func:
-            continue
-        prev_func = r.func
-        yield r
 
 
 def collapse_repeats(records: list[Record]) -> list[Record]:
@@ -175,14 +177,18 @@ def collapse_repeats(records: list[Record]) -> list[Record]:
 class TestCollapseRepeats(unittest.TestCase):
 
     def test_true_candidate(self):
-        records = [Record(f"{i},2", func) for i, func in enumerate("abcabcf")]
+        records = [Record(f"{i},2", func) for i, func in enumerate("abababcdefefef")]
         want = [
-            Record("[repeat x2 total]", None),
+            Record("[repeat x3 total]", None),
             Record("0,2", "a"),
             Record("1,2", "b"),
-            Record("2,2", "c"),
             Record("[/repeat]", None),
-            Record("6,2", "f"),
+            Record("6,2", "c"),
+            Record("7,2", "d"),
+            Record("[repeat x3 total]", None),
+            Record("8,2", "e"),
+            Record("9,2", "f"),
+            Record("[/repeat]", None),
         ]
         self.assertEqual(want, list(collapse_repeats(records)))
 
@@ -256,8 +262,8 @@ map ファイルのフォーマット：
     parser.add_argument("csv", help="入力 CSV ファイル")
     parser.add_argument("map", help="uas 出力の map ファイル")
     parser.add_argument("-o", "--output", help="出力 CSV ファイル")
-    parser.add_argument("--unique", action="store_true",
-                        help="関数が連続する区間は最初の行だけ残す")
+    parser.add_argument("--func-entry-only", action="store_true",
+                        help="関数先頭の行だけを残す")
     parser.add_argument("--collapse-repeats", action="store_true",
                         help="同じ関数の組が連続する区間を省略する")
 
@@ -281,9 +287,7 @@ map ファイルのフォーマット：
 
         out_file.write(header + "," + DEBUG_COLUMN + "\n")
 
-        records = add_debug_column(csv_file, addrlabels)
-        if args.unique:
-            records = unique(records)
+        records = add_debug_column(csv_file, addrlabels, args.func_entry_only)
         if args.collapse_repeats:
             records = collapse_repeats(records)
 
