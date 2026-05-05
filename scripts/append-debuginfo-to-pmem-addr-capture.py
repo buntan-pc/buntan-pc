@@ -106,6 +106,50 @@ def add_debug_column(csv_file, addrlabels: list[AddrLabel], func_entry_only) -> 
         yield Record(line, func)
 
 
+def unique(records: list[Record]) -> list[Record]:
+    prev_rec = next(records)
+    rep_cnt = 1
+    for r in records:
+        if prev_rec.func == r.func:
+            rep_cnt += 1
+            continue
+        else:
+            if rep_cnt >= 2:
+                yield Record(prev_rec.csv_line, prev_rec.func + f" [x{rep_cnt}]")
+            else:
+                yield prev_rec
+            prev_rec = r
+            rep_cnt = 1
+
+    if rep_cnt >= 2:
+        yield Record(prev_rec.csv_line, prev_rec.func + f" [x{rep_cnt}]")
+    else:
+        yield prev_rec
+
+
+class TestUnique(unittest.TestCase):
+
+    def test_ends_with_repeats(self):
+        records = (Record(f"{i},2", func) for i, func in enumerate("abbbccc"))
+        want = [
+            Record("0,2", "a"),
+            Record("1,2", "b [x3]"),
+            Record("4,2", "c [x3]"),
+        ]
+        self.assertEqual(want, list(unique(records)))
+
+    def test_ends_with_single(self):
+        records = (Record(f"{i},2", func) for i, func in enumerate("abbbcccd"))
+        want = [
+            Record("0,2", "a"),
+            Record("1,2", "b [x3]"),
+            Record("4,2", "c [x3]"),
+            Record("7,2", "d"),
+        ]
+        self.assertEqual(want, list(unique(records)))
+
+
+
 def collapse_repeats(records: list[Record]) -> list[Record]:
     pattern = []  # [Record]
     repeat_candidate = []  # [Record]
@@ -154,10 +198,14 @@ def collapse_repeats(records: list[Record]) -> list[Record]:
                 repeat_count = -1
             else: # repeat_count >= 1
                 # 繰り返しが終わった
-                yield Record(f"[repeat x{repeat_count+1} total]", None)
-                for rec in pattern:
-                    yield rec
-                yield Record("[/repeat]", None)
+                if len(pattern) == 1:
+                    yield Record(pattern[0].csv_line, pattern[0].func + f" [x{repeat_count+1}]")
+                else:
+                    yield Record(f"[repeat x{repeat_count+1} total]", None)
+                    for rec in pattern:
+                        yield rec
+                    yield Record("[/repeat]", None)
+
                 for rec in repeat_candidate:
                     yield rec
                 repeat_candidate = []
@@ -228,6 +276,14 @@ class TestCollapseRepeats(unittest.TestCase):
         ]
         self.assertEqual(want, list(collapse_repeats(records)))
 
+    def test_repeat_printing(self):
+        records = [Record(f"{i},2", func) for i, func in enumerate("aaab")]
+        want = [
+            Record("0,2", "a [x3]"),
+            Record("3,2", "b"),
+        ]
+        self.assertEqual(want, list(collapse_repeats(records)))
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -289,6 +345,7 @@ map ファイルのフォーマット：
 
         records = add_debug_column(csv_file, addrlabels, args.func_entry_only)
         if args.collapse_repeats:
+            records = unique(records)
             records = collapse_repeats(records)
 
         for r in records:
