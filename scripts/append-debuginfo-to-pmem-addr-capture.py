@@ -9,9 +9,13 @@ import unittest
 
 
 ADDRESS_COLUMN = "Parallel: Items"
-DEBUG_COLUMN = "Function"
 AddrLabel = namedtuple("AddrLabel", ["addr", "label"])
-Record = namedtuple("Record", ["csv_line", "func"])
+Record = namedtuple("Record", ["csv_line", "func", "func_addr", "offset"],
+                    defaults=              [ None,           0,        0])
+
+
+def replace_func_name(r, new_func):
+    return Record(r.csv_line, new_func, r.func_addr, r.offset)
 
 
 def load_addr_label_from_map(map_file):
@@ -63,9 +67,9 @@ def load_addr_label_from_map(map_file):
     return entries
 
 
-def find_current_function(addr: int, addrlabels) -> str:
+def find_current_function(addr: int, addrlabels: list) -> (int, str):
     """
-    addr 以下で最も近いラベルを返す。
+    addr 以下で最も近いラベルを返す。配列の添字とラベルを返す。
 
     例:
         map:
@@ -73,23 +77,19 @@ def find_current_function(addr: int, addrlabels) -> str:
             0002 fin
             0003 buntan_main
 
-        addr=0000 -> start
-        addr=0001 -> start
-        addr=0002 -> fin
-        addr=0003 -> buntan_main
-        addr=0004 -> buntan_main
+        addr=0000 -> 0, start
+        addr=0001 -> 0, start
+        addr=0002 -> 1, fin
+        addr=0003 -> 2, buntan_main
+        addr=0004 -> 2, buntan_main
     """
     index = bisect_right(addrlabels, addr, key=lambda x: x.addr) - 1
     if index < 0:
-        return ""
-    return addrlabels[index].label
+        return -1, ""
+    return index, addrlabels[index].label
 
 
 def add_debug_column(csv_file, addrlabels: list[AddrLabel], func_entry_only) -> list[Record]:
-    addr_label_map = {}
-    for addr, label in addrlabels:
-        addr_label_map[addr] = label
-
     for line in csv_file:
         line = line.rstrip()
         # line: index,time,pmem_addr
@@ -97,13 +97,11 @@ def add_debug_column(csv_file, addrlabels: list[AddrLabel], func_entry_only) -> 
         # 観測される addr は実行中命令の次を指すので、
         # 実行中命令のアドレスを求めるために 1 を引く
         addr = int(line[comma+1:], 16) - 1
-        if func_entry_only:
-            func = addr_label_map.get(addr, None)
-            if func is None:
-                continue
-        else:
-            func = find_current_function(addr, addrlabels)
-        yield Record(line, func)
+        ind, func = find_current_function(addr, addrlabels)
+        func_addr = addrlabels[ind].addr
+        if func_entry_only and func_addr != addr:
+            continue
+        yield Record(line, func, func_addr, addr - func_addr)
 
 
 def unique(records: list[Record]) -> list[Record]:
@@ -115,14 +113,14 @@ def unique(records: list[Record]) -> list[Record]:
             continue
         else:
             if rep_cnt >= 2:
-                yield Record(prev_rec.csv_line, prev_rec.func + f" [x{rep_cnt}]")
+                yield replace_func_name(prev_rec, prev_rec.func + f" [x{rep_cnt}]")
             else:
                 yield prev_rec
             prev_rec = r
             rep_cnt = 1
 
     if rep_cnt >= 2:
-        yield Record(prev_rec.csv_line, prev_rec.func + f" [x{rep_cnt}]")
+        yield replace_func_name(prev_rec, prev_rec.func + f" [x{rep_cnt}]")
     else:
         yield prev_rec
 
@@ -199,12 +197,12 @@ def collapse_repeats(records: list[Record]) -> list[Record]:
             else: # repeat_count >= 1
                 # 繰り返しが終わった
                 if len(pattern) == 1:
-                    yield Record(pattern[0].csv_line, pattern[0].func + f" [x{repeat_count+1}]")
+                    yield replace_func_name(pattern[0], pattern[0].func + f" [x{repeat_count+1}]")
                 else:
-                    yield Record(f"[repeat x{repeat_count+1} total]", None)
+                    yield Record(f"[repeat x{repeat_count+1} total]")
                     for rec in pattern:
                         yield rec
-                    yield Record("[/repeat]", None)
+                    yield Record("[/repeat]")
 
                 for rec in repeat_candidate:
                     yield rec
@@ -213,11 +211,11 @@ def collapse_repeats(records: list[Record]) -> list[Record]:
                 repeat_count = -1
 
     if repeat_count >= 0:
-        yield Record(f"[repeat x{repeat_count+1} total]", None)
+        yield Record(f"[repeat x{repeat_count+1} total]")
     for rec in pattern:
         yield rec
     if repeat_count >= 0:
-        yield Record(f"[/repeat]", None)
+        yield Record(f"[/repeat]")
     for rec in repeat_candidate:
         yield rec
 
@@ -341,7 +339,7 @@ map ファイルのフォーマット：
         if ADDRESS_COLUMN not in fieldnames:
             raise RuntimeError(f"CSVに '{ADDRESS_COLUMN}' 列が見つかりません。")
 
-        out_file.write(header + "," + DEBUG_COLUMN + "\n")
+        out_file.write(header + ",Function,FuncAddr,Offset\n")
 
         records = add_debug_column(csv_file, addrlabels, args.func_entry_only)
         if args.collapse_repeats:
@@ -349,7 +347,11 @@ map ファイルのフォーマット：
             records = collapse_repeats(records)
 
         for r in records:
-            out_file.write(r.csv_line + ("," + r.func if r.func else "") + "\n")
+            out_file.write(r.csv_line
+                           + ("," + r.func if r.func else ",,,")
+                           + f",{r.func_addr:04X}"
+                           + f",{r.offset:04X}"
+                           + "\n")
 
 
 if __name__ == "__main__":
