@@ -761,7 +761,9 @@ int main(int argc, char **argv) {
   size_t text_line_num = 0; // 'section .text' の行番号 (1-indexed)
   memset(line_pmem, 0xff, sizeof(uint16_t) * MAX_LINES);
 
-  fprintf(list_file, "ADDR  INSN   LINE  FILE_CONTENT\n");
+  if (list_file) {
+    fprintf(list_file, "ADDR  INSN   LINE  FILE_CONTENT\n");
+  }
 
   char *next_line;
   if ((next_line = ReadLine(src)) != NULL) {
