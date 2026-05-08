@@ -153,6 +153,26 @@ int try_put_stone(unsigned int *board, int cx, int cy, int stone) {
   return rev_cnt;
 }
 
+// いずれかに石を置けるなら真を返す
+int has_valid_moves(unsigned int *board, int stone) {
+  int board_next[8];
+  for (int y = 0; y < 8; ++y) {
+    for (int x = 0; x < 8; ++x) {
+      int st = get_stone(board, x, y);
+      if (st != 1) {
+        continue;
+      }
+      for (int i = 0; i < 8; ++i) {
+        board_next[i] = board[i];
+      }
+      if (try_put_stone(board_next, x, y, stone) > 0) {
+        return 1;
+      }
+    }
+  }
+  return 0; // どこにも石を置けない
+}
+
 // もし AI が黒番 => return black=+1, white=-1
 // もし AI が白番 => return black=-1, white=+1
 int st2ev(int stone) {
@@ -334,7 +354,9 @@ void save_kifu(unsigned char *kifu, unsigned int len) {
   }
 }
 
-void proc_ai() {
+// 0: 石を置いた
+// 1: パスした
+int proc_ai() {
   timer_cnt = 10000; // 思考時間を計るためのタイマ初期値
 
   unsigned int board_ai[8];
@@ -362,9 +384,11 @@ void proc_ai() {
   }
 
   char s[8];
+  int passed = 0;
   if (max_ev == -30000) {
     // どこにも石を置けない
     sys_put_string("AI passed\n", -1);
+    passed = 1;
   } else {
     ai_lastx = max_x;
     ai_lasty = max_y;
@@ -390,10 +414,13 @@ void proc_ai() {
   sys_put_string("AI's think time: ", -1);
   sys_put_string(s, 5);
   sys_put_string("ms\n", -1);
+
+  return passed;
 }
 
 // -1: プログラム終了
-//  0: 相手のターンにする（石を置いたか、パス）
+//  0: 石を置いた
+//  1: パスした
 int proc_human() {
   while (1) {
     print_board(board);
@@ -401,6 +428,15 @@ int proc_human() {
     int c = sys_getc();
     if (c <= 0) {
       return -1;
+    }
+
+    if (!has_valid_moves(board, turn)) {
+      // パス
+      sys_put_string("You must pass. Press [y]", -1);
+      while (sys_getc() != 'y') {
+      }
+      sys_put_string("\x1B[1G\x1B[K", -1); // カーソルを左端に移動し、現在行を消去
+      return 1;
     }
 
     // カーソルから右側を消去（ステータスラインを消去）
@@ -418,14 +454,9 @@ int proc_human() {
       print_board(board_prev);
       sys_put_string("press any key to continue", -1);
       sys_getc();
-      sys_put_string("\x1B[1G\x1B[K", -1);
+      sys_put_string("\x1B[1G\x1B[K", -1); // カーソルを左端に移動し、現在行を消去
     } else if (c == 'v') {
       print_kifu(kifu, kifu_len);
-    } else if (c == 'p') {
-      sys_put_string("pass? [y/n]", -1);
-      if (sys_getc() == 'y') {
-        return 0;
-      }
     } else if (c == ' ') {
       if (get_stone(board, cx, cy) != 1) {
         sys_put_string("cannot put a stone\n", -1);
@@ -479,18 +510,24 @@ int buntan_main(int *info) {
   int nb = 0;
   int nw = 0;
   int stop_game = 0;
+  int ai_passed = 0;
+  int human_passed = 0;
   while (!stop_game) {
     print_board(board);
     if (turn == ai_turn) {
       for (int i = 0; i < 8; ++i) {
         board_prev[i] = board[i];
       }
-      proc_ai();
+      ai_passed = proc_ai();
     } else {
-      int res = proc_human();
-      if (res == -1) {
+      human_passed = proc_human();
+      if (human_passed == -1) {
         stop_game = 1;
       }
+    }
+
+    if (ai_passed == 1 && human_passed == 1) {
+      stop_game = 1;
     }
 
     nb = nw = 0;
