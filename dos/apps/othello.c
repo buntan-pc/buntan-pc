@@ -367,14 +367,14 @@ int buntan_main(int *info) {
 
       for (int y = 0; y < 8; ++y) {
         for (int x = 0; x < 8; ++x) {
+          int st = get_stone(board, x, y);
+          if (st != 1) {
+            continue;
+          }
           for (int i = 0; i < 8; ++i) {
             board_ai[i] = board[i];
           }
-          int st = get_stone(board_ai, x, y);
           int ev = eval_move(board_ai, x, y, turn, 1);
-          if (st != 1 && ev != -30000) {
-            //fprintf(stderr, "err\n");
-          }
           if (max_ev < ev) {
             //fprintf(stderr, "eval_move (max renewed): %d,%d -> %d\n", x, y, ev);
             max_ev = ev;
@@ -384,29 +384,35 @@ int buntan_main(int *info) {
         }
       }
 
-      ai_lastx = max_x;
-      ai_lasty = max_y;
-
-      for (int i = 0; i < 8; ++i) {
-        board_prev[i] = board[i];
-      }
-
-      try_put_stone(board, ai_lastx, ai_lasty, turn);
-      kifu[kifu_len++] = (ai_lastx << 4) | ai_lasty;
-      turn = 2 - turn;
-
       char s[8];
-      sys_put_string("AI's move: ", -1);
-      s[0] = 'A' + ai_lastx;
-      s[1] = '1' + ai_lasty;
-      sys_put_string(s, 2);
-      sys_put_string(" (x=", -1);
-      s[0] = '0' + ai_lastx;
-      s[1] = '0' + ai_lasty;
-      sys_put_string(s + 0, 1);
-      sys_put_string(",y=", -1);
-      sys_put_string(s + 1, 1);
-      sys_put_string(")\n", -1);
+      if (max_ev == -30000) {
+        // どこにも石を置けない
+        sys_put_string("AI passed\n", -1);
+        turn = 2 - turn;
+      } else {
+        ai_lastx = max_x;
+        ai_lasty = max_y;
+
+        for (int i = 0; i < 8; ++i) {
+          board_prev[i] = board[i];
+        }
+
+        try_put_stone(board, ai_lastx, ai_lasty, turn);
+        kifu[kifu_len++] = (ai_lastx << 4) | ai_lasty;
+        turn = 2 - turn;
+
+        sys_put_string("AI's move: ", -1);
+        s[0] = 'A' + ai_lastx;
+        s[1] = '1' + ai_lasty;
+        sys_put_string(s, 2);
+        sys_put_string(" (x=", -1);
+        s[0] = '0' + ai_lastx;
+        s[1] = '0' + ai_lasty;
+        sys_put_string(s + 0, 1);
+        sys_put_string(",y=", -1);
+        sys_put_string(s + 1, 1);
+        sys_put_string(")\n", -1);
+      }
 
       unsigned int ai_time = 10000 - timer_cnt;
       sys_int2dec(ai_time, s, 5);
