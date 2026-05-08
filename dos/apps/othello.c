@@ -14,17 +14,7 @@ int ai_lasty = -1;
 char kifu[60];
 unsigned int kifu_len = 0;
 
-void print_board_init() {
-  sys_put_string("\x1B[H", -1);  // カーソルを左上へ
-  sys_put_string("ai_turn: ", -1);
-  sys_put_string("*?o" + ai_turn, 1);
-  sys_put_string("\n", 1);
-  sys_put_string("O/@: AI's last move\n\n", -1);
-
-  sys_put_string("current turn: ", -1);
-  sys_put_string("*?o" + turn, 1);
-  sys_put_string("\n", 1);
-
+void print_board_content() {
   char line_name[2];
   sys_put_string("   A B C D E F G H\n", -1);
   for (int y = 0; y < 8; ++y) {
@@ -43,6 +33,20 @@ void print_board_init() {
     }
     sys_put_string("\n", 1);
   }
+}
+
+void print_board_init() {
+  sys_put_string("\x1B[H", -1);  // カーソルを左上へ
+  sys_put_string("ai_turn: ", -1);
+  sys_put_string("*?o" + ai_turn, 1);
+  sys_put_string("\n", 1);
+  sys_put_string("O/@: AI's last move\n\n", -1);
+
+  sys_put_string("current turn: ", -1);
+  sys_put_string("*?o" + turn, 1);
+  sys_put_string("\n", 1);
+
+  print_board_content;
 }
 
 void print_board(unsigned int *board) {
@@ -422,16 +426,13 @@ int proc_human() {
         }
       }
     } else if (c == 'q') {
-      sys_put_string("write kifu to file? [y/n]\n", -1);
-      if (sys_getc() == 'y') {
-        save_kifu(kifu, kifu_len);
-      }
       return -1;
     }
   }
 }
 
 int buntan_main(int *info) {
+  char s[2];
 
   init_syscall(info);
   //__builtin_reset_sr(0);
@@ -463,7 +464,10 @@ int buntan_main(int *info) {
   sys_put_string("\x1b[?1049h", -1); // 代替バッファへ切り替え
   print_board_init();
 
-  while (1) {
+  int nb = 0;
+  int nw = 0;
+  int stop_game = 0;
+  while (!stop_game) {
     if (turn == ai_turn) {
       for (int i = 0; i < 8; ++i) {
         board_prev[i] = board[i];
@@ -472,8 +476,24 @@ int buntan_main(int *info) {
     } else {
       int res = proc_human();
       if (res == -1) {
-        break;
+        stop_game = 1;
       }
+    }
+
+    nb = nw = 0;
+    for (int y = 0; y < 8; ++y) {
+      for (int x = 0; x < 8; ++x) {
+        int st = get_stone(board, x, y);
+        if (st == 0) {
+          ++nb;
+        } else if (st == 2) {
+          ++nw;
+        }
+      }
+    }
+    if (nb + nw == 64) {
+      // 盤面が全部埋まった
+      stop_game = 1;
     }
 
     turn = 2 - turn;
@@ -481,8 +501,24 @@ int buntan_main(int *info) {
 
   sys_put_string("\x1b[?1049l", -1); // メインバッファへ戻す
 
+  print_board_content();
+
+  sys_put_string("Game finished: black=", -1);
+  sys_int2dec(nb, s, 2);
+  sys_put_string(s, 2);
+  sys_put_string(" white=", -1);
+  sys_int2dec(nw, s, 2);
+  sys_put_string(s, 2);
+  sys_put_string("\n", 1);
+
   sys_put_string("kifu:\n", -1);
   print_kifu(kifu, kifu_len);
+  sys_put_string("\n", 1);
+
+  sys_put_string("write kifu to file? [y/n]", -1);
+  if (sys_getc() == 'y') {
+    save_kifu(kifu, kifu_len);
+  }
   sys_put_string("\n", 1);
 
   //unsigned int fpmin = __builtin_get_sr(0);
