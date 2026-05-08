@@ -11,6 +11,8 @@ int turn = 0; // 0=black 1=none 2=white
 int ai_turn = 2;
 int ai_lastx = -1;
 int ai_lasty = -1;
+char kifu[60];
+unsigned int kifu_len = 0;
 
 void print_board_init() {
   sys_put_string("\x1B[H", -1);  // カーソルを左上へ
@@ -321,9 +323,115 @@ void save_kifu(unsigned char *kifu, unsigned int len) {
   }
 }
 
+void proc_ai() {
+  timer_cnt = 10000; // 思考時間を計るためのタイマ初期値
+
+  unsigned int board_ai[8];
+  int max_ev = -30000;
+  int max_x;
+  int max_y;
+
+  for (int y = 0; y < 8; ++y) {
+    for (int x = 0; x < 8; ++x) {
+      int st = get_stone(board, x, y);
+      if (st != 1) {
+        continue;
+      }
+      for (int i = 0; i < 8; ++i) {
+        board_ai[i] = board[i];
+      }
+      int ev = eval_move(board_ai, x, y, turn, 1);
+      if (max_ev < ev) {
+        //fprintf(stderr, "eval_move (max renewed): %d,%d -> %d\n", x, y, ev);
+        max_ev = ev;
+        max_x = x;
+        max_y = y;
+      }
+    }
+  }
+
+  char s[8];
+  if (max_ev == -30000) {
+    // どこにも石を置けない
+    sys_put_string("AI passed\n", -1);
+  } else {
+    ai_lastx = max_x;
+    ai_lasty = max_y;
+
+    try_put_stone(board, ai_lastx, ai_lasty, turn);
+    kifu[kifu_len++] = (ai_lastx << 4) | ai_lasty;
+
+    sys_put_string("AI's move: ", -1);
+    s[0] = 'A' + ai_lastx;
+    s[1] = '1' + ai_lasty;
+    sys_put_string(s, 2);
+    sys_put_string(" (x=", -1);
+    s[0] = '0' + ai_lastx;
+    s[1] = '0' + ai_lasty;
+    sys_put_string(s + 0, 1);
+    sys_put_string(",y=", -1);
+    sys_put_string(s + 1, 1);
+    sys_put_string(")\n", -1);
+  }
+
+  unsigned int ai_time = 10000 - timer_cnt;
+  sys_int2dec(ai_time, s, 5);
+  sys_put_string("AI's think time: ", -1);
+  sys_put_string(s, 5);
+  sys_put_string("ms\n", -1);
+}
+
+// -1: プログラム終了
+//  0: 相手のターンにする（石を置いたか、パス）
+int proc_human() {
+  while (1) {
+    print_board(board);
+
+    int c = sys_getc();
+    if (c <= 0) {
+      return -1;
+    }
+
+    // カーソルから右側を消去（ステータスラインを消去）
+    sys_put_string("\x1B[K", -1);
+
+    if (cx > 0 && (c == 'h' || c == 0x1F)) {
+      --cx;
+    } else if (cy < 7 && (c == 'j' || c == 0x1D)) {
+      ++cy;
+    } else if (cy > 0 && (c == 'k' || c == 0x1C)) {
+      --cy;
+    } else if (cx < 7 && (c == 'l' || c == 0x1E)) {
+      ++cx;
+    } else if (c == 'p') {
+      print_board(board_prev);
+      sys_put_string("press any key to continue", -1);
+      sys_getc();
+      sys_put_string("\x1B[1G\x1B[K", -1);
+    } else if (c == 'r') {
+      print_kifu(kifu, kifu_len);
+    } else if (c == ' ') {
+      if (get_stone(board, cx, cy) != 1) {
+        sys_put_string("cannot put a stone\n", -1);
+      } else {
+        if (try_put_stone(board, cx, cy, turn) > 0) {
+          kifu[kifu_len++] = (cx << 4) | cy;
+          return 0;
+        } else {
+          sys_put_string("cannot put a stone\n", -1);
+        }
+      }
+    } else if (c == 'q') {
+      sys_put_string("write kifu to file? [y/n]\n", -1);
+      if (sys_getc() == 'y') {
+        save_kifu(kifu, kifu_len);
+      }
+      return -1;
+    }
+  }
+}
+
 int buntan_main(int *info) {
-  char kifu[60];
-  unsigned int kifu_len = 0;
 
   init_syscall(info);
   //__builtin_reset_sr(0);
@@ -356,115 +464,19 @@ int buntan_main(int *info) {
   print_board_init();
 
   while (1) {
-    print_board(board);
     if (turn == ai_turn) {
-      timer_cnt = 10000; // 思考時間を計るためのタイマ初期値
-
-      unsigned int board_ai[8];
-      int max_ev = -30000;
-      int max_x;
-      int max_y;
-
-      for (int y = 0; y < 8; ++y) {
-        for (int x = 0; x < 8; ++x) {
-          int st = get_stone(board, x, y);
-          if (st != 1) {
-            continue;
-          }
-          for (int i = 0; i < 8; ++i) {
-            board_ai[i] = board[i];
-          }
-          int ev = eval_move(board_ai, x, y, turn, 1);
-          if (max_ev < ev) {
-            //fprintf(stderr, "eval_move (max renewed): %d,%d -> %d\n", x, y, ev);
-            max_ev = ev;
-            max_x = x;
-            max_y = y;
-          }
-        }
+      for (int i = 0; i < 8; ++i) {
+        board_prev[i] = board[i];
       }
-
-      char s[8];
-      if (max_ev == -30000) {
-        // どこにも石を置けない
-        sys_put_string("AI passed\n", -1);
-        turn = 2 - turn;
-      } else {
-        ai_lastx = max_x;
-        ai_lasty = max_y;
-
-        for (int i = 0; i < 8; ++i) {
-          board_prev[i] = board[i];
-        }
-
-        try_put_stone(board, ai_lastx, ai_lasty, turn);
-        kifu[kifu_len++] = (ai_lastx << 4) | ai_lasty;
-        turn = 2 - turn;
-
-        sys_put_string("AI's move: ", -1);
-        s[0] = 'A' + ai_lastx;
-        s[1] = '1' + ai_lasty;
-        sys_put_string(s, 2);
-        sys_put_string(" (x=", -1);
-        s[0] = '0' + ai_lastx;
-        s[1] = '0' + ai_lasty;
-        sys_put_string(s + 0, 1);
-        sys_put_string(",y=", -1);
-        sys_put_string(s + 1, 1);
-        sys_put_string(")\n", -1);
-      }
-
-      unsigned int ai_time = 10000 - timer_cnt;
-      sys_int2dec(ai_time, s, 5);
-      sys_put_string("AI's think time: ", -1);
-      sys_put_string(s, 5);
-      sys_put_string("ms\n", -1);
+      proc_ai();
     } else {
-      int c = sys_getc();
-      if (c <= 0) {
+      int res = proc_human();
+      if (res == -1) {
         break;
-      }
-
-      // カーソルから右側を消去（ステータスラインを消去）
-      sys_put_string("\x1B[K", -1);
-
-      if (cx > 0 && (c == 'h' || c == 0x1F)) {
-        --cx;
-      } else if (cy < 7 && (c == 'j' || c == 0x1D)) {
-        ++cy;
-      } else if (cy > 0 && (c == 'k' || c == 0x1C)) {
-        --cy;
-      } else if (cx < 7 && (c == 'l' || c == 0x1E)) {
-        ++cx;
-      } else if (c == 'p') {
-        print_board(board_prev);
-        sys_put_string("press any key to continue", -1);
-        sys_getc();
-        sys_put_string("\x1B[1G\x1B[K", -1);
-      } else if (c == 'r') {
-        print_kifu(kifu, kifu_len);
-      } else if (c == ' ') {
-        if (get_stone(board, cx, cy) != 1) {
-          sys_put_string("cannot put a stone\n", -1);
-          continue;
-        } else {
-          if (try_put_stone(board, cx, cy, turn) > 0) {
-            kifu[kifu_len++] = (cx << 4) | cy;
-            turn = 2 - turn;
-          } else {
-            sys_put_string("cannot put a stone\n", -1);
-          }
-        }
-      } else if (c == 'q') {
-        sys_put_string("write kifu to file? [y/n]\n", -1);
-        if (sys_getc() == 'y') {
-          save_kifu(kifu, kifu_len);
-        }
-        break;
-      } else {
-        continue;
       }
     }
+
+    turn = 2 - turn;
   }
 
   sys_put_string("\x1b[?1049l", -1); // メインバッファへ戻す
