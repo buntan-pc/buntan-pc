@@ -407,13 +407,18 @@ int proc_human() {
       --cy;
     } else if (cx < 7 && (c == 'l' || c == 0x1E)) {
       ++cx;
-    } else if (c == 'p') {
+    } else if (c == 'b') {
       print_board(board_prev);
       sys_put_string("press any key to continue", -1);
       sys_getc();
       sys_put_string("\x1B[1G\x1B[K", -1);
-    } else if (c == 'r') {
+    } else if (c == 'v') {
       print_kifu(kifu, kifu_len);
+    } else if (c == 'p') {
+      sys_put_string("pass? [y/n]", -1);
+      if (sys_getc() == 'y') {
+        return 0;
+      }
     } else if (c == ' ') {
       if (get_stone(board, cx, cy) != 1) {
         sys_put_string("cannot put a stone\n", -1);
@@ -468,6 +473,7 @@ int buntan_main(int *info) {
   int nw = 0;
   int stop_game = 0;
   while (!stop_game) {
+    print_board(board);
     if (turn == ai_turn) {
       for (int i = 0; i < 8; ++i) {
         board_prev[i] = board[i];
