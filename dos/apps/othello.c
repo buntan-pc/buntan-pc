@@ -239,6 +239,13 @@ int eval_move(unsigned int *board, int x, int y, int stone, int depth) {
       }
     }
 
+    if (max_ev == -30000) {
+      // 自分は石を置けるが相手が石を置けない
+      // そういうときは、現状のボードの評価値を返す
+      return eval_board(board_next);
+      // バグあり。AIが白か黒かによって打つ手が変わっちゃう
+    }
+
     if (stone == ai_turn && ai_turn == 0) {
       // AI の手番の評価、かつ AI が黒石
       // 相手=白 は評価値が最低になるように打つと考える
