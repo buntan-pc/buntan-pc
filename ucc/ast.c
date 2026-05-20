@@ -920,8 +920,15 @@ void PrintNode(FILE *out, struct Node *n, int indent, const char *key) {
   if (key) {
     fprintf(out, "%s", key);
   }
-  fprintf(out, "[%d %s token='%.*s' type=",
-         n->index, node_kind_name[n->kind], n->token->len, n->token->raw);
+  
+  fprintf(out, "[%d %s token=", n->index, node_kind_name[n->kind]);
+  if (n->token) {
+    fprintf(out, "'%.*s'", n->token->len, n->token->raw);
+  } else {
+    fprintf(out, "(no-token)");
+  }
+  fprintf(out, " type=");
+
   if (n->type) {
     PrintType(out, n->type);
   } else {
