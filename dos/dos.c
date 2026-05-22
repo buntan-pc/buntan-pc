@@ -1164,7 +1164,7 @@ int buntan_main() {
   unsigned char *app_dmem = 0x2000;
   char block_buf[512];
 
-  puts("BuntanPC DOS build 20260430");
+  puts("BuntanPC DOS build 20260521");
   putc('\n');
 
   sdinfo = sd_init();
