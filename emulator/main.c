@@ -38,19 +38,34 @@ int main(void) {
     return 1;
   }
 
-  if (bemu_cpu_load_ipl(cpu, "../cpu") != 0) {
-    fprintf(stderr, "warning: failed to load IPL hex files from ../cpu\n");
+  // DOSをロードして起動する
+  int dos_ok = 0;
+  if (bemu_cpu_load_pmem_hex(cpu, "../dos/dos.pmem.hex") == 0 &&
+      bemu_cpu_load_dmem_hex16(cpu, "../dos/dos.dmem.hex") == 0) {
+    dos_ok = 1;
+  } else if (bemu_cpu_load_pmem_hex(cpu, "dos/dos.pmem.hex") == 0 &&
+             bemu_cpu_load_dmem_hex16(cpu, "dos/dos.dmem.hex") == 0) {
+    dos_ok = 1;
   }
+  if (!dos_ok) {
+    fprintf(stderr, "warning: failed to load DOS hex files (../dos or dos)\n");
+  }
+  printf("pmem[0]=0x%05x pmem[1]=0x%05x\n",
+         (unsigned)bemu_cpu_pmem_read18(cpu, 0),
+         (unsigned)bemu_cpu_pmem_read18(cpu, 1));
 
   bemu_cpu_reset(cpu);
-  bemu_cpu_step(cpu, 1000);
 
+  // SPIモデルの簡易自己テスト
   spi_selftest(cpu);
 
-  for (unsigned i = 0; i < 8; ++i) {
-    unsigned addr = 0x0100u + (i * 2u);
-    printf("dmem[%04x]=%04x\n", addr, bemu_cpu_dmem_read16(cpu, (uint16_t)addr));
-  }
+  // DOSは起動直後にUART3へ文字列を出力する（SDカードの処理未実装やから途中で止まる）
+  printf("ip(before) = 0x%04x\n", bemu_cpu_debug_get_ip(cpu));
+  bemu_cpu_step(cpu, 200000);
+  printf("ip(after)  = 0x%04x insn=0x%05x\n",
+         bemu_cpu_debug_get_ip(cpu),
+         (unsigned)bemu_cpu_debug_get_insn(cpu));
+  printf("uart3_tx_count=%llu\n", (unsigned long long)bemu_cpu_debug_get_uart3_tx_count(cpu));
 
   bemu_cpu_destroy(cpu);
   return 0;

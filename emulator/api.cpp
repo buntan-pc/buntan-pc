@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 #include "Vcpu.h"
+#include "Vcpu___024root.h"
 #include "spi.h"
 
 namespace {
@@ -86,6 +87,10 @@ struct bemu_cpu {
   uint16_t pmem_addr_q = 0;
 
   bemu_spi_t spi{};
+  uint8_t uart3_tx_ready = 1;
+  uint8_t uart3_rx_ready = 0;
+  uint8_t uart3_rx_data = 0;
+  uint64_t uart3_tx_count = 0;
 
   bemu_cpu()
       : dmem_lo(kDmemWords, 0),
@@ -108,9 +113,23 @@ struct bemu_cpu {
 
     {
       // MMIO領域
-      // TODO: SPI以外のMMIOもサポートする
       if ((daddr & 0xff00u) == 0x0000u) {
-        dmem_rdata_reg = bemu_spi_read16(&spi, daddr);
+        switch (daddr & 0x00ffu) {
+          case 0x0030:  // uart3_data
+            dmem_rdata_reg = uart3_rx_data;
+            break;
+          case 0x0032: {  // uart3_flag
+            // bit0: RX ready, bit2: TX ready（dos/dos.c が参照）
+            uint16_t f = 0;
+            if (uart3_rx_ready) f |= 0x0001u;
+            if (uart3_tx_ready) f |= 0x0004u;
+            dmem_rdata_reg = f;
+            break;
+          }
+          default:
+            dmem_rdata_reg = bemu_spi_read16(&spi, daddr);
+            break;
+        }
       } else {
         const uint32_t widx = (daddr >> 1) & (kDmemWords - 1);
         dmem_rdata_reg = static_cast<uint16_t>(dmem_lo[widx]) |
@@ -126,8 +145,20 @@ struct bemu_cpu {
     // 書き込み
     if (top->dmem_wen) {
       if ((daddr & 0xff00u) == 0x0000u) {
-        // 現状は16bit MMIO書き込みとして転送
-        bemu_spi_write16(&spi, daddr, static_cast<uint16_t>(top->dmem_wdata));
+        switch (daddr & 0x00ffu) {
+          case 0x0030: {  // uart3_data
+            const uint8_t ch = static_cast<uint8_t>(top->dmem_wdata & 0xffu);
+            std::fwrite(&ch, 1, 1, stdout);
+            std::fflush(stdout);
+            uart3_tx_ready = 1;
+            uart3_tx_count++;
+            break;
+          }
+          default:
+            // 現状は16bit MMIO書き込みとして転送
+            bemu_spi_write16(&spi, daddr, static_cast<uint16_t>(top->dmem_wdata));
+            break;
+        }
       } else {
         const uint32_t widx = (daddr >> 1) & (kDmemWords - 1);
         const uint16_t din = static_cast<uint16_t>(top->dmem_wdata);
@@ -185,6 +216,9 @@ bemu_cpu_t* bemu_cpu_create(void) {
   cpu->top->irq = 0;
   cpu->top->clk = 0;
   bemu_spi_init(&cpu->spi);
+  cpu->uart3_tx_ready = 1;
+  cpu->uart3_rx_ready = 0;
+  cpu->uart3_rx_data = 0;
   cpu->drive_inputs();
   cpu->eval_settle();
 
@@ -209,6 +243,9 @@ void bemu_cpu_reset(bemu_cpu_t* cpu) {
   if (!cpu) return;
   cpu->top->rst = 1;
   bemu_spi_reset(&cpu->spi);
+  cpu->uart3_tx_ready = 1;
+  cpu->uart3_rx_ready = 0;
+  cpu->uart3_rx_data = 0;
   cpu->eval_settle();
   cpu->tick_one_cycle();
   cpu->tick_one_cycle();
@@ -287,17 +324,81 @@ int bemu_cpu_load_ipl(bemu_cpu_t* cpu, const char* cpu_dir) {
   return 0;
 }
 
+int bemu_cpu_load_pmem_hex(bemu_cpu_t* cpu, const char* pmem_hex_path) {
+  if (!cpu || !pmem_hex_path) return -1;
+  if (!readmemh_like(std::string(pmem_hex_path), &cpu->pmem, 0, 0x3ffffu)) return -2;
+  cpu->pmem_rdata_reg = 0;
+  cpu->drive_inputs();
+  cpu->eval_settle();
+  return 0;
+}
+
+int bemu_cpu_load_dmem_hex16(bemu_cpu_t* cpu, const char* dmem_hex_path) {
+  if (!cpu || !dmem_hex_path) return -1;
+  std::vector<uint32_t> tmp(kDmemWords, 0);
+  // ucc は通常のグローバル変数領域を 0x0100 から配置する（cpu/sim.sv と同じロード方式）
+  const uint32_t start = (0x100u >> 1);
+  if (!readmemh_like(std::string(dmem_hex_path), &tmp, start, 0xffffu)) return -2;
+  for (uint32_t i = 0; i < kDmemWords; ++i) {
+    const uint16_t v = static_cast<uint16_t>(tmp[i] & 0xffffu);
+    cpu->dmem_lo[i] = static_cast<uint8_t>(v & 0xffu);
+    cpu->dmem_hi[i] = static_cast<uint8_t>((v >> 8) & 0xffu);
+  }
+  cpu->dmem_rdata_reg = 0;
+  cpu->drive_inputs();
+  cpu->eval_settle();
+  return 0;
+}
+
 uint16_t bemu_cpu_mmio_read16(bemu_cpu_t* cpu, uint16_t addr) {
   if (!cpu) return 0;
   addr &= 0x00ffu;
   // 16bitアクセスとして扱う（偶数アドレス前提）
-  return bemu_spi_read16(&cpu->spi, addr);
+  switch (addr & 0xfffeu) {
+    case 0x0030:
+      return cpu->uart3_rx_data;
+    case 0x0032: {
+      uint16_t f = 0;
+      if (cpu->uart3_rx_ready) f |= 0x0001u;
+      if (cpu->uart3_tx_ready) f |= 0x0004u;
+      return f;
+    }
+    default:
+      return bemu_spi_read16(&cpu->spi, addr);
+  }
 }
 
 void bemu_cpu_mmio_write16(bemu_cpu_t* cpu, uint16_t addr, uint16_t value) {
   if (!cpu) return;
   addr &= 0x00ffu;
-  bemu_spi_write16(&cpu->spi, addr, value);
+  switch (addr & 0xfffeu) {
+    case 0x0030: {
+      const uint8_t ch = static_cast<uint8_t>(value & 0xffu);
+      std::fwrite(&ch, 1, 1, stdout);
+      std::fflush(stdout);
+      cpu->uart3_tx_ready = 1;
+      break;
+    }
+    default:
+      bemu_spi_write16(&cpu->spi, addr, value);
+      break;
+  }
+}
+
+uint16_t bemu_cpu_debug_get_ip(bemu_cpu_t* cpu) {
+  if (!cpu) return 0;
+  // Verilator が生成する内部表現へ直接アクセス（デバッグ用）
+  return static_cast<uint16_t>(cpu->top->rootp->cpu__DOT__ip);
+}
+
+uint32_t bemu_cpu_debug_get_insn(bemu_cpu_t* cpu) {
+  if (!cpu) return 0;
+  return static_cast<uint32_t>(cpu->top->rootp->cpu__DOT__insn) & 0x3ffffu;
+}
+
+uint64_t bemu_cpu_debug_get_uart3_tx_count(bemu_cpu_t* cpu) {
+  if (!cpu) return 0;
+  return cpu->uart3_tx_count;
 }
 
 }  // extern "C"
