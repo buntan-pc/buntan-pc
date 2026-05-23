@@ -588,17 +588,22 @@ assign key_col_n = KEY_COL_FOR_DEBUG != 0 ? debug_b : 8'hzz;
 
 logic [`ADDR_WIDTH-1:0] pmem_addr_buf;
 logic [15:0] stack0_buf, cstack0_buf;
+logic [17:0] insn_buf;
 
 always @(posedge clk, posedge rst) begin
   if (rst) begin
     pmem_addr_buf <= `ADDR_WIDTH'd0;
     stack0_buf <= 16'd0;
     cstack0_buf <= 16'd0;
+    insn_buf <= 18'd0;
   end
   else if (cpu_phase == 2'd3 /* fetch phase */) begin
     pmem_addr_buf <= cpu_pmem_addr;
     stack0_buf <= cpu_stack0;
     cstack0_buf <= cpu_cstack0;
+  end
+  else if (cpu_phase == 2'd0) begin
+    insn_buf <= cpu_reg_insn;
   end
 end
 
@@ -623,7 +628,7 @@ endfunction
 //assign debug_a = {cpu_load_addr[11:10], cpu_load_addr[5:0]};
 assign debug_a[2:0] = get_data3(pmem_addr_buf, cpu_phase);
 assign debug_a[3] = cpu_load_insn;
-assign debug_a[7:4] = get_data4(stack0_buf, cpu_phase);
+assign debug_a[7:4] = get_data4({2'd0, insn_buf[17:8], 4'd0}, cpu_phase);
 //assign debug_b = {cpu_reg_insn[3:0], 4'd0};
 assign debug_b[3:0] = 4'd0;
 assign debug_b[7:4] = get_data4(cstack0_buf, cpu_phase);
