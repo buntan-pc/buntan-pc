@@ -8,7 +8,7 @@ import sys
 import unittest
 
 
-ADDRESS_COLUMN = "Parallel: Items"
+ADDRESS_COLUMN_PREFIX = "Parallel:"
 AddrLabel = namedtuple("AddrLabel", ["addr", "label"])
 Record = namedtuple("Record", ["csv_line", "func", "func_addr", "offset"],
                     defaults=              [ None,           0,        0])
@@ -336,8 +336,11 @@ map ファイルのフォーマット：
         header = csv_file.readline().strip()
         fieldnames = header.split(",")
 
-        if ADDRESS_COLUMN not in fieldnames:
-            raise RuntimeError(f"CSVに '{ADDRESS_COLUMN}' 列が見つかりません。")
+        for fieldname in fieldnames:
+            if fieldname.startswith(ADDRESS_COLUMN_PREFIX):
+                break
+        else:
+            raise RuntimeError(f"CSVに '{ADDRESS_COLUMN_PREFIX}' 列が見つかりません。")
 
         out_file.write(header + ",Function,FuncAddr,Offset\n")
 

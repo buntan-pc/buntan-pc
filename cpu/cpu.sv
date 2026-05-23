@@ -22,7 +22,9 @@ module cpu#(
   output [17:0] pmem_wdata  // プログラムメモリへの書き込みデータ
   , output load_insn
   , output [17:0] reg_insn
-  , output logic [`ADDR_WIDTH-1:0] load_addr
+  , output [1:0] phase
+  , output [15:0] stack0
+  , output [15:0] cstack0
 );
 
 /*
@@ -239,7 +241,8 @@ logic [2:0] src_a_sel;
 logic [1:0] src_b_sel;
 logic [1:0] phase;
 logic [5:0] alu_sel;
-logic [15:0] stack0, stack1, stack_in, cstack0,
+//logic [15:0] stack0, stack1, stack_in, cstack0,
+logic [15:0] stack1, stack_in,
              alu_out, src_a, src_b, imm_mask, dmem_wdata_raw;
 
 // レジスタ群
@@ -422,12 +425,6 @@ function [15:0] get_sysreg(input [15:0] sr_addr, input [15:0] fpmin);
   endcase
 endfunction
 
-always @(posedge clk, posedge rst) begin
-  if (rst)
-    load_addr <= 18'd0;
-  else if (load_insn)
-    load_addr <= pmem_addr;
-end
 assign reg_insn = insn;
 
 endmodule
