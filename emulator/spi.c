@@ -3,7 +3,6 @@
  */
 
 #include "spi.h"
-#include <string.h>
 #include <stdio.h>
 
 #define RESP_QUEUE_SIZE 128
