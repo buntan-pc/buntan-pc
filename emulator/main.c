@@ -61,7 +61,11 @@ int main(void) {
 
   // DOSは起動直後にUART3へ文字列を出力する（SDカードの処理未実装やから途中で止まる）
   printf("ip(before) = 0x%04x\n", bemu_cpu_debug_get_ip(cpu));
-  bemu_cpu_step(cpu, 200000);
+  // UART3 が出力するか最大ループ回数に到達するまで、チャンク毎に実行
+  for (int iter = 0; iter < 20000; ++iter) {
+    bemu_cpu_step(cpu, 1000);
+    if (bemu_cpu_debug_get_uart3_tx_count(cpu) > 0) break;
+  }
   printf("ip(after)  = 0x%04x insn=0x%05x\n",
          bemu_cpu_debug_get_ip(cpu),
          (unsigned)bemu_cpu_debug_get_insn(cpu));

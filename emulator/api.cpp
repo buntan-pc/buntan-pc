@@ -8,6 +8,10 @@
 #include <cstdlib>
 #include <string>
 #include <vector>
+#include <pty.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <termios.h>
 #include "Vcpu.h"
 #include "Vcpu___024root.h"
 #include "spi.h"
@@ -92,6 +96,9 @@ struct bemu_cpu {
   uint8_t uart3_rx_data = 0;
   uint64_t uart3_tx_count = 0;
 
+  int uart3_master_fd = -1;
+  char uart3_slave_name[128];
+
   bemu_cpu()
       : dmem_lo(kDmemWords, 0),
         dmem_hi(kDmemWords, 0),
@@ -148,14 +155,21 @@ struct bemu_cpu {
         switch (daddr & 0x00ffu) {
           case 0x0030: {  // uart3_data
             const uint8_t ch = static_cast<uint8_t>(top->dmem_wdata & 0xffu);
-            std::fwrite(&ch, 1, 1, stdout);
-            std::fflush(stdout);
+            if (uart3_master_fd >= 0) {
+              ssize_t w = write(uart3_master_fd, &ch, 1);
+              (void)w;
+            } else {
+              std::fwrite(&ch, 1, 1, stdout);
+              std::fflush(stdout);
+            }
             uart3_tx_ready = 1;
             uart3_tx_count++;
             break;
           }
           default:
             // 現状は16bit MMIO書き込みとして転送
+            printf("MMIO write: addr=0x%04x val=0x%04x\n", daddr, static_cast<uint16_t>(top->dmem_wdata));
+            fflush(stdout);
             bemu_spi_write16(&spi, daddr, static_cast<uint16_t>(top->dmem_wdata));
             break;
         }
@@ -219,6 +233,25 @@ bemu_cpu_t* bemu_cpu_create(void) {
   cpu->uart3_tx_ready = 1;
   cpu->uart3_rx_ready = 0;
   cpu->uart3_rx_data = 0;
+  cpu->uart3_master_fd = -1;
+  cpu->uart3_slave_name[0] = '\0';
+
+  // create PTY for UART3 output
+  int mfd, sfd;
+  char sname[128];
+  if (openpty(&mfd, &sfd, sname, NULL, NULL) == 0) {
+    // close slave fd; user will open slave device path
+    close(sfd);
+    cpu->uart3_master_fd = mfd;
+    strncpy(cpu->uart3_slave_name, sname, sizeof(cpu->uart3_slave_name)-1);
+    cpu->uart3_slave_name[sizeof(cpu->uart3_slave_name)-1] = '\0';
+    // set non-blocking read on master
+    int flags = fcntl(cpu->uart3_master_fd, F_GETFL, 0);
+    fcntl(cpu->uart3_master_fd, F_SETFL, flags | O_NONBLOCK);
+    printf("UART3 PTY: %s\n", cpu->uart3_slave_name);
+    fflush(stdout);
+  }
+
   cpu->drive_inputs();
   cpu->eval_settle();
 
@@ -233,6 +266,7 @@ bemu_cpu_t* bemu_cpu_create(void) {
 
 void bemu_cpu_destroy(bemu_cpu_t* cpu) {
   if (!cpu) return;
+  if (cpu->uart3_master_fd >= 0) close(cpu->uart3_master_fd);
   cpu->top->final();
   delete cpu->top;
   delete cpu->context;
@@ -380,6 +414,8 @@ void bemu_cpu_mmio_write16(bemu_cpu_t* cpu, uint16_t addr, uint16_t value) {
       break;
     }
     default:
+      printf("MMIO write: addr=0x%04x val=0x%04x\n", addr, value);
+      fflush(stdout);
       bemu_spi_write16(&cpu->spi, addr, value);
       break;
   }

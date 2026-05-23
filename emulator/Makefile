@@ -8,12 +8,16 @@ BIN     = bemu-system-buntan_pc
 VERILATOR_DIR = cpu
 VERILATOR_TOP = Vcpu
 
+VERILATOR_DIR_MCU = mcu
+VERILATOR_TOP_MCU = Vmcu
+
 VERILATOR_INC = /usr/share/verilator/include
 VERILATOR_VLTSTD = /usr/share/verilator/include/vltstd
 
 SRCS_C = $(wildcard *.c)
 OBJS_C = $(patsubst %.c,$(OUT)/%.o,$(SRCS_C))
 OBJ_API = $(OUT)/api.o
+OBJ_VMCU = $(OUT)/vmcu_main.o
 
 all: verilator build_verilator $(OUT)/$(BIN)
 
@@ -22,6 +26,10 @@ build: all
 run: all
 	@echo "Running emulator..."
 	@./$(OUT)/$(BIN)
+
+vmcu: verilator_mcu build_verilator_mcu $(OUT)/bemu-system-buntan_mcu
+	@echo "Running Vmcu..."
+	@./$(OUT)/bemu-system-buntan_mcu
 
 $(OUT):
 	@mkdir -p $(OUT)
@@ -34,9 +42,21 @@ verilator:
 		--Mdir $(VERILATOR_DIR) \
 		-Wno-fatal
 
+verilator_mcu:
+	@echo "Converting MCU Verilog to cpp..."
+	@verilator -sv --cc ../cpu/*.sv \
+		--top-module mcu \
+		-I../cpu \
+		--Mdir $(VERILATOR_DIR_MCU) \
+		-Wno-fatal
+
 build_verilator:
 	@echo "Building Verilated CPU..."
 	@$(MAKE) -C $(VERILATOR_DIR) -f $(VERILATOR_TOP).mk
+
+build_verilator_mcu:
+	@echo "Building Verilated MCU..."
+	@$(MAKE) -C $(VERILATOR_DIR_MCU) -f $(VERILATOR_TOP_MCU).mk
 
 $(OUT)/%.o: %.c | $(OUT)
 	@echo "Compiling $< -> $@"
@@ -50,6 +70,10 @@ $(OBJ_API): api.cpp api.h | $(OUT)
 		-I$(VERILATOR_VLTSTD) \
 		-c api.cpp -o $@
 
+$(OBJ_VMCU): vmcu_main.cpp | $(OUT)
+	@echo "Compiling vmcu_main.cpp -> $@"
+	@$(CXX) $(CXXFLAGS) -I$(VERILATOR_DIR_MCU) -I$(VERILATOR_INC) -I$(VERILATOR_VLTSTD) -c vmcu_main.cpp -o $@
+
 $(OUT)/$(BIN): $(OBJS_C) $(OBJ_API)
 	@echo "Linking -> $@"
 	@$(CXX) $(CXXFLAGS) -pthread \
@@ -58,9 +82,13 @@ $(OUT)/$(BIN): $(OBJS_C) $(OBJ_API)
 		$(VERILATOR_DIR)/libVcpu.a \
 		$(VERILATOR_DIR)/libverilated.a
 
+$(OUT)/bemu-system-buntan_mcu: $(OBJ_VMCU)
+	@echo "Linking Vmcu -> $@"
+	@$(CXX) $(CXXFLAGS) -pthread -o $@ $(OBJ_VMCU) $(VERILATOR_DIR_MCU)/libVmcu.a $(VERILATOR_DIR_MCU)/libverilated.a
+
 clean:
 	@echo "Cleaning up..."
-	@rm -rf $(OUT) $(VERILATOR_DIR)
+	@rm -rf $(OUT) $(VERILATOR_DIR) $(VERILATOR_DIR_MCU)
 
-.PHONY: all build run clean verilator build_verilator
+.PHONY: all build run clean verilator build_verilator verilator_mcu build_verilator_mcu vmcu
 .DEFAULT_GOAL := all
