@@ -32,7 +32,7 @@ static bool readmemh_like(const std::string& path, std::vector<uint32_t>* out_wo
     if (*p == '\0' || *p == '\n' || *p == '#') continue;
     if (*p == '/' && *(p + 1) == '/') continue;
     if (*p == '@') {
-      // Address directive like "@0010"
+      // アドレス指定ディレクティブ
       ++p;
       char* endp = nullptr;
       unsigned long addr = std::strtoul(p, &endp, 16);
@@ -70,18 +70,18 @@ struct bemu_cpu {
   VerilatedContext* context = nullptr;
   Vcpu* top = nullptr;
 
-  // dmem: split into lo/hi bytes, like cpu/mem.sv
+  // low/highバイトに分割して保持する
   std::vector<uint8_t> dmem_lo;
   std::vector<uint8_t> dmem_hi;
 
-  // pmem: 18-bit per entry, stored in uint32_t
+  // 1エントリ18bitを保持する
   std::vector<uint32_t> pmem;
 
-  // Registered read data (synchronous read)
+  // 同期メモリ読み出しのレジスタ値
   uint16_t dmem_rdata_reg = 0;
-  uint32_t pmem_rdata_reg = 0;  // 18-bit
+  uint32_t pmem_rdata_reg = 0;
 
-  // Last sampled addresses (for sync read)
+  // 同期読み出し用に直近のアドレスを保持（デバッグ用）
   uint16_t dmem_addr_q = 0;
   uint16_t pmem_addr_q = 0;
 
@@ -102,13 +102,13 @@ struct bemu_cpu {
   void posedge_mem() {
     bemu_spi_tick(&spi);
 
-    // Sample addresses at the clock edge (matching synchronous RAM behavior).
+    // クロック立ち上がりでアドレスをサンプル
     const uint16_t daddr = static_cast<uint16_t>(top->dmem_addr) & kAddrMask;
     const uint16_t paddr = static_cast<uint16_t>(top->pmem_addr) & kAddrMask;
 
-    // Read-before-write semantics (matches nonblocking behavior in cpu/mem.sv).
     {
-      // MMIO window (0x0000-0x00ff). For now only SPI is emulated.
+      // MMIO領域
+      // TODO: SPI以外のMMIOもサポートする
       if ((daddr & 0xff00u) == 0x0000u) {
         dmem_rdata_reg = bemu_spi_read16(&spi, daddr);
       } else {
@@ -123,10 +123,10 @@ struct bemu_cpu {
       pmem_addr_q = paddr;
     }
 
-    // Writes
+    // 書き込み
     if (top->dmem_wen) {
       if ((daddr & 0xff00u) == 0x0000u) {
-        // For now, forward as 16-bit MMIO write (byte writes are expanded by CPU already).
+        // 現状は16bit MMIO書き込みとして転送
         bemu_spi_write16(&spi, daddr, static_cast<uint16_t>(top->dmem_wdata));
       } else {
         const uint32_t widx = (daddr >> 1) & (kDmemWords - 1);
@@ -154,17 +154,17 @@ struct bemu_cpu {
   }
 
   void tick_one_cycle() {
-    // Ensure inputs are visible before the clock edge.
+    // 立ち上がりエッジの前に入力が見えるようにしておく
     top->clk = 0;
     drive_inputs();
     eval_settle();
 
-    // Rising edge
+    // 立ち上がり
     top->clk = 1;
     eval_settle();
     posedge_mem();
 
-    // Falling edge
+    // 立ち下がり
     top->clk = 0;
     eval_settle();
 
@@ -188,7 +188,7 @@ bemu_cpu_t* bemu_cpu_create(void) {
   cpu->drive_inputs();
   cpu->eval_settle();
 
-  // Deassert reset after a couple cycles to match typical usage.
+  // 典型的な使い方に合わせて、数サイクル後にリセット解除する
   cpu->tick_one_cycle();
   cpu->tick_one_cycle();
   cpu->top->rst = 0;
@@ -263,11 +263,10 @@ int bemu_cpu_load_ipl(bemu_cpu_t* cpu, const char* cpu_dir) {
     return -2;
   }
 
-  // dmem lo/hi are byte-wide; load to temp 32-bit vectors then narrow.
+  // dmem lo/hiは8bit幅のため、一旦32bit配列へ読み込んでから8bitへ詰める
   std::vector<uint32_t> tmp_lo(kDmemWords, 0);
   std::vector<uint32_t> tmp_hi(kDmemWords, 0);
 
-  // In cpu/mem.sv, $readmemh loads starting at (0x100 >> 1)
   const uint32_t start = (0x100u >> 1);
   if (!readmemh_like(join_path(cpu_dir, "ipl.dmem_lo.hex"), &tmp_lo, start, 0xffu)) {
     return -3;
@@ -280,12 +279,25 @@ int bemu_cpu_load_ipl(bemu_cpu_t* cpu, const char* cpu_dir) {
     cpu->dmem_hi[i] = static_cast<uint8_t>(tmp_hi[i] & 0xffu);
   }
 
-  // Reset read registers to reflect freshly loaded memory.
+  // ロード直後の状態に合わせて、読み出しレジスタを初期化する
   cpu->dmem_rdata_reg = 0;
   cpu->pmem_rdata_reg = 0;
   cpu->drive_inputs();
   cpu->eval_settle();
   return 0;
+}
+
+uint16_t bemu_cpu_mmio_read16(bemu_cpu_t* cpu, uint16_t addr) {
+  if (!cpu) return 0;
+  addr &= 0x00ffu;
+  // 16bitアクセスとして扱う（偶数アドレス前提）
+  return bemu_spi_read16(&cpu->spi, addr);
+}
+
+void bemu_cpu_mmio_write16(bemu_cpu_t* cpu, uint16_t addr, uint16_t value) {
+  if (!cpu) return;
+  addr &= 0x00ffu;
+  bemu_spi_write16(&cpu->spi, addr, value);
 }
 
 }  // extern "C"
