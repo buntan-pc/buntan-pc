@@ -8,29 +8,14 @@ BIN     = bemu-system-buntan_pc
 VERILATOR_DIR = cpu
 VERILATOR_TOP = Vcpu
 
-all: getsrc verilator build_verilator
-	@echo "Compiling C source files..."
-	@mkdir -p $(OUT)
-	@while read src; do \
-		obj=$$(basename $$src .c).o; \
-		echo "Compiling $$src -> $(OUT)/$$obj"; \
-		$(CC) $(CFLAGS) -c $$src -o $(OUT)/$$obj; \
-	done < .index
+VERILATOR_INC = /usr/share/verilator/include
+VERILATOR_VLTSTD = /usr/share/verilator/include/vltstd
 
-	@echo "Compiling api.cpp..."
-	@$(CXX) $(CXXFLAGS) \
-		-I$(VERILATOR_DIR) \
-		-I/usr/share/verilator/include \
-		-I/usr/share/verilator/include/vltstd \
-		-c api.cpp -o $(OUT)/api.o
+SRCS_C = $(wildcard *.c)
+OBJS_C = $(patsubst %.c,$(OUT)/%.o,$(SRCS_C))
+OBJ_API = $(OUT)/api.o
 
-	@echo "Linking object files..."
-	@$(CXX) $(CXXFLAGS) \
-		-o $(OUT)/$(BIN) \
-		$(OUT)/*.o \
-		$(VERILATOR_DIR)/$(VERILATOR_TOP)__ALL.a
-
-	@rm .index
+all: verilator build_verilator $(OUT)/$(BIN)
 
 build: all
 
@@ -38,13 +23,12 @@ run: all
 	@echo "Running emulator..."
 	@./$(OUT)/$(BIN)
 
-getsrc:
-	@echo "Getting source files..."
-	@find . -name "*.c" > .index
+$(OUT):
+	@mkdir -p $(OUT)
 
 verilator:
 	@echo "Converting Verilog to cpp..."
-	@verilator --cc ../cpu/cpu.sv \
+	@verilator -sv --cc ../cpu/cpu.sv \
 		--top-module cpu \
 		-I../cpu \
 		--Mdir $(VERILATOR_DIR) \
@@ -54,9 +38,29 @@ build_verilator:
 	@echo "Building Verilated CPU..."
 	@$(MAKE) -C $(VERILATOR_DIR) -f $(VERILATOR_TOP).mk
 
+$(OUT)/%.o: %.c | $(OUT)
+	@echo "Compiling $< -> $@"
+	@$(CC) $(CFLAGS) -c $< -o $@
+
+$(OBJ_API): api.cpp api.h | $(OUT)
+	@echo "Compiling api.cpp -> $@"
+	@$(CXX) $(CXXFLAGS) \
+		-I$(VERILATOR_DIR) \
+		-I$(VERILATOR_INC) \
+		-I$(VERILATOR_VLTSTD) \
+		-c api.cpp -o $@
+
+$(OUT)/$(BIN): $(OBJS_C) $(OBJ_API)
+	@echo "Linking -> $@"
+	@$(CXX) $(CXXFLAGS) -pthread \
+		-o $@ \
+		$(OBJS_C) $(OBJ_API) \
+		$(VERILATOR_DIR)/libVcpu.a \
+		$(VERILATOR_DIR)/libverilated.a
+
 clean:
 	@echo "Cleaning up..."
-	@rm -rf $(OUT) .index $(VERILATOR_DIR)
+	@rm -rf $(OUT) $(VERILATOR_DIR)
 
-.PHONY: all build run getsrc clean verilator build_verilator
+.PHONY: all build run clean verilator build_verilator
 .DEFAULT_GOAL := all
