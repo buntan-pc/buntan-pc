@@ -3,7 +3,7 @@ CFLAGS	= -Wall -Wextra -std=c99
 OUT		= out
 BIN		= bemu-system-buntan_pc
 
-all: getsrc
+all: getsrc verilator
 	@echo "Compiling source files..."
 	@mkdir -p $(OUT)
 	@while read src; do \
@@ -14,6 +14,8 @@ all: getsrc
 	@echo "Linking object files..."
 	@$(CC) $(CFLAGS) -o $(OUT)/$(BIN) $(OUT)/*.o
 	@rm .index
+
+build: all
 
 run: all
 	@echo "Running emulator..."
@@ -27,5 +29,13 @@ clean:
 	@echo "Cleaning up..."
 	@rm -rf $(OUT) .index
 
-.PHONY: all run getsrc clean
+verilator:
+	@echo "Converting Verilog to cpp..."
+	@verilator --cc ../cpu/cpu.sv \
+		--top-module cpu \
+		-I../cpu \
+		--Mdir cpu \
+		-Wno-fatal \
+
+.PHONY: all build run getsrc clean verilator
 .DEFAULT_GOAL := all
