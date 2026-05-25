@@ -6,6 +6,8 @@ all: Makefile
 
 dos.dmem.hex: dos.hexfile
 dos.pmem.hex: dos.hexfile
+testram.dmem.hex: testram.hexfile
+testram.pmem.hex: testram.hexfile
 %.hexfile: %.s Makefile
 	$(ASM) --pmem $*.pmem.hex --dmem $*.dmem.hex $<
 
