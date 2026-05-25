@@ -4,6 +4,7 @@ import argparse
 from bisect import bisect_right
 from collections import namedtuple
 from contextlib import nullcontext
+import re
 import sys
 import unittest
 
@@ -12,6 +13,8 @@ ADDRESS_COLUMN_PREFIX = "Parallel:"
 AddrLabel = namedtuple("AddrLabel", ["addr", "label"])
 Record = namedtuple("Record", ["csv_line", "func", "func_addr", "offset"],
                     defaults=              [ None,           0,        0])
+ListLine = namedtuple("ListLine", ["addr", "insn", "src_line_num", "src_line"])
+LABEL_PAT = re.compile("^([_a-zA-Z]+):.*$")
 
 
 def replace_func_name(r, new_func):
@@ -65,6 +68,70 @@ def load_addr_label_from_map(map_file):
         entries.append(AddrLabel(int(parts[0], 16), parts[1]))
 
     return entries
+
+
+def split_list_line(line):
+    addr = line[0:4]
+    insn = line[5:10]
+    src_line_num = line[12:17]
+    src_line = line[19:].strip()
+    return ListLine(addr, insn, src_line_num, src_line)
+
+
+def load_addr_line_from_list(list_file):
+    """
+    listファイルからアドレスとソース行の対応を読み込む
+
+    対応するlist形式:
+
+        ADDR  INSN   LINE  FILE_CONTENT
+                    00001  section .data
+        0004        00002  shift_map:
+        ...
+                    00156
+                    00157  section .text
+                    00158  start:
+        0000 1601E  00159      push gp+STR_0
+        0001 12001  00160      st gp+0
+        0002 00BF3  00161      call buntan_main
+        0003 10007  00162      st 6
+        ...
+                    03647  buntan_main:
+        0BF6 05D9C  03648      add fp,-612
+        ...
+
+    戻り値:
+        [
+          0000: "    push gp+STR_0",
+          0001: "    st gp+0",
+          0002: "    call buntan_main",
+          0003: "    st 6",
+          ...
+          0BF6: "    add fp,-612",
+          ...
+        ]
+    """
+    addr_lines = []
+    list_lines = (split_list_line(line) for line in list_file)
+
+    # section .text まで読み飛ばす
+    for line in list_lines:
+        if line.src_line.startswith("section .text"):
+            break
+
+    for line in list_lines:
+        addr = line.addr.strip()
+        if not addr:
+            continue
+
+        addr_hex = int(addr, 16)
+        if len(addr_lines) < addr_hex + 1:
+            addr_lines.extend([None] * (addr_hex - len(addr_lines)))
+            addr_lines.append(line.src_line)
+        else:
+            addr_lines[addr_hex] = line.src_line
+
+    return addr_lines
 
 
 def find_current_function(addr: int, addrlabels: list) -> (int, str):
@@ -293,28 +360,27 @@ CSV ファイルのフォーマット：
     2,160.00,018
     3,300.00,019
 
-"Parallel: Items" が pmem アドレスである。
+"Parallel: Items|Words" が pmem アドレスである。
 
-pmem アドレスから関数名を特定するために map ファイルを利用する。
-map ファイルのフォーマット：
-    section .data
-    ADDR LABEL
-    ----------
-    0000 pmem_len
-    0002 dmem_len
-
-    section .text
-    ADDR LABEL
-    ----------
-    0000 start
-    0002 fin
-    0003 buntan_main
+pmem アドレスから関数名を特定するために list ファイルを利用する。
+list ファイルのフォーマット：
+    ADDR  INSN   LINE  FILE_CONTENT
+                00001  section .data
+    0004        00002  shift_map:
+    ...
+                00156
+                00157  section .text
+                00158  start:
+    0000 1601E  00159      push gp+STR_0
+    0001 12001  00160      st gp+0
+    ...
 """,
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
 
     parser.add_argument("csv", help="入力 CSV ファイル")
     parser.add_argument("map", help="uas 出力の map ファイル")
+    parser.add_argument("lst", help="uas 出力の list ファイル")
     parser.add_argument("-o", "--output", help="出力 CSV ファイル")
     parser.add_argument("--func-entry-only", action="store_true",
                         help="関数先頭の行だけを残す")
@@ -325,6 +391,8 @@ map ファイルのフォーマット：
 
     with open(args.map) as f:
         addrlabels = load_addr_label_from_map(f)
+    with open(args.lst) as f:
+        addrlines = load_addr_line_from_list(f)
 
     def open_or_use(file_path, open_mode, file_obj):
         if file_path and file_path != "-":
@@ -342,7 +410,7 @@ map ファイルのフォーマット：
         else:
             raise RuntimeError(f"CSVに '{ADDRESS_COLUMN_PREFIX}' 列が見つかりません。")
 
-        out_file.write(header + ",Function,FuncAddr,Offset\n")
+        out_file.write("Id,Time[ns],Addr,Function,FAdr,FOff,SrcLine\n")
 
         records = add_debug_column(csv_file, addrlabels, args.func_entry_only)
         if args.collapse_repeats:
@@ -350,10 +418,12 @@ map ファイルのフォーマット：
             records = collapse_repeats(records)
 
         for r in records:
+            addr = r.func_addr + r.offset
             out_file.write(r.csv_line
                            + ("," + r.func if r.func else ",,,")
                            + f",{r.func_addr:04X}"
                            + f",{r.offset:04X}"
+                           + f",{addrlines[addr]}"
                            + "\n")
 
 
