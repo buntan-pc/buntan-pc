@@ -96,7 +96,7 @@ for (i = 0; i < 16; i = i + 1) begin: genpmem
     .READ_MODE(1'b0),
     .WRITE_MODE(2'b00),
     .BIT_WIDTH(18),
-    .BLK_SEL(i[2:0]),
+    .BLK_SEL(3'd0),
     .RESET_MODE("SYNC"),
     .INIT_RAM_00(pmem_init_values[(i << 6) | 0]),
     .INIT_RAM_01(pmem_init_values[(i << 6) | 1]),
@@ -168,8 +168,8 @@ for (i = 0; i < 16; i = i + 1) begin: genpmem
     .OCE(1'b0),
     .CE(1'b1),
     .RESET(rst),
-    .WRE((addr[13] == i[3]) & wenl),
-    .BLKSEL(addr[12:10]),
+    .WRE((addr[13:10] == i[3:0]) & wenl),
+    .BLKSEL(3'd0),
     .AD({addr[9:0], 4'd0}),
     .DI({18'd0, pmem_buf, data_in[15:0]})
   );
