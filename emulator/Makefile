@@ -4,6 +4,14 @@ CFLAGS  = -Wall -Wextra -std=c99
 CXXFLAGS= -Wall -Wextra -std=c++17
 OUT     = out
 BIN     = bemu-system-buntan_pc
+CONFIG  = .config
+
+-include $(CONFIG)
+
+ifeq ($(CONFIG_DEBUG),y)
+CFLAGS += -DDEBUG
+CXXFLAGS += -DDEBUG
+endif
 
 VERILATOR_DIR = mcu
 VERILATOR_TOP = Vmcu

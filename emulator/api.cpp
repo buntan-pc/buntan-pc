@@ -16,6 +16,7 @@
 
 #include "Vmcu.h"
 #include "Vmcu___024root.h"
+#include "debug.h"
 
 #ifndef BEMU_DEBUG_SPI
 #define BEMU_DEBUG_SPI 0
@@ -365,8 +366,8 @@ struct bemu_cpu {
       // DBG
       static int printed = 0;
       if (printed < 100) {
-        std::fprintf(stderr, "[spi %02d] tx=%02x resp=%02x cs=%d\n", printed,
-                     spi_last_tx_byte, resp, (int)top->spi_cs);
+        debug("[spi %02d] tx=%02x resp=%02x cs=%d\n", printed, spi_last_tx_byte,
+              resp, (int)top->spi_cs);
         printed++;
       }
     }
@@ -383,10 +384,10 @@ struct bemu_cpu {
     if (top->rootp->mcu__DOT__cpu_dmem_ren &&
         top->rootp->mcu__DOT__dmem_addr_d == 0x0020) {
       if (BEMU_DEBUG_SPI && spi_debug_read_printed < 40) {
-        std::fprintf(stderr, "[spi.rd] ip=%04x sreg=%02x tx_ready=%d cs=%d\n",
-                     (unsigned)top->rootp->mcu__DOT__cpu__DOT__ip,
-                     (unsigned)top->rootp->mcu__DOT__spi__DOT__sreg,
-                     (int)top->rootp->mcu__DOT__spi_tx_ready, (int)top->spi_cs);
+        debug("[spi.rd] ip=%04x sreg=%02x tx_ready=%d cs=%d\n",
+              (unsigned)top->rootp->mcu__DOT__cpu__DOT__ip,
+              (unsigned)top->rootp->mcu__DOT__spi__DOT__sreg,
+              (int)top->rootp->mcu__DOT__spi_tx_ready, (int)top->spi_cs);
         spi_debug_read_printed++;
       }
     }
@@ -421,9 +422,9 @@ struct bemu_cpu {
       const uint8_t tx_busy = top->rootp->mcu__DOT__spi__DOT__tx_busy;
       if (prev_spi_tx_busy && !tx_busy) {
         if (BEMU_DEBUG_SPI && spi_debug_transfer_done_printed < 40) {
-          std::fprintf(stderr, "[spi.done] sreg=%02x (expect resp=%02x)\n",
-                       (unsigned)top->rootp->mcu__DOT__spi__DOT__sreg,
-                       (unsigned)spi_current_resp_byte);
+          debug("[spi.done] sreg=%02x (expect resp=%02x)\n",
+                (unsigned)top->rootp->mcu__DOT__spi__DOT__sreg,
+                (unsigned)spi_current_resp_byte);
           spi_debug_transfer_done_printed++;
         }
       }

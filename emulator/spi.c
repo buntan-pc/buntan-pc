@@ -6,6 +6,8 @@
 
 #include <stdio.h>
 
+#include "debug.h"
+
 #define RESP_QUEUE_SIZE 128
 #define CMD_BUF_SIZE 6
 
@@ -51,7 +53,7 @@ static void sd_process_cmd(sd_slave_t* s) {
   uint8_t cmd = s->cmd_buf[0] & 0x3f;
   uint32_t arg = (s->cmd_buf[1] << 24) | (s->cmd_buf[2] << 16) |
                  (s->cmd_buf[3] << 8) | s->cmd_buf[4];
-  printf("SD: CMD%u 引数=0x%08x\n", cmd, arg);
+  debug("SD: CMD%u 引数=0x%08x\n", cmd, arg);
   fflush(stdout);
   switch (cmd) {
     case 0:                   // CMD0: Idle 状態へ

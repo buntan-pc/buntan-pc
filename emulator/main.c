@@ -5,6 +5,9 @@
 #include <stdio.h>
 
 #include "api.h"
+#include "debug.h"
+
+#define DEBUG 1
 
 int main(void) {
   bemu_cpu_t* cpu = bemu_cpu_create();
@@ -23,7 +26,7 @@ int main(void) {
     dos_ok = 1;
   }
   if (!dos_ok) {
-    fprintf(stderr, "error: failed to load DOS hex files (../dos or dos)\n");
+    debug("error: failed to load DOS hex files (../dos or dos)\n");
     bemu_cpu_destroy(cpu);
     return 1;
   }
@@ -33,9 +36,9 @@ int main(void) {
   for (int i = 0; i < 50; i++) {
     bemu_cpu_step(cpu, 100000);
 
-    fprintf(stderr, "step=%d spi_shift_count=%llu uart3_tx_count=%llu\n", i,
-            (unsigned long long)bemu_cpu_debug_get_spi_shift_count(cpu),
-            (unsigned long long)bemu_cpu_debug_get_uart3_tx_count(cpu));
+    debug("step=%d spi_shift_count=%llu uart3_tx_count=%llu\n", i,
+          (unsigned long long)bemu_cpu_debug_get_spi_shift_count(cpu),
+          (unsigned long long)bemu_cpu_debug_get_uart3_tx_count(cpu));
   }
 
   bemu_cpu_destroy(cpu);
