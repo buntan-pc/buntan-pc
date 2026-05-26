@@ -2,14 +2,16 @@
  * Copyright (c) 2026 tas0dev
  */
 
+#include <fcntl.h>
+#include <pty.h>
+#include <termios.h>
+#include <unistd.h>
 #include <verilated.h>
+
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <fcntl.h>
-#include <unistd.h>
-#include <pty.h>
-#include <termios.h>
+
 #include "Vmcu.h"
 
 int main() {
@@ -36,7 +38,7 @@ int main() {
   // 初期信号
   top->rst = 1;
   top->clk = 0;
-  top->uart_rx = 1; // idle high
+  top->uart_rx = 1;  // idle high
   top->uart2_rx = 1;
   top->uart3_rx = 1;
   top->clk125 = 0;
@@ -50,7 +52,11 @@ int main() {
 
   // 数サイクル後にリセット解除
   for (int i = 0; i < 10; ++i) {
-    top->clk = 1; top->eval(); top->clk = 0; top->eval(); context->timeInc(1);
+    top->clk = 1;
+    top->eval();
+    top->clk = 0;
+    top->eval();
+    context->timeInc(1);
   }
   top->rst = 0;
 
@@ -68,7 +74,8 @@ int main() {
   const unsigned long MAX_CYCLES = 1000UL * 1000UL * 10UL;
   for (; cycle < MAX_CYCLES; ++cycle) {
     // 1サイクルを進める
-    top->clk = 1; top->eval();
+    top->clk = 1;
+    top->eval();
     // PTY からホスト→デバイスを読み取る
     char buf[64];
     ssize_t r = read(master_fd, buf, sizeof(buf));
@@ -87,13 +94,14 @@ int main() {
         sample_base = cycle;
         sample_count = 0;
         sample_byte = 0;
-        //printf("start at cycle %lu\n", cycle);
+        // printf("start at cycle %lu\n", cycle);
       }
     } else {
-      unsigned long target = sample_base + (BIT_PERIOD/2) + (sample_count + 1) * BIT_PERIOD;
+      unsigned long target =
+          sample_base + (BIT_PERIOD / 2) + (sample_count + 1) * BIT_PERIOD;
       if (cycle >= target) {
         // データビットをサンプリング
-        int bit = uart_tx; // LSB first
+        int bit = uart_tx;  // LSB first
         sample_byte |= (bit & 1) << sample_count;
         sample_count++;
         if (sample_count >= 8) {
@@ -106,7 +114,9 @@ int main() {
     uart_tx_prev = uart_tx;
 
     // 下降エッジ（ハーフ）
-    top->clk = 0; top->eval(); context->timeInc(1);
+    top->clk = 0;
+    top->eval();
+    context->timeInc(1);
   }
 
   delete top;

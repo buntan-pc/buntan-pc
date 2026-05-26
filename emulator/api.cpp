@@ -3,14 +3,17 @@
  */
 
 #include "api.h"
+
 #include <verilated.h>
-#include <cstdio>
+
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <deque>
 #include <initializer_list>
 #include <string>
 #include <vector>
+
 #include "Vmcu.h"
 #include "Vmcu___024root.h"
 
@@ -22,10 +25,12 @@ namespace {
 
 constexpr uint32_t kAddrWidth = 14;
 constexpr uint32_t kAddrMask = (1u << kAddrWidth) - 1u;  // 0x3fff
-constexpr uint32_t kDmemWords = 1u << (kAddrWidth - 1);  // 0x2000 words (16-bit)
-constexpr uint32_t kPmemWords = 1u << kAddrWidth;        // 0x4000 words (18-bit)
+constexpr uint32_t kDmemWords = 1u
+                                << (kAddrWidth - 1);  // 0x2000 words (16-bit)
+constexpr uint32_t kPmemWords = 1u << kAddrWidth;     // 0x4000 words (18-bit)
 
-static bool readmemh_like(const std::string& path, std::vector<uint32_t>* out_words,
+static bool readmemh_like(const std::string& path,
+                          std::vector<uint32_t>* out_words,
                           uint32_t start_index, uint32_t bitmask) {
   FILE* f = std::fopen(path.c_str(), "r");
   if (!f) return false;
@@ -70,10 +75,7 @@ struct SdOverSpi {
   bool seen_cmd55 = false;
   bool ccs = true;  // SDHC扱い
 
-  void reset_transaction() {
-    cmd_len = 0;
-    resp_fifo.clear();
-  }
+  void reset_transaction() { cmd_len = 0; }
 
   void queue_bytes(std::initializer_list<uint8_t> bytes) {
     for (uint8_t b : bytes) resp_fifo.push_back(b);
@@ -81,7 +83,8 @@ struct SdOverSpi {
 
   void handle_command() {
     const uint8_t cmd = cmd_buf[0] & 0x3f;
-    const uint32_t arg = (uint32_t(cmd_buf[1]) << 24) | (uint32_t(cmd_buf[2]) << 16) |
+    const uint32_t arg = (uint32_t(cmd_buf[1]) << 24) |
+                         (uint32_t(cmd_buf[2]) << 16) |
                          (uint32_t(cmd_buf[3]) << 8) | uint32_t(cmd_buf[4]);
 
     switch (cmd) {
@@ -90,9 +93,37 @@ struct SdOverSpi {
         seen_cmd55 = false;
         queue_bytes({0x01});
         break;
-      case 8:  // CMD8
+      case 8:  // CMD8: SEND_OP_COND
         queue_bytes({0x01, 0x00, 0x00, 0x01, uint8_t(arg & 0xff)});
         break;
+      case 9: {  // CMD9: SEND_CSD
+        queue_bytes({
+            0x00,  // R1
+            0xff,  // wait
+            0xfe,  // data token
+            // CSD 16 bytes
+            0x40,
+            0x0e,
+            0x00,
+            0x32,
+            0x5b,
+            0x59,
+            0x00,
+            0x00,
+            0x1d,
+            0x69,
+            0x7f,
+            0x80,
+            0x0a,
+            0x40,
+            0x00,
+            0x00,
+            // ダミーCRC
+            0xff,
+            0xff,
+        });
+        break;
+      }
       case 55:  // CMD55
         seen_cmd55 = true;
         queue_bytes({uint8_t(idle ? 0x01 : 0x00)});
@@ -108,13 +139,16 @@ struct SdOverSpi {
         break;
       case 58: {  // CMD58
         queue_bytes({uint8_t(idle ? 0x01 : 0x00)});
-        const uint8_t ocr0 = 0x00;
-        const uint8_t ocr1 = 0xff;
-        const uint8_t ocr2 = uint8_t(0x80 | (ccs ? 0x40 : 0x00));
+
+        const uint8_t ocr0 = uint8_t(0x80 | (ccs ? 0x40 : 0x00));  // 0xC0
+        const uint8_t ocr1 = 0x00;
+        const uint8_t ocr2 = 0x00;
         const uint8_t ocr3 = 0x00;
+
         queue_bytes({ocr0, ocr1, ocr2, ocr3});
         break;
       }
+
       default:
         queue_bytes({uint8_t(0x04 | (idle ? 0x01 : 0x00))});
         break;
@@ -123,21 +157,26 @@ struct SdOverSpi {
 
   // 1バイト送受信単位で呼ぶ
   uint8_t transfer(uint8_t mosi_byte) {
-    // レスポンスが残っている間はコマンド受付より先にレスポンスを返す
     if (!resp_fifo.empty()) {
       uint8_t b = resp_fifo.front();
       resp_fifo.pop_front();
       return b;
     }
 
-    if (cmd_len < 6) {
-      cmd_buf[cmd_len++] = mosi_byte;
-      if (cmd_len == 6) {
-        handle_command();
-        cmd_len = 0;
+    if (cmd_len == 0) {
+      if ((mosi_byte & 0xc0) != 0x40) {
+        return 0xff;
       }
+    }
+
+    cmd_buf[cmd_len++] = mosi_byte;
+
+    if (cmd_len == 6) {
+      handle_command();
+      cmd_len = 0;
       return 0xff;
     }
+
     return 0xff;
   }
 };
@@ -159,7 +198,6 @@ struct bemu_cpu {
   void eval_settle() { top->eval(); }
 
   void posedge_observe() {
-    // UART3データレジスタ(0x0030)への書き込みを監視
     if (top->dmem_wen && top->dmem_addr == 0x0030) {
       const uint8_t ch = static_cast<uint8_t>(top->dmem_wdata & 0xffu);
       std::fwrite(&ch, 1, 1, stdout);
@@ -167,21 +205,22 @@ struct bemu_cpu {
       uart3_tx_count++;
     }
 
-    // SPIデータレジスタ(0x0020)への書き込み＝1バイト送信開始
     if (top->dmem_wen && top->dmem_addr == 0x0020) {
       spi_last_tx_byte = static_cast<uint8_t>(top->dmem_wdata & 0xffu);
       spi_shift_count++;
 
-      // SPIはフルデュプレックスなので、送信開始時に「この1バイト転送で返すべき値」を確定させておく。
-      // 実際のSPIではMISOが8ビットに渡ってシフトされ、その結果がrx_data(sreg)として読める。
       uint8_t resp = 0xff;
-      if (top->spi_cs == 0) resp = sd.transfer(spi_last_tx_byte);
+      if (top->spi_cs == 0) {
+        resp = sd.transfer(spi_last_tx_byte);
+      }
+
       spi_current_resp_byte = resp;
 
+      // DBG
       static int printed = 0;
-      if (BEMU_DEBUG_SPI && printed < 20) {
-        std::fprintf(stderr, "[spi] tx=%02x resp=%02x cs=%d\n",
-                     spi_last_tx_byte, resp, top->spi_cs);
+      if (printed < 100) {
+        std::fprintf(stderr, "[spi %02d] tx=%02x resp=%02x cs=%d\n", printed,
+                     spi_last_tx_byte, resp, (int)top->spi_cs);
         printed++;
       }
     }
@@ -193,25 +232,28 @@ struct bemu_cpu {
     eval_settle();
 
     // CPUがSPIデータレジスタ(0x0020)を読むタイミング（phase_rdmem）を観測する。
-    // mcu側は dmem_addr_d を使って dmem_rdata を生成するため、ここを見れば「読み出し値」が分かる。
-    if (top->rootp->mcu__DOT__cpu_dmem_ren && top->rootp->mcu__DOT__dmem_addr_d == 0x0020) {
+    // mcu側は dmem_addr_d を使って dmem_rdata
+    // を生成するため、ここを見れば「読み出し値」が分かる。
+    if (top->rootp->mcu__DOT__cpu_dmem_ren &&
+        top->rootp->mcu__DOT__dmem_addr_d == 0x0020) {
       if (BEMU_DEBUG_SPI && spi_debug_read_printed < 40) {
         std::fprintf(stderr, "[spi.rd] ip=%04x sreg=%02x tx_ready=%d cs=%d\n",
                      (unsigned)top->rootp->mcu__DOT__cpu__DOT__ip,
                      (unsigned)top->rootp->mcu__DOT__spi__DOT__sreg,
-                     (int)top->rootp->mcu__DOT__spi_tx_ready,
-                     (int)top->spi_cs);
+                     (int)top->rootp->mcu__DOT__spi_tx_ready, (int)top->spi_cs);
         spi_debug_read_printed++;
       }
     }
 
     // SPI MISOをエミュレーションする。
-    // tx_busy中は {sreg[6:0], miso} がシフトされるので、bit_cnt に合わせてMISOを出す。
+    // tx_busy中は {sreg[6:0], miso} がシフトされるので、bit_cnt
+    // に合わせてMISOを出す。
     if (top->spi_cs != 0) {
       sd.reset_transaction();
       top->spi_miso = 1;
     } else if (top->rootp->mcu__DOT__spi__DOT__tx_busy) {
-      const uint8_t bit_idx = static_cast<uint8_t>(top->rootp->mcu__DOT__spi__DOT__bit_cnt & 7);
+      const uint8_t bit_idx =
+          static_cast<uint8_t>(top->rootp->mcu__DOT__spi__DOT__bit_cnt & 7);
       top->spi_miso = (spi_current_resp_byte >> (7 - bit_idx)) & 1;
     } else {
       top->spi_miso = 1;
@@ -318,8 +360,10 @@ void bemu_cpu_dmem_write16(bemu_cpu_t* cpu, uint16_t addr, uint16_t value) {
   if (!cpu) return;
   addr &= static_cast<uint16_t>(kAddrMask);
   const uint32_t widx = (addr >> 1) & (kDmemWords - 1);
-  cpu->top->rootp->mcu__DOT__dmem__DOT__mem_lo[widx] = static_cast<uint8_t>(value & 0xffu);
-  cpu->top->rootp->mcu__DOT__dmem__DOT__mem_hi[widx] = static_cast<uint8_t>((value >> 8) & 0xffu);
+  cpu->top->rootp->mcu__DOT__dmem__DOT__mem_lo[widx] =
+      static_cast<uint8_t>(value & 0xffu);
+  cpu->top->rootp->mcu__DOT__dmem__DOT__mem_hi[widx] =
+      static_cast<uint8_t>((value >> 8) & 0xffu);
 }
 
 uint32_t bemu_cpu_pmem_read18(bemu_cpu_t* cpu, uint16_t addr) {
@@ -357,11 +401,14 @@ int bemu_cpu_load_dmem_hex16(bemu_cpu_t* cpu, const char* dmem_hex_path) {
   std::vector<uint32_t> tmp(kDmemWords, 0);
   // uccのdmem.hexは0x0100からの連番
   const uint32_t start = (0x100u >> 1);
-  if (!readmemh_like(std::string(dmem_hex_path), &tmp, start, 0xffffu)) return -2;
+  if (!readmemh_like(std::string(dmem_hex_path), &tmp, start, 0xffffu))
+    return -2;
   for (uint32_t i = 0; i < kDmemWords; ++i) {
     const uint16_t v = static_cast<uint16_t>(tmp[i] & 0xffffu);
-    cpu->top->rootp->mcu__DOT__dmem__DOT__mem_lo[i] = static_cast<uint8_t>(v & 0xffu);
-    cpu->top->rootp->mcu__DOT__dmem__DOT__mem_hi[i] = static_cast<uint8_t>((v >> 8) & 0xffu);
+    cpu->top->rootp->mcu__DOT__dmem__DOT__mem_lo[i] =
+        static_cast<uint8_t>(v & 0xffu);
+    cpu->top->rootp->mcu__DOT__dmem__DOT__mem_hi[i] =
+        static_cast<uint8_t>((v >> 8) & 0xffu);
   }
   cpu->eval_settle();
   return 0;
@@ -388,7 +435,8 @@ uint16_t bemu_cpu_debug_get_ip(bemu_cpu_t* cpu) {
 
 uint32_t bemu_cpu_debug_get_insn(bemu_cpu_t* cpu) {
   if (!cpu) return 0;
-  return static_cast<uint32_t>(cpu->top->rootp->mcu__DOT__cpu__DOT__insn) & 0x3ffffu;
+  return static_cast<uint32_t>(cpu->top->rootp->mcu__DOT__cpu__DOT__insn) &
+         0x3ffffu;
 }
 
 uint64_t bemu_cpu_debug_get_uart3_tx_count(bemu_cpu_t* cpu) {

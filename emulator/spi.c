@@ -3,6 +3,7 @@
  */
 
 #include "spi.h"
+
 #include <stdio.h>
 
 #define RESP_QUEUE_SIZE 128
@@ -48,27 +49,28 @@ static int resp_dequeue(sd_slave_t* s, uint8_t* out) {
 
 static void sd_process_cmd(sd_slave_t* s) {
   uint8_t cmd = s->cmd_buf[0] & 0x3f;
-  uint32_t arg = (s->cmd_buf[1] << 24) | (s->cmd_buf[2] << 16) | (s->cmd_buf[3] << 8) | s->cmd_buf[4];
+  uint32_t arg = (s->cmd_buf[1] << 24) | (s->cmd_buf[2] << 16) |
+                 (s->cmd_buf[3] << 8) | s->cmd_buf[4];
   printf("SD: CMD%u 引数=0x%08x\n", cmd, arg);
   fflush(stdout);
   switch (cmd) {
-    case 0: // CMD0: Idle 状態へ
-      resp_enqueue(s, 0x01); // R1: Idle
+    case 0:                   // CMD0: Idle 状態へ
+      resp_enqueue(s, 0x01);  // R1: Idle
       s->last_cmd_was_cmd55 = 0;
       break;
-    case 8: // CMD8: バージョン確認（エコー応答）
-      resp_enqueue(s, 0x01); // R1
+    case 8:                   // CMD8: バージョン確認（エコー応答）
+      resp_enqueue(s, 0x01);  // R1
       resp_enqueue(s, 0x00);
       resp_enqueue(s, 0x00);
       resp_enqueue(s, 0x01);
       resp_enqueue(s, 0xAA);
       s->last_cmd_was_cmd55 = 0;
       break;
-    case 55: // CMD55: アプリコマンドプレフィックス
+    case 55:  // CMD55: アプリコマンドプレフィックス
       resp_enqueue(s, 0x01);
       s->last_cmd_was_cmd55 = 1;
       break;
-    case 41: // ACMD41 (CMD55の後に送られる場合は初期化完了)
+    case 41:  // ACMD41 (CMD55の後に送られる場合は初期化完了)
       if (s->last_cmd_was_cmd55) {
         // Ready を返す
         resp_enqueue(s, 0x00);
@@ -110,9 +112,7 @@ void bemu_spi_init(bemu_spi_t* spi) {
   sd_reset(&g_sd);
 }
 
-void bemu_spi_reset(bemu_spi_t* spi) { 
-  bemu_spi_init(spi);
-}
+void bemu_spi_reset(bemu_spi_t* spi) { bemu_spi_init(spi); }
 
 void bemu_spi_tick(bemu_spi_t* spi) {
   if (!spi) return;
