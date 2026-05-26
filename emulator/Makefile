@@ -104,9 +104,13 @@ $(OUT)/bemu-system-buntan_mcu: $(OBJ_VMCU)
 	@echo "Linking Vmcu -> $@"
 	@$(CXX) $(CXXFLAGS) -pthread -o $@ $(OBJ_VMCU) $(VERILATOR_DIR_MCU)/libVmcu.a $(VERILATOR_DIR_MCU)/libverilated.a
 
+fmt:
+	@echo "Formatting..."
+	@clang-format -i *.c *.cpp *.h
+
 clean:
 	@echo "Cleaning up..."
 	@rm -rf $(OUT) $(VERILATOR_DIR) $(VERILATOR_DIR_MCU)
 
-.PHONY: all build run clean verilator build_verilator verilator_mcu build_verilator_mcu vmcu
+.PHONY: all build run fmt clean verilator build_verilator verilator_mcu build_verilator_mcu vmcu
 .DEFAULT_GOAL := all
