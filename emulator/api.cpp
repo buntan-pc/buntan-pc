@@ -14,6 +14,10 @@
 #include "Vmcu.h"
 #include "Vmcu___024root.h"
 
+#ifndef BEMU_DEBUG_SPI
+#define BEMU_DEBUG_SPI 0
+#endif
+
 namespace {
 
 constexpr uint32_t kAddrWidth = 14;
@@ -59,62 +63,41 @@ static bool readmemh_like(const std::string& path, std::vector<uint32_t>* out_wo
 }
 
 struct SdOverSpi {
-  // 受信/送信シフト
-  uint8_t rx_byte = 0;
-  int rx_bit = 0;
-  uint8_t tx_byte = 0xff;
-  int tx_bit = 0;
-  bool tx_loaded = false;
-  std::deque<uint8_t> tx_fifo;
-
-  // コマンド解析（6バイト固定）
+  std::deque<uint8_t> resp_fifo;
   uint8_t cmd_buf[6]{};
   int cmd_len = 0;
-
-  // SD状態（最小）
   bool idle = true;
   bool seen_cmd55 = false;
   bool ccs = true;  // SDHC扱い
 
   void reset_transaction() {
-    rx_byte = 0;
-    rx_bit = 0;
-    tx_byte = 0xff;
-    tx_bit = 0;
-    tx_loaded = false;
-    tx_fifo.clear();
     cmd_len = 0;
+    resp_fifo.clear();
   }
 
   void queue_bytes(std::initializer_list<uint8_t> bytes) {
-    for (uint8_t b : bytes) tx_fifo.push_back(b);
+    for (uint8_t b : bytes) resp_fifo.push_back(b);
   }
 
   void handle_command() {
-    static bool printed = false;
     const uint8_t cmd = cmd_buf[0] & 0x3f;
     const uint32_t arg = (uint32_t(cmd_buf[1]) << 24) | (uint32_t(cmd_buf[2]) << 16) |
                          (uint32_t(cmd_buf[3]) << 8) | uint32_t(cmd_buf[4]);
 
     switch (cmd) {
-      case 0:  // CMD0: GO_IDLE_STATE
-        if (!printed) {
-          std::fprintf(stderr, "[sd] CMD0 arg=%08x\n", arg);
-          printed = true;
-        }
+      case 0:  // CMD0
         idle = true;
         seen_cmd55 = false;
-        queue_bytes({0x01});  // R1=idle
+        queue_bytes({0x01});
         break;
-      case 8:  // CMD8: SEND_IF_COND
-        // R7: R1 + 32bit
+      case 8:  // CMD8
         queue_bytes({0x01, 0x00, 0x00, 0x01, uint8_t(arg & 0xff)});
         break;
-      case 55:  // CMD55: APP_CMD
+      case 55:  // CMD55
         seen_cmd55 = true;
         queue_bytes({uint8_t(idle ? 0x01 : 0x00)});
         break;
-      case 41:  // ACMD41: SD_SEND_OP_COND
+      case 41:  // ACMD41
         if (!seen_cmd55) {
           queue_bytes({0x05});
         } else {
@@ -123,9 +106,8 @@ struct SdOverSpi {
           queue_bytes({0x00});
         }
         break;
-      case 58: {  // CMD58: READ_OCR
+      case 58: {  // CMD58
         queue_bytes({uint8_t(idle ? 0x01 : 0x00)});
-        // OCR: bit30(CCS)
         const uint8_t ocr0 = 0x00;
         const uint8_t ocr1 = 0xff;
         const uint8_t ocr2 = uint8_t(0x80 | (ccs ? 0x40 : 0x00));
@@ -139,52 +121,24 @@ struct SdOverSpi {
     }
   }
 
-  uint8_t shift_bit(uint8_t mosi_bit) {
-    // 送信bit
-    if (tx_bit == 0 && !tx_loaded) {
-      if (!tx_fifo.empty()) {
-        tx_byte = tx_fifo.front();
-        tx_fifo.pop_front();
-      } else {
-        tx_byte = 0xff;
-      }
-      tx_loaded = true;
-    }
-    const uint8_t miso_bit = (tx_byte >> (7 - tx_bit)) & 1u;
-
-    // 受信を進める
-    rx_byte = uint8_t((rx_byte << 1) | (mosi_bit & 1u));
-    rx_bit++;
-    tx_bit = (tx_bit + 1) & 7;
-    if (tx_bit == 0) tx_loaded = false;
-
-    if (rx_bit == 8) {
-      rx_bit = 0;
-      if (cmd_len < 6) {
-        cmd_buf[cmd_len++] = rx_byte;
-        if (cmd_len == 6) {
-          static bool printed_cmd = false;
-          if (!printed_cmd) {
-            std::fprintf(stderr, "[sd] cmd bytes: %02x %02x %02x %02x %02x %02x\n",
-                         cmd_buf[0], cmd_buf[1], cmd_buf[2], cmd_buf[3], cmd_buf[4], cmd_buf[5]);
-            printed_cmd = true;
-          }
-        }
-        if (cmd_len == 6) {
-          handle_command();
-          cmd_len = 0;
-          if (!tx_fifo.empty()) {
-            tx_byte = tx_fifo.front();
-            tx_fifo.pop_front();
-            tx_bit = 0;
-            tx_loaded = true;
-          }
-        }
-      }
-      rx_byte = 0;
+  // 1バイト送受信単位で呼ぶ
+  uint8_t transfer(uint8_t mosi_byte) {
+    // レスポンスが残っている間はコマンド受付より先にレスポンスを返す
+    if (!resp_fifo.empty()) {
+      uint8_t b = resp_fifo.front();
+      resp_fifo.pop_front();
+      return b;
     }
 
-    return miso_bit;
+    if (cmd_len < 6) {
+      cmd_buf[cmd_len++] = mosi_byte;
+      if (cmd_len == 6) {
+        handle_command();
+        cmd_len = 0;
+      }
+      return 0xff;
+    }
+    return 0xff;
   }
 };
 
@@ -196,6 +150,11 @@ struct bemu_cpu {
   SdOverSpi sd{};
   uint64_t uart3_tx_count = 0;
   uint64_t spi_shift_count = 0;
+  uint8_t spi_last_tx_byte = 0xff;
+  uint8_t spi_current_resp_byte = 0xff;
+  uint8_t prev_spi_tx_busy = 0;
+  int spi_debug_transfer_done_printed = 0;
+  int spi_debug_read_printed = 0;
 
   void eval_settle() { top->eval(); }
 
@@ -207,14 +166,24 @@ struct bemu_cpu {
       std::fflush(stdout);
       uart3_tx_count++;
     }
-  }
 
-  void spi_force_rx_byte_if_needed() {
-    if (top->spi_cs != 0) return;
-    if (top->rootp->mcu__DOT__spi__DOT__tx_busy) return;
-    if (!sd.tx_fifo.empty()) {
-      top->rootp->mcu__DOT__spi__DOT__sreg = sd.tx_fifo.front();
-      sd.tx_fifo.pop_front();
+    // SPIデータレジスタ(0x0020)への書き込み＝1バイト送信開始
+    if (top->dmem_wen && top->dmem_addr == 0x0020) {
+      spi_last_tx_byte = static_cast<uint8_t>(top->dmem_wdata & 0xffu);
+      spi_shift_count++;
+
+      // SPIはフルデュプレックスなので、送信開始時に「この1バイト転送で返すべき値」を確定させておく。
+      // 実際のSPIではMISOが8ビットに渡ってシフトされ、その結果がrx_data(sreg)として読める。
+      uint8_t resp = 0xff;
+      if (top->spi_cs == 0) resp = sd.transfer(spi_last_tx_byte);
+      spi_current_resp_byte = resp;
+
+      static int printed = 0;
+      if (BEMU_DEBUG_SPI && printed < 20) {
+        std::fprintf(stderr, "[spi] tx=%02x resp=%02x cs=%d\n",
+                     spi_last_tx_byte, resp, top->spi_cs);
+        printed++;
+      }
     }
   }
 
@@ -223,30 +192,51 @@ struct bemu_cpu {
     top->clk = 0;
     eval_settle();
 
-    if (top->spi_cs == 0) {
-      constexpr uint32_t period = 1;  // CLOCK_HZ(100k)/BAUD(100k)=1
-      const uint32_t cnt = top->rootp->mcu__DOT__spi__DOT__tim__DOT__cnt;
-      const uint32_t inc = cnt + 1;
-      const uint32_t next = (inc < period) ? inc : 0;
-      const bool tim_full = (next == 0);
-      if (top->rootp->mcu__DOT__spi__DOT__tx_busy && tim_full) {
-        const uint8_t mosi_bit = top->spi_mosi & 1u;
-        top->spi_miso = sd.shift_bit(mosi_bit);
-        spi_shift_count++;
-      } else {
-        top->spi_miso = 1;
+    // CPUがSPIデータレジスタ(0x0020)を読むタイミング（phase_rdmem）を観測する。
+    // mcu側は dmem_addr_d を使って dmem_rdata を生成するため、ここを見れば「読み出し値」が分かる。
+    if (top->rootp->mcu__DOT__cpu_dmem_ren && top->rootp->mcu__DOT__dmem_addr_d == 0x0020) {
+      if (BEMU_DEBUG_SPI && spi_debug_read_printed < 40) {
+        std::fprintf(stderr, "[spi.rd] ip=%04x sreg=%02x tx_ready=%d cs=%d\n",
+                     (unsigned)top->rootp->mcu__DOT__cpu__DOT__ip,
+                     (unsigned)top->rootp->mcu__DOT__spi__DOT__sreg,
+                     (int)top->rootp->mcu__DOT__spi_tx_ready,
+                     (int)top->spi_cs);
+        spi_debug_read_printed++;
       }
+    }
+
+    // SPI MISOをエミュレーションする。
+    // tx_busy中は {sreg[6:0], miso} がシフトされるので、bit_cnt に合わせてMISOを出す。
+    if (top->spi_cs != 0) {
+      sd.reset_transaction();
+      top->spi_miso = 1;
+    } else if (top->rootp->mcu__DOT__spi__DOT__tx_busy) {
+      const uint8_t bit_idx = static_cast<uint8_t>(top->rootp->mcu__DOT__spi__DOT__bit_cnt & 7);
+      top->spi_miso = (spi_current_resp_byte >> (7 - bit_idx)) & 1;
     } else {
       top->spi_miso = 1;
-      sd.reset_transaction();
     }
 
     // posedgeを評価
     top->clk = 1;
     eval_settle();
 
-    spi_force_rx_byte_if_needed();
+    // 書き込みを拾う（SPI転送開始やUART3出力など）
     posedge_observe();
+
+    // 1バイト転送完了時の sreg を確認する（MISOエミュレーションの検証用）
+    {
+      const uint8_t tx_busy = top->rootp->mcu__DOT__spi__DOT__tx_busy;
+      if (prev_spi_tx_busy && !tx_busy) {
+        if (BEMU_DEBUG_SPI && spi_debug_transfer_done_printed < 40) {
+          std::fprintf(stderr, "[spi.done] sreg=%02x (expect resp=%02x)\n",
+                       (unsigned)top->rootp->mcu__DOT__spi__DOT__sreg,
+                       (unsigned)spi_current_resp_byte);
+          spi_debug_transfer_done_printed++;
+        }
+      }
+      prev_spi_tx_busy = tx_busy;
+    }
 
     // negedgeを評価
     top->clk = 0;

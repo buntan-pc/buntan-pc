@@ -37,7 +37,7 @@ $(OUT):
 verilator:
 	@echo "Converting Verilog to cpp..."
 	@verilator -sv --cc \
-		-GCLOCK_HZ=100000 \
+		-GCLOCK_HZ=200000 \
 		-GUART_BAUD=1000 \
 		../cpu/mcu.sv \
 		../cpu/cpu.sv \
