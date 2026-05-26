@@ -23,7 +23,7 @@ all: verilator build_verilator $(OUT)/$(BIN)
 
 build: all
 
-run: all
+run: all fmt
 	@echo "Running emulator..."
 	@./$(OUT)/$(BIN)
 

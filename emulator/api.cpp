@@ -74,8 +74,12 @@ struct SdOverSpi {
   bool idle = true;
   bool seen_cmd55 = false;
   bool ccs = true;  // SDHC扱い
+  uint32_t last_arg = 0;
 
-  void reset_transaction() { cmd_len = 0; }
+  void reset_transaction() {
+    cmd_len = 0;
+    resp_fifo.clear();
+  }
 
   void queue_bytes(std::initializer_list<uint8_t> bytes) {
     for (uint8_t b : bytes) resp_fifo.push_back(b);
@@ -86,6 +90,7 @@ struct SdOverSpi {
     const uint32_t arg = (uint32_t(cmd_buf[1]) << 24) |
                          (uint32_t(cmd_buf[2]) << 16) |
                          (uint32_t(cmd_buf[3]) << 8) | uint32_t(cmd_buf[4]);
+    last_arg = arg;
 
     switch (cmd) {
       case 0:  // CMD0
@@ -122,6 +127,146 @@ struct SdOverSpi {
             0xff,
             0xff,
         });
+        break;
+      }
+      case 17: {  // CMD17: READ_SINGLE_BLOCK
+        queue_bytes({
+            0x00,  // R1: OK
+            0xff,  // wait
+            0xfe,  // data token
+        });
+
+        uint8_t sector[512]{};
+
+        const uint32_t lba = arg;
+
+        if (lba == 0) {
+          // MBR
+          sector[0x1BE + 0] = 0x00;
+
+          sector[0x1BE + 1] = 0x01;
+          sector[0x1BE + 2] = 0x01;
+          sector[0x1BE + 3] = 0x00;
+
+          // FAT16 LBA
+          sector[0x1BE + 4] = 0x0E;
+
+          sector[0x1BE + 5] = 0xFE;
+          sector[0x1BE + 6] = 0xFF;
+          sector[0x1BE + 7] = 0xFF;
+
+          // partition start LBA = 1
+          sector[0x1BE + 8] = 0x01;
+          sector[0x1BE + 9] = 0x00;
+          sector[0x1BE + 10] = 0x00;
+          sector[0x1BE + 11] = 0x00;
+
+          // sector count = 8192
+          sector[0x1BE + 12] = 0x00;
+          sector[0x1BE + 13] = 0x20;
+          sector[0x1BE + 14] = 0x00;
+          sector[0x1BE + 15] = 0x00;
+
+          sector[510] = 0x55;
+          sector[511] = 0xAA;
+        } else if (lba == 1) {
+          sector[0] = 0xEB;
+          sector[1] = 0x3C;
+          sector[2] = 0x90;
+
+          sector[3] = 'M';
+          sector[4] = 'S';
+          sector[5] = 'D';
+          sector[6] = 'O';
+          sector[7] = 'S';
+          sector[8] = '5';
+          sector[9] = '.';
+          sector[10] = '0';
+
+          // bytes per sector = 512
+          sector[11] = 0x00;
+          sector[12] = 0x02;
+
+          // sectors per cluster = 1
+          sector[13] = 0x01;
+
+          // reserved sectors = 1
+          sector[14] = 0x01;
+          sector[15] = 0x00;
+
+          // FAT count = 2
+          sector[16] = 0x02;
+
+          // root entry count = 512
+          sector[17] = 0x00;
+          sector[18] = 0x02;
+
+          // total sectors 16-bit = 8192
+          sector[19] = 0x00;
+          sector[20] = 0x20;
+
+          // media descriptor
+          sector[21] = 0xF8;
+
+          // sectors per FAT = 32
+          sector[22] = 0x20;
+          sector[23] = 0x00;
+
+          // sectors per track = 63
+          sector[24] = 0x3F;
+          sector[25] = 0x00;
+
+          // heads = 255
+          sector[26] = 0xFF;
+          sector[27] = 0x00;
+
+          sector[28] = 0x01;
+          sector[29] = 0x00;
+          sector[30] = 0x00;
+          sector[31] = 0x00;
+
+          sector[32] = 0x00;
+          sector[33] = 0x00;
+          sector[34] = 0x00;
+          sector[35] = 0x00;
+
+          // drive number
+          sector[36] = 0x80;
+
+          // boot signature
+          sector[38] = 0x29;
+
+          // volume serial
+          sector[39] = 0x12;
+          sector[40] = 0x34;
+          sector[41] = 0x56;
+          sector[42] = 0x78;
+
+          // "BUNTAN EMU "
+          const char label[11] = {'B', 'U', 'N', 'T', 'A', 'N',
+                                  ' ', 'E', 'M', 'U', ' '};
+          for (int i = 0; i < 11; i++) {
+            sector[43 + i] = static_cast<uint8_t>(label[i]);
+          }
+
+          // "FAT16   "
+          const char fs[8] = {'F', 'A', 'T', '1', '6', ' ', ' ', ' '};
+          for (int i = 0; i < 8; i++) {
+            sector[54 + i] = static_cast<uint8_t>(fs[i]);
+          }
+
+          sector[510] = 0x55;
+          sector[511] = 0xAA;
+        } else {
+          // 空！！！！空だよ！！空！！！！
+        }
+
+        for (int i = 0; i < 512; i++) {
+          resp_fifo.push_back(sector[i]);
+        }
+
+        resp_fifo.push_back(0xff);
+        resp_fifo.push_back(0xff);
         break;
       }
       case 55:  // CMD55
@@ -194,6 +339,7 @@ struct bemu_cpu {
   uint8_t prev_spi_tx_busy = 0;
   int spi_debug_transfer_done_printed = 0;
   int spi_debug_read_printed = 0;
+  uint8_t prev_spi_cs = 1;
 
   void eval_settle() { top->eval(); }
 
@@ -245,11 +391,15 @@ struct bemu_cpu {
       }
     }
 
-    // SPI MISOをエミュレーションする。
-    // tx_busy中は {sreg[6:0], miso} がシフトされるので、bit_cnt
-    // に合わせてMISOを出す。
-    if (top->spi_cs != 0) {
+    const uint8_t cs = static_cast<uint8_t>(top->spi_cs);
+
+    if (prev_spi_cs == 0 && cs != 0) {
       sd.reset_transaction();
+    }
+
+    prev_spi_cs = cs;
+
+    if (cs != 0) {
       top->spi_miso = 1;
     } else if (top->rootp->mcu__DOT__spi__DOT__tx_busy) {
       const uint8_t bit_idx =
