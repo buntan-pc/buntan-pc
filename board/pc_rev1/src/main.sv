@@ -85,11 +85,12 @@ always @(posedge sys_clk, negedge rst_n) begin
 end
 
 // CPU 用クロック
-Gowin_rPLL_10mhz clk_cpu_pll(
-  .clkout(clk_cpu), //output clkout
-  .lock(),        //output lock
-  .clkin(sys_clk) //input clkin
-);
+//Gowin_rPLL_10mhz clk_cpu_pll(
+//  .clkout(clk_cpu), //output clkout
+//  .lock(),        //output lock
+//  .clkin(sys_clk) //input clkin
+//);
+assign clk_cpu = sys_clk;
 
 // 周辺機能用高速クロック
 Gowin_OSC internal_osc_125mhz(
@@ -122,7 +123,8 @@ assign uart3b_tx = uart3_tx_common;
 // 自作 CPU を接続する
 mcu#(
   //.CLOCK_HZ(20_250_000)
-  .CLOCK_HZ(10_125_000)
+  //.CLOCK_HZ(10_125_000)
+  .CLOCK_HZ(27_000_000)
 ) mcu(
   .rst(~rst_n),
   //.clk(sys_clk),
