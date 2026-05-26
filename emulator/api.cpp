@@ -112,6 +112,11 @@ struct SdOverSpi {
   bool seen_cmd55 = false;
   bool ccs = true;  // SDHC扱い
   uint32_t last_arg = 0;
+  bool write_active = false;
+  uint32_t write_lba = 0;
+  int write_pos = 0;
+  uint8_t write_buf[512]{};
+  int busy_count = 0;
 
   void reset_transaction() {
     cmd_len = 0;
@@ -144,6 +149,22 @@ struct SdOverSpi {
 
   void queue_bytes(std::initializer_list<uint8_t> bytes) {
     for (uint8_t b : bytes) resp_fifo.push_back(b);
+  }
+
+  bool write_sector(uint32_t lba, const uint8_t sector[512]) {
+    FILE* f = std::fopen(IMAGE_FILE, "r+b");
+    if (!f) return false;
+
+    if (std::fseek(f, static_cast<long>(lba) * 512L, SEEK_SET) != 0) {
+      std::fclose(f);
+      return false;
+    }
+
+    size_t n = std::fwrite(sector, 1, 512, f);
+    std::fflush(f);
+    std::fclose(f);
+
+    return n == 512;
   }
 
   void handle_command() {
@@ -208,6 +229,14 @@ struct SdOverSpi {
         resp_fifo.push_back(0xff);
         break;
       }
+      case 24: {  // CMD24: WRITE_SINGLE_BLOCK
+        queue_bytes({0x00});
+
+        write_active = true;
+        write_lba = arg;
+        write_pos = -1;
+        break;
+      }
       case 55:  // CMD55
         seen_cmd55 = true;
         queue_bytes({uint8_t(idle ? 0x01 : 0x00)});
@@ -241,16 +270,53 @@ struct SdOverSpi {
 
   // 1バイト送受信単位で呼ぶ
   uint8_t transfer(uint8_t mosi_byte) {
+    if (busy_count > 0) {
+      busy_count--;
+      return 0x00;
+    }
+
+    // 応答FIFO最優先
     if (!resp_fifo.empty()) {
       uint8_t b = resp_fifo.front();
       resp_fifo.pop_front();
       return b;
     }
 
-    if (cmd_len == 0) {
-      if ((mosi_byte & 0xc0) != 0x40) {
+    // CMD24書き込み中
+    if (write_active) {
+      if (write_pos < 0) {
+        if (mosi_byte == 0xfe) write_pos = 0;
+
         return 0xff;
       }
+
+      if (write_pos < 512) {
+        write_buf[write_pos++] = mosi_byte;
+        return 0xff;
+      }
+
+      // CRC2バイト
+      if (write_pos < 514) {
+        write_pos++;
+
+        if (write_pos == 514) {
+          write_active = false;
+          write_sector(write_lba, write_buf);
+
+          resp_fifo.push_back(0xe5);
+          for (int i = 0; i < 8; i++) {
+            resp_fifo.push_back(0x00);
+          }
+          resp_fifo.push_back(0xff);
+        }
+
+        return 0xff;
+      }
+    }
+
+    // 新規コマンド待ち
+    if (cmd_len == 0) {
+      if ((mosi_byte & 0xc0) != 0x40) return 0xff;
     }
 
     cmd_buf[cmd_len++] = mosi_byte;
@@ -258,7 +324,6 @@ struct SdOverSpi {
     if (cmd_len == 6) {
       handle_command();
       cmd_len = 0;
-      return 0xff;
     }
 
     return 0xff;
