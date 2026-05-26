@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <verilated.h>
 
+#include <cerrno>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -44,6 +45,13 @@ static void restore_terminal(void) {
 }
 
 static void enable_raw_terminal(void) {
+  if (!isatty(STDIN_FILENO)) {
+    printf("[tty] stdin is not tty\n");
+    return;
+  }
+
+  printf("[tty] raw mode enabled\n");
+
   if (tcgetattr(STDIN_FILENO, &g_orig_termios) == 0) {
     g_termios_saved = true;
     atexit(restore_terminal);
@@ -279,12 +287,67 @@ struct bemu_cpu {
 
   void eval_settle() { top->eval(); }
 
+  void update_io_read_data() {
+    uint16_t value = 0;
+
+    if (top->rootp->mcu__DOT__cpu_dmem_ren) {
+      const uint16_t addr =
+          static_cast<uint16_t>(top->rootp->mcu__DOT__dmem_addr_d);
+
+      switch (addr) {
+        case 0x0024:  // kbc_queue
+          if (!uart3_rx_queue.empty()) {
+            value = uart3_rx_queue.front();
+            uart3_rx_queue.pop();
+          } else {
+            value = 0;
+          }
+          break;
+
+        case 0x0026:  // kbc_status
+          value = uart3_rx_queue.empty() ? 0 : 1;
+          break;
+
+        default:
+          value = 0;
+          break;
+      }
+    }
+
+    top->dmem_rdata_io = value;
+  }
+
   void poll_stdin() {
     uint8_t ch;
+
     ssize_t n = read(STDIN_FILENO, &ch, 1);
+    // TODO: 消す
     if (n == 1) {
       uart3_rx_queue.push(ch);
+    } else if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
     }
+  }
+
+  void inject_uart3_rx() {
+    if (uart3_rx_queue.empty()) {
+      return;
+    }
+
+    if (top->rootp->mcu__DOT__uart3_rx_full != 0) {
+      return;
+    }
+
+    uint8_t ch = uart3_rx_queue.front();
+    uart3_rx_queue.pop();
+
+    top->rootp->mcu__DOT__uart3_rx_byte = ch;
+    top->rootp->mcu__DOT__uart3_rx_full = 1;
+  }
+
+  void set_uart_rx_line(uint8_t bit) {
+    top->uart_rx = bit;
+    top->uart2_rx = bit;
+    top->uart3_rx = bit;
   }
 
   void tick_uart3_rx() {
@@ -292,7 +355,7 @@ struct bemu_cpu {
 
     if (!uart3_rx_busy) {
       if (uart3_rx_queue.empty()) {
-        top->uart3_rx = 1;
+        set_uart_rx_line(1);
         return;
       }
 
@@ -306,7 +369,9 @@ struct bemu_cpu {
       uart3_rx_div = 0;
     }
 
-    top->uart3_rx = (uart3_rx_frame >> uart3_rx_bit) & 1u;
+    uint8_t bit = static_cast<uint8_t>((uart3_rx_frame >> uart3_rx_bit) & 1u);
+
+    set_uart_rx_line(bit);
 
     uart3_rx_div++;
     if (uart3_rx_div >= UART_DIV) {
@@ -315,7 +380,7 @@ struct bemu_cpu {
 
       if (uart3_rx_bit >= 10) {
         uart3_rx_busy = 0;
-        top->uart3_rx = 1;
+        set_uart_rx_line(1);
       }
     }
   }
@@ -351,11 +416,21 @@ struct bemu_cpu {
 
   void tick_one_cycle() {
     poll_stdin();
-    tick_uart3_rx();
 
-    // clk=0側で組み合わせを安定化してからposedgeを入れる
     top->clk = 0;
     eval_settle();
+
+    inject_uart3_rx();
+
+    if (top->rootp->mcu__DOT__cpu_dmem_ren) {
+      uint16_t addr = top->rootp->mcu__DOT__dmem_addr_d;
+
+      static int printed = 0;
+      if (printed < 50) {
+        std::fprintf(stderr, "[read] %04x\n", addr);
+        printed++;
+      }
+    }
 
     // CPUがSPIデータレジスタ(0x0020)を読むタイミング（phase_rdmem）を観測する。
     // mcu側は dmem_addr_d を使って dmem_rdata
