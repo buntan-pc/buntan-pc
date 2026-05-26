@@ -5,6 +5,7 @@
 #include "api.h"
 
 #include <fcntl.h>
+#include <termios.h>
 #include <unistd.h>
 #include <verilated.h>
 
@@ -32,6 +33,30 @@ constexpr uint32_t kAddrMask = (1u << kAddrWidth) - 1u;  // 0x3fff
 constexpr uint32_t kDmemWords = 1u
                                 << (kAddrWidth - 1);  // 0x2000 words (16-bit)
 constexpr uint32_t kPmemWords = 1u << kAddrWidth;     // 0x4000 words (18-bit)
+
+static struct termios g_orig_termios;
+static bool g_termios_saved = false;
+
+static void restore_terminal(void) {
+  if (g_termios_saved) {
+    tcsetattr(STDIN_FILENO, TCSANOW, &g_orig_termios);
+  }
+}
+
+static void enable_raw_terminal(void) {
+  if (tcgetattr(STDIN_FILENO, &g_orig_termios) == 0) {
+    g_termios_saved = true;
+    atexit(restore_terminal);
+
+    struct termios raw = g_orig_termios;
+    raw.c_lflag &= ~(ICANON | ECHO);
+    raw.c_iflag &= ~(ICRNL | IXON);
+    raw.c_cc[VMIN] = 0;
+    raw.c_cc[VTIME] = 0;
+
+    tcsetattr(STDIN_FILENO, TCSANOW, &raw);
+  }
+}
 
 static bool readmemh_like(const std::string& path,
                           std::vector<uint32_t>* out_words,
@@ -402,6 +427,9 @@ bemu_cpu_t* bemu_cpu_create(void) {
   cpu->context->randReset(0);
 
   cpu->top = new Vmcu(cpu->context);
+
+  enable_raw_terminal();
+
   int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
   fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK);
 
