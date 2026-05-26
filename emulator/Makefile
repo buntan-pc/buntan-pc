@@ -135,11 +135,11 @@ apps:
 $(SD_IMAGE): apps
 	@echo "Creating MBR + FAT16 image..."
 	@rm -f $(SD_IMAGE)
-	@dd if=/dev/zero of=$(SD_IMAGE) bs=512 count=8192 status=none
+	@dd if=/dev/zero of=$(SD_IMAGE) bs=512 count=65536 status=none
 	@parted -s $(SD_IMAGE) mklabel msdos
-	@parted -s $(SD_IMAGE) unit s mkpart primary fat16 1 8191
-	@mformat -i $(SD_IMAGE)@@512 -F ::
-	@mcopy -i $(SD_IMAGE)@@512 $(DOS_APPS_DIR)/*.exe ::
+	@parted -s $(SD_IMAGE) unit s mkpart primary fat16 2048 65535
+	@mformat -i $(SD_IMAGE)@@1048576 -v BUNTAN -H 2048 -h 16 -s 32 ::
+	@mcopy -i $(SD_IMAGE)@@1048576 $(DOS_APPS_DIR)/*.exe ::
 
 clean:
 	@echo "Cleaning up..."
