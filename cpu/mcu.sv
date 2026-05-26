@@ -35,8 +35,8 @@ module mcu#(
 );
 
 localparam DMEM_GVAR_START = `ADDR_WIDTH'h0100;
-localparam KEY_ROW_FOR_DEBUG = 1;
-localparam KEY_COL_FOR_DEBUG = 1;
+localparam KEY_ROW_FOR_DEBUG = 0;
+localparam KEY_COL_FOR_DEBUG = 0;
 
 // CPU コア
 logic [`ADDR_WIDTH-1:0] cpu_dmem_addr, dmem_addr_d, cpu_pmem_addr, pmem_addr;
