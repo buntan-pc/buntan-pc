@@ -73,10 +73,11 @@ module pmem(
 );
 
 genvar i;
+logic [3:0] pmem_out_sel;
 logic [35:0] pmem_out [15:0];
 logic [1:0] pmem_buf;
 
-assign data_out = pmem_out[addr[13:10]][17:0];
+assign data_out = pmem_out[pmem_out_sel][17:0];
 
 always @(posedge clk, posedge rst) begin
   if (rst) begin
@@ -89,6 +90,14 @@ always @(posedge clk, posedge rst) begin
   end
 end
 
+always @(posedge clk, posedge rst) begin
+  if (rst) begin
+    pmem_out_sel <= 4'd0;
+  end
+  else begin
+    pmem_out_sel <= addr[13:10];
+  end
+end
 
 generate
 for (i = 0; i < 16; i = i + 1) begin: genpmem
