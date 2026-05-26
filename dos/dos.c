@@ -254,7 +254,6 @@ void show_sd_cmd_error(char cmd, int r1, char *msg) {
 // bit 0: V2 (0: SDv1, 1: SDv2 or later)
 // bit 1: CCS (Card Capacity Status)
 int sd_init() {
-  puts("sd_init\n");
   int i;
   int r1;
   int hi; // response high 16 bits
@@ -352,7 +351,6 @@ int sd_init() {
 }
 
 int sd_get_read_bl_len(int *csd) {
-  puts("sd_get_read_bl_len\n");
   return csd[2] & 0x000f; // [83:80]
 }
 
@@ -409,7 +407,6 @@ int sd_get_capacity_mib_csdv2(unsigned int *csd) {
 
 // CSD レジスタを取得する
 int sd_read_csd(unsigned int *csd) {
-  puts("sd_read_csd\n");
   int i;
   int r1;
 
@@ -432,7 +429,6 @@ int sd_read_csd(unsigned int *csd) {
 
 // MiB 単位の容量
 int sd_get_capacity_mib(unsigned int *csd) {
-  puts("sd_get_capacity_mib\n");
   int csdv;
 
   csdv = csd[0] >> 14;
@@ -1164,18 +1160,16 @@ int buntan_main() {
   unsigned char *app_dmem = 0x2000;
   char block_buf[512];
 
-  puts("BuntanPC DOS build 20260521");
+  puts("BuntanPC DOS build 20260526");
   putc('\n');
 
   sdinfo = sd_init();
   if (sdinfo < 0) {
     return 1;
   }
-  puts("sd inited\n");
   if (sd_read_csd(csd) < 0) {
     return 1;
   }
-  puts("getting cap\n");
   cap_mib = sd_get_capacity_mib(csd);
   block_len = sd_get_read_bl_len(csd);
 

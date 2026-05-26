@@ -3,9 +3,9 @@
 script_dir=$(dirname $0)
 dos_dir=$script_dir/../dos
 
-src=$dos_dir/testram.s
-dmem=testram.dmem.hex
-pmem=testram.pmem.hex
+src=$dos_dir/dos.s
+dmem=dos.dmem.hex
+pmem=dos.pmem.hex
 
 if [ ! -e $dos_dir/$dmem ] || [ $src -nt $dos_dir/$dmem ]
 then
