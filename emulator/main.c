@@ -33,12 +33,15 @@ int main(void) {
 
   bemu_cpu_reset(cpu);
 
-  for (int i = 0; i < 50; i++) {
+  int i = 0;
+  while (1) {
     bemu_cpu_step(cpu, 100000);
 
     debug("step=%d spi_shift_count=%llu uart3_tx_count=%llu\n", i,
           (unsigned long long)bemu_cpu_debug_get_spi_shift_count(cpu),
           (unsigned long long)bemu_cpu_debug_get_uart3_tx_count(cpu));
+
+    i++;
   }
 
   bemu_cpu_destroy(cpu);
