@@ -1152,7 +1152,7 @@ unsigned int find_free_cluster(unsigned int *block_buf) {
   return 0;
 }
 
-int main() {
+int buntan_main() {
   int i;
   unsigned int block_len;
   char buf[5];
@@ -1265,6 +1265,8 @@ int main() {
 
   return 0;
 }
+
+int main() { return buntan_main(); }
 
 int syscall(int funcnum, int *args) {
   __builtin_set_gp(0x0100);
