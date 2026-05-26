@@ -12,6 +12,16 @@ ifeq ($(CONFIG_DEBUG),y)
 CFLAGS += -DDEBUG
 CXXFLAGS += -DDEBUG
 endif
+ifeq ($(CONFIG_IMAGE_FILE),)
+IMAGE_FILE = sd.img
+else
+IMAGE_FILE = $(CONFIG_IMAGE_FILE)
+endif
+
+SD_IMAGE = $(IMAGE_FILE)
+
+CFLAGS += -DIMAGE_FILE=\"$(IMAGE_FILE)\"
+CXXFLAGS += -DIMAGE_FILE=\"$(IMAGE_FILE)\"
 
 VERILATOR_DIR = mcu
 VERILATOR_TOP = Vmcu
@@ -22,6 +32,8 @@ VERILATOR_TOP_MCU = Vmcu
 VERILATOR_INC = /usr/share/verilator/include
 VERILATOR_VLTSTD = /usr/share/verilator/include/vltstd
 
+DOS_APPS_DIR = ../dos/apps
+
 SRCS_C = $(wildcard *.c)
 OBJS_C = $(patsubst %.c,$(OUT)/%.o,$(SRCS_C))
 OBJ_API = $(OUT)/api.o
@@ -31,7 +43,7 @@ all: verilator build_verilator $(OUT)/$(BIN)
 
 build: all
 
-run: all fmt
+run: $(SD_IMAGE) all fmt
 	@echo "Running emulator..."
 	@./$(OUT)/$(BIN)
 
@@ -116,9 +128,22 @@ fmt:
 	@echo "Formatting..."
 	@clang-format -i *.c *.cpp *.h
 
+apps:
+	@echo "Building DOS apps..."
+	@$(MAKE) -C $(DOS_APPS_DIR)
+
+$(SD_IMAGE): apps
+	@echo "Creating MBR + FAT16 image..."
+	@rm -f $(SD_IMAGE)
+	@dd if=/dev/zero of=$(SD_IMAGE) bs=512 count=8192 status=none
+	@parted -s $(SD_IMAGE) mklabel msdos
+	@parted -s $(SD_IMAGE) unit s mkpart primary fat16 1 8191
+	@mformat -i $(SD_IMAGE)@@512 -F ::
+	@mcopy -i $(SD_IMAGE)@@512 $(DOS_APPS_DIR)/*.exe ::
+
 clean:
 	@echo "Cleaning up..."
 	@rm -rf $(OUT) $(VERILATOR_DIR) $(VERILATOR_DIR_MCU)
 
-.PHONY: all build run fmt clean verilator build_verilator verilator_mcu build_verilator_mcu vmcu
+.PHONY: all build run fmt clean verilator build_verilator verilator_mcu build_verilator_mcu vmcu apps
 .DEFAULT_GOAL := all

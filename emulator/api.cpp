@@ -4,6 +4,8 @@
 
 #include "api.h"
 
+#include <fcntl.h>
+#include <unistd.h>
 #include <verilated.h>
 
 #include <cstdint>
@@ -11,6 +13,7 @@
 #include <cstdlib>
 #include <deque>
 #include <initializer_list>
+#include <queue>
 #include <string>
 #include <vector>
 
@@ -82,6 +85,30 @@ struct SdOverSpi {
     resp_fifo.clear();
   }
 
+  bool read_sector(uint32_t lba, uint8_t sector[512]) {
+    FILE* f = std::fopen(IMAGE_FILE, "rb");
+    if (!f) {
+      std::memset(sector, 0, 512);
+      return false;
+    }
+
+    if (std::fseek(f, static_cast<long>(lba) * 512L, SEEK_SET) != 0) {
+      std::fclose(f);
+      std::memset(sector, 0, 512);
+      return false;
+    }
+
+    size_t n = std::fread(sector, 1, 512, f);
+    std::fclose(f);
+
+    if (n != 512) {
+      std::memset(sector, 0, 512);
+      return false;
+    }
+
+    return true;
+  }
+
   void queue_bytes(std::initializer_list<uint8_t> bytes) {
     for (uint8_t b : bytes) resp_fifo.push_back(b);
   }
@@ -132,135 +159,13 @@ struct SdOverSpi {
       }
       case 17: {  // CMD17: READ_SINGLE_BLOCK
         queue_bytes({
-            0x00,  // R1: OK
-            0xff,  // wait
-            0xfe,  // data token
+            0x00,
+            0xff,
+            0xfe,
         });
 
-        uint8_t sector[512]{};
-
-        const uint32_t lba = arg;
-
-        if (lba == 0) {
-          // MBR
-          sector[0x1BE + 0] = 0x00;
-
-          sector[0x1BE + 1] = 0x01;
-          sector[0x1BE + 2] = 0x01;
-          sector[0x1BE + 3] = 0x00;
-
-          // FAT16 LBA
-          sector[0x1BE + 4] = 0x0E;
-
-          sector[0x1BE + 5] = 0xFE;
-          sector[0x1BE + 6] = 0xFF;
-          sector[0x1BE + 7] = 0xFF;
-
-          // partition start LBA = 1
-          sector[0x1BE + 8] = 0x01;
-          sector[0x1BE + 9] = 0x00;
-          sector[0x1BE + 10] = 0x00;
-          sector[0x1BE + 11] = 0x00;
-
-          // sector count = 8192
-          sector[0x1BE + 12] = 0x00;
-          sector[0x1BE + 13] = 0x20;
-          sector[0x1BE + 14] = 0x00;
-          sector[0x1BE + 15] = 0x00;
-
-          sector[510] = 0x55;
-          sector[511] = 0xAA;
-        } else if (lba == 1) {
-          sector[0] = 0xEB;
-          sector[1] = 0x3C;
-          sector[2] = 0x90;
-
-          sector[3] = 'M';
-          sector[4] = 'S';
-          sector[5] = 'D';
-          sector[6] = 'O';
-          sector[7] = 'S';
-          sector[8] = '5';
-          sector[9] = '.';
-          sector[10] = '0';
-
-          // bytes per sector = 512
-          sector[11] = 0x00;
-          sector[12] = 0x02;
-
-          // sectors per cluster = 1
-          sector[13] = 0x01;
-
-          // reserved sectors = 1
-          sector[14] = 0x01;
-          sector[15] = 0x00;
-
-          // FAT count = 2
-          sector[16] = 0x02;
-
-          // root entry count = 512
-          sector[17] = 0x00;
-          sector[18] = 0x02;
-
-          // total sectors 16-bit = 8192
-          sector[19] = 0x00;
-          sector[20] = 0x20;
-
-          // media descriptor
-          sector[21] = 0xF8;
-
-          // sectors per FAT = 32
-          sector[22] = 0x20;
-          sector[23] = 0x00;
-
-          // sectors per track = 63
-          sector[24] = 0x3F;
-          sector[25] = 0x00;
-
-          // heads = 255
-          sector[26] = 0xFF;
-          sector[27] = 0x00;
-
-          sector[28] = 0x01;
-          sector[29] = 0x00;
-          sector[30] = 0x00;
-          sector[31] = 0x00;
-
-          sector[32] = 0x00;
-          sector[33] = 0x00;
-          sector[34] = 0x00;
-          sector[35] = 0x00;
-
-          // drive number
-          sector[36] = 0x80;
-
-          // boot signature
-          sector[38] = 0x29;
-
-          // volume serial
-          sector[39] = 0x12;
-          sector[40] = 0x34;
-          sector[41] = 0x56;
-          sector[42] = 0x78;
-
-          // "BUNTAN EMU "
-          const char label[11] = {'B', 'U', 'N', 'T', 'A', 'N',
-                                  ' ', 'E', 'M', 'U', ' '};
-          for (int i = 0; i < 11; i++) {
-            sector[43 + i] = static_cast<uint8_t>(label[i]);
-          }
-
-          // "FAT16   "
-          const char fs[8] = {'F', 'A', 'T', '1', '6', ' ', ' ', ' '};
-          for (int i = 0; i < 8; i++) {
-            sector[54 + i] = static_cast<uint8_t>(fs[i]);
-          }
-
-          sector[510] = 0x55;
-          sector[511] = 0xAA;
-        } else {
-          // 空！！！！空だよ！！空！！！！
-        }
+        uint8_t sector[512];
+        read_sector(arg, sector);
 
         for (int i = 0; i < 512; i++) {
           resp_fifo.push_back(sector[i]);
@@ -341,8 +246,54 @@ struct bemu_cpu {
   int spi_debug_transfer_done_printed = 0;
   int spi_debug_read_printed = 0;
   uint8_t prev_spi_cs = 1;
+  std::queue<uint8_t> uart3_rx_queue;
+  int uart3_rx_busy = 0;
+  int uart3_rx_bit = 0;
+  int uart3_rx_div = 0;
+  uint16_t uart3_rx_frame = 0;
 
   void eval_settle() { top->eval(); }
+
+  void poll_stdin() {
+    uint8_t ch;
+    ssize_t n = read(STDIN_FILENO, &ch, 1);
+    if (n == 1) {
+      uart3_rx_queue.push(ch);
+    }
+  }
+
+  void tick_uart3_rx() {
+    constexpr int UART_DIV = 200;
+
+    if (!uart3_rx_busy) {
+      if (uart3_rx_queue.empty()) {
+        top->uart3_rx = 1;
+        return;
+      }
+
+      uint8_t ch = uart3_rx_queue.front();
+      uart3_rx_queue.pop();
+
+      uart3_rx_frame =
+          static_cast<uint16_t>((1u << 9) | (static_cast<uint16_t>(ch) << 1));
+      uart3_rx_busy = 1;
+      uart3_rx_bit = 0;
+      uart3_rx_div = 0;
+    }
+
+    top->uart3_rx = (uart3_rx_frame >> uart3_rx_bit) & 1u;
+
+    uart3_rx_div++;
+    if (uart3_rx_div >= UART_DIV) {
+      uart3_rx_div = 0;
+      uart3_rx_bit++;
+
+      if (uart3_rx_bit >= 10) {
+        uart3_rx_busy = 0;
+        top->uart3_rx = 1;
+      }
+    }
+  }
 
   void posedge_observe() {
     if (top->dmem_wen && top->dmem_addr == 0x0030) {
@@ -374,6 +325,9 @@ struct bemu_cpu {
   }
 
   void tick_one_cycle() {
+    poll_stdin();
+    tick_uart3_rx();
+
     // clk=0側で組み合わせを安定化してからposedgeを入れる
     top->clk = 0;
     eval_settle();
@@ -448,6 +402,9 @@ bemu_cpu_t* bemu_cpu_create(void) {
   cpu->context->randReset(0);
 
   cpu->top = new Vmcu(cpu->context);
+  int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
+  fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK);
+
   cpu->top->rst = 1;
   cpu->top->clk = 0;
   cpu->top->clk125 = 0;
