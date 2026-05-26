@@ -44,6 +44,7 @@ static struct ReservedMapItem reserved_map[] = {
   ITEM(switch,        kTokenSwitch),
   ITEM(case,          kTokenCase),
   ITEM(default,       kTokenDefault),
+  ITEM(va_list,       kTokenVAList),
   {NULL, 0, 0},
 };
 static struct ReservedMapItem operator_map[] = {
@@ -182,6 +183,13 @@ static struct Token *NextToken(char *src) {
 
   if (strchr("+-*/();=<>{}&[]|^~,!:", *p) != NULL) {
     return NewToken(*p, p, 1);
+  }
+
+  if (*p == '.') {
+    if (p[1] == '.' && p[2] == '.') {
+      return NewToken(kTokenEllipsis, p, 3);
+    }
+    return NewToken('.', p, 1);
   }
 
   if (IsIdHead(*p)) {

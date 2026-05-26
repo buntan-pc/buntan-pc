@@ -26,6 +26,7 @@ enum NodeKind {
   kNodeLAnd,  // &&
   kNodeLOr,   // ||
   kNodeAssign,
+  kNodeFP,    // 関数呼び出し直後の FP の値
   kNodeAdd = 100, // standard binary expression
   kNodeSub,
   kNodeMul,

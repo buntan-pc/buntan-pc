@@ -41,6 +41,8 @@ enum TokenKind {
   kTokenSwitch,
   kTokenCase,
   kTokenDefault,
+  kTokenEllipsis,
+  kTokenVAList,
 };
 
 struct Token {

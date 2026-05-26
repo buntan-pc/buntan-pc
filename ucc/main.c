@@ -606,6 +606,21 @@ unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass val
   case kNodeCall:
     {
       PRINT_NODE_COMMENT(ctx, node, "Call");
+      struct Symbol *func_sym = FindSymbol(ctx->scope, node->lhs->token);
+      int num_fixed_params = 0; // 固定引数の数
+      int has_va_param = 0; // 可変長引数があるなら 1
+      int normal_func = 0;
+      if (func_sym && func_sym->kind == kSymFunc) {
+        normal_func = 1;
+        struct Node *params = func_sym->def->cond;
+        for (struct Node *param = params; param; param = param->next) {
+          if (param->token->kind == kTokenEllipsis) {
+            has_va_param = 1;
+            break;
+          }
+          ++num_fixed_params;
+        }
+      }
 
       struct Node *args[10];
       int num_args = 0;
@@ -615,30 +630,48 @@ unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass val
           Locate(arg->token->raw);
           exit(1);
         }
+        if (normal_func && num_args >= num_fixed_params && !has_va_param) {
+          fprintf(stderr, "too many arguments\n");
+          Locate(arg->token->raw);
+          exit(1);
+        }
         args[num_args++] = arg;
       }
-      for (int i = 0; i < num_args; i++) {
-        Generate(ctx, args[num_args - 1 - i], VC_RVAL, 1);
+      if (num_args < num_fixed_params) {
+        fprintf(stderr, "too few arguments\n");
+        Locate(node->token->raw);
+        exit(1);
+      }
+
+      if (normal_func && num_args > num_fixed_params) {
+        InsnRegInt(ctx, "add", "fp", -2*(num_args - num_fixed_params));
+      }
+      for (int i = num_args - 1; i >= 0; i--) {
+        Generate(ctx, args[i], VC_RVAL, 1);
+        if (normal_func && i >= num_fixed_params) {
+          InsnBaseOff(ctx, "st", "fp", 2*(i - num_fixed_params));
+        }
       }
       if (node->lhs->kind == kNodeId) {
-        struct Symbol *sym = FindSymbol(ctx->scope, node->lhs->token);
-        int is_bif = sym && sym->kind == kSymBif;
-        if (is_bif && strcmp(sym->name->raw, "__builtin_set_gp") == 0) {
+        int is_bif = func_sym && func_sym->kind == kSymBif;
+        if (is_bif && strcmp(func_sym->name->raw, "__builtin_set_gp") == 0) {
           InsnReg(ctx, "pop", "gp");
-        } else if (is_bif && strcmp(sym->name->raw, "__builtin_write_pmem") == 0) {
+        } else if (is_bif && strcmp(func_sym->name->raw, "__builtin_write_pmem") == 0) {
           Insn(ctx, "spha");
           Insn(ctx, "spla");
-        } else if (is_bif && strcmp(sym->name->raw, "__builtin_set_isr") == 0) {
+        } else if (is_bif && strcmp(func_sym->name->raw, "__builtin_set_isr") == 0) {
           InsnReg(ctx, "pop", "isr");
-        } else if (is_bif && strcmp(sym->name->raw, "__builtin_get_fp") == 0) {
+        } else if (is_bif && strcmp(func_sym->name->raw, "__builtin_get_fp") == 0) {
           InsnReg(ctx, "push", "fp+0");
-        } else if (is_bif && strcmp(sym->name->raw, "__builtin_get_sr") == 0) {
+        } else if (is_bif && strcmp(func_sym->name->raw, "__builtin_get_sr") == 0) {
           Insn(ctx, "rdsr");
-        } else if (is_bif && strcmp(sym->name->raw, "__builtin_set_sr") == 0) {
+        } else if (is_bif && strcmp(func_sym->name->raw, "__builtin_set_sr") == 0) {
           Insn(ctx, "wrsr");
-        } else if (is_bif && strcmp(sym->name->raw, "__builtin_reset_sr") == 0) {
+        } else if (is_bif && strcmp(func_sym->name->raw, "__builtin_reset_sr") == 0) {
           Insn(ctx, "rstsr");
-        } else if (sym && (sym->kind == kSymGVar || sym->kind == kSymLVar) && sym->type->kind == kTypePtr) {
+        } else if (func_sym &&
+                   (func_sym->kind == kSymGVar || func_sym->kind == kSymLVar) &&
+                   func_sym->type->kind == kTypePtr) {
           Generate(ctx, node->lhs, VC_RVAL, 1);
           Insn(ctx, "call");
         } else {
@@ -651,6 +684,9 @@ unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass val
       }
       if (node->type->kind != kTypeVoid && value_class == VC_NO_NEED) {
         Insn(ctx, "pop");
+      }
+      if (normal_func && num_args > num_fixed_params) {
+        InsnRegInt(ctx, "add", "fp", 2*(num_args - num_fixed_params));
       }
     }
     break;
@@ -727,6 +763,19 @@ unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass val
       } else { // VC_NO_NEED
         EmitOptimalLdSt(ctx, 1, byt, 1);
       }
+    }
+    break;
+  case kNodeFP:
+    PRINT_NODE_COMMENT(ctx, node, "FP");
+    if (value_class != VC_RVAL) {
+      fprintf(stderr, "cannot assign to the FP\n");
+      Locate(node->token->raw);
+      exit(1);
+    }
+    {
+      char *opr = malloc(16);
+      sprintf(opr, "fp+%d", ctx->frame_size);
+      InsnReg(ctx, "push", opr);
     }
     break;
 
@@ -816,6 +865,9 @@ unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass val
 
       int num_param = 0;
       for (struct Node *param = node->cond; param; param = param->next) {
+        if (param->token->kind == kTokenEllipsis) {
+          break;
+        }
         struct Symbol *sym = FindSymbol(ctx->scope, param->lhs->token);
         InsnBaseOff(ctx, "st", "fp", sym->offset);
         ++num_param;
@@ -851,11 +903,7 @@ unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass val
         }
       } else {
         add_fp->kind = kAsmLineDeleted;
-        for (int line = line_add_fp + 1; line < line_body_last; ++line) {
-          if (IsAddFp(ctx->asm_lines + line)) {
-            ctx->asm_lines[line].kind = kAsmLineDeleted;
-          }
-        }
+        // frame_size == 0 のとき、return 時の add fp,0 は生成されないので、削除は不要
       }
     }
     break;
@@ -1072,6 +1120,8 @@ struct Symbol *make_builtin_syms() {
   sym = AppendBifSymbol(sym, "__builtin_get_sr", type_uint);
   sym = AppendBifSymbol(sym, "__builtin_set_sr", type_uint);
   sym = AppendBifSymbol(sym, "__builtin_reset_sr", NewType(kTypeVoid));
+  sym = AppendBifSymbol(sym, "va_start", NewType(kTypeVoid));
+  sym = AppendBifSymbol(sym, "va_arg", NewType(kTypeInt));
 
   return builtin_syms;
 }

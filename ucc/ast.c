@@ -133,6 +133,9 @@ struct Node *FunctionDefinition(struct ParseContext *ctx,
   struct Node *params = ParameterList();
   Expect(')');
   for (struct Node *param = params; param; param = param->next) {
+    if (param->token->kind == kTokenEllipsis) {
+      break;
+    }
     struct Symbol *sym = NewSymbol(kSymLVar, param->lhs->token);
     sym->type = param->type;
     sym->offset = ctx->scope->var_offset;
@@ -690,6 +693,57 @@ struct Node *Unary(struct ParseContext *ctx) {
 struct Node *Postfix(struct ParseContext *ctx) {
   struct Node *node = Primary(ctx);
 
+  if (node->kind == kNodeId && strncmp(node->token->raw, "va_", 3) == 0) {
+    char *func_name = node->token->raw + 3;
+    int func_name_len = node->token->len - 3;
+    if (strncmp(func_name, "arg", func_name_len) == 0) {
+      Expect('(');
+      struct Token *ap_tk = Expect(kTokenId);
+      Expect(',');
+      struct Type *typ = TypeSpec();
+      Expect(')');
+
+      struct Symbol *ap_sym = FindSymbol(ctx->scope, ap_tk);
+      if (!ap_sym) {
+        fprintf(stderr, "symbol not found\n");
+        Locate(ap_tk->raw);
+        exit(1);
+      }
+
+      struct Node *ap_node = NewNode(kNodeId, ap_tk);
+      ap_node->type = ap_sym->type;
+
+      // va_arg(ap, int) を *(ap++) に展開する
+      node = NewNode(kNodeDeref, node->token);
+      node->type = ap_node->type->base;
+      node->rhs = NewNode(kNodeInc, node->token);
+      node->rhs->lhs = ap_node;
+      node->rhs->type = ap_node->type;
+      return node;
+    } else if (strncmp(func_name, "start", func_name_len) == 0) {
+      Expect('(');
+      struct Token *ap_tk = Expect(kTokenId);
+      Expect(',');
+      struct Token *var_tk = Expect(kTokenId);
+      Expect(')');
+
+      struct Symbol *ap_sym = FindSymbol(ctx->scope, ap_tk);
+      if (!ap_sym) {
+        fprintf(stderr, "symbol not found\n");
+        Locate(ap_tk->raw);
+        exit(1);
+      }
+
+      // ap の初期値は関数呼び出し直後の FP
+      struct Node *ap_init = NewNode(kNodeFP, node->token);
+      struct Node *ap = NewNode(kNodeId, ap_tk);
+      ap->type = ap_sym->type;
+      struct Node *assign = NewNodeBinOp(kNodeAssign, node->token, ap, ap_init);
+      assign->type = ap->type;
+      return assign;
+    }
+  }
+
   struct Token *op;
   if ((op = Consume(kTokenInc))) {
     node = NewNodeBinOp(kNodeInc, op, node, NULL);
@@ -799,6 +853,10 @@ struct Node *TypeSpec() {
     type = NewType(kTypeChar);
   } else if ((token = Consume(kTokenVoid))) {
     type = NewType(kTypeVoid);
+  } else if ((token = Consume(kTokenVAList))) {
+    type = NewType(kTypePtr);
+    type->base = NewType(kTypeInt);
+    // va_list はとりあえず int* としておく
   }
 
   if (!type) {
@@ -839,6 +897,12 @@ struct Node *TypeSpec() {
 }
 
 struct Node *OneParameter() {
+  struct Token *op;
+  if ((op = Consume(kTokenEllipsis))) {
+    // 可変長引数
+    return NewNode(kNodePList, op);
+  }
+
   struct Node *tspec = TypeSpec();
   if (!tspec) {
     return NULL;
