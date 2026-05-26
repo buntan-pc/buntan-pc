@@ -143,6 +143,7 @@ function [31:0] decode(input [17:0] insn);
       return {1'b0, `STK0, `IMM,  `ALU_A,     20'b10000_0100_1000_00_010_00};
     18'b01_11xx_1xxx_xx1x_x101: // SPLA
       return {1'b0, `STK0, `IMM,  `ALU_A,     20'b10000_0100_1000_00_001_00};
+    default: return 32'd0;
   endcase
 endfunction
 
