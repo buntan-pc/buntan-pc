@@ -30,6 +30,7 @@ void bemu_cpu_mmio_write16(bemu_cpu_t* cpu, uint16_t addr, uint16_t value);
 uint16_t bemu_cpu_debug_get_ip(bemu_cpu_t* cpu);
 uint32_t bemu_cpu_debug_get_insn(bemu_cpu_t* cpu);
 uint64_t bemu_cpu_debug_get_uart3_tx_count(bemu_cpu_t* cpu);
+uint64_t bemu_cpu_debug_get_spi_shift_count(bemu_cpu_t* cpu);
 
 #ifdef __cplusplus
 }  // extern "C"

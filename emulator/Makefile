@@ -5,8 +5,8 @@ CXXFLAGS= -Wall -Wextra -std=c++17
 OUT     = out
 BIN     = bemu-system-buntan_pc
 
-VERILATOR_DIR = cpu
-VERILATOR_TOP = Vcpu
+VERILATOR_DIR = mcu
+VERILATOR_TOP = Vmcu
 
 VERILATOR_DIR_MCU = mcu
 VERILATOR_TOP_MCU = Vmcu
@@ -36,8 +36,26 @@ $(OUT):
 
 verilator:
 	@echo "Converting Verilog to cpp..."
-	@verilator -sv --cc ../cpu/cpu.sv \
-		--top-module cpu \
+	@verilator -sv --cc \
+		-GCLOCK_HZ=100000 \
+		-GUART_BAUD=1000 \
+		../cpu/mcu.sv \
+		../cpu/cpu.sv \
+		../cpu/mem.sv \
+		../cpu/alu.sv \
+		../cpu/stack.sv \
+		../cpu/signals.sv \
+		../cpu/signalizer.sv \
+		../cpu/decoder.sv \
+		../cpu/uart.sv \
+		../cpu/uart_mux.sv \
+		../cpu/simple_timer.sv \
+		../cpu/spi.sv \
+		../cpu/kbc.sv \
+		../cpu/i2c.sv \
+		../cpu/adc.sv \
+		../cpu/cdtimer.sv \
+		--top-module mcu \
 		-I../cpu \
 		--Mdir $(VERILATOR_DIR) \
 		-Wno-fatal
@@ -79,7 +97,7 @@ $(OUT)/$(BIN): $(OBJS_C) $(OBJ_API)
 	@$(CXX) $(CXXFLAGS) -pthread \
 		-o $@ \
 		$(OBJS_C) $(OBJ_API) \
-		$(VERILATOR_DIR)/libVcpu.a \
+		$(VERILATOR_DIR)/libVmcu.a \
 		$(VERILATOR_DIR)/libverilated.a
 
 $(OUT)/bemu-system-buntan_mcu: $(OBJ_VMCU)

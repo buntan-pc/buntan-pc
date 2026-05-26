@@ -21,7 +21,6 @@ typedef struct bemu_spi {
 void bemu_spi_init(bemu_spi_t* spi);
 void bemu_spi_reset(bemu_spi_t* spi);
 void bemu_spi_tick(bemu_spi_t* spi);
-
 uint16_t bemu_spi_read16(bemu_spi_t* spi, uint16_t addr);
 void bemu_spi_write16(bemu_spi_t* spi, uint16_t addr, uint16_t value);
 

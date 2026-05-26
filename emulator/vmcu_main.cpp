@@ -1,5 +1,5 @@
 /*
- * 著作権 (c) 2026 tas0dev
+ * Copyright (c) 2026 tas0dev
  */
 
 #include <verilated.h>
@@ -54,10 +54,9 @@ int main() {
   }
   top->rst = 0;
 
-  // UART ビットタイミング
-  const unsigned long CLOCK_HZ = 27000000UL; // MCU デフォルトに合わせる
-  const unsigned long BAUD = 9600UL; // mcu.sv で uart3 は 9600baud でインスタンス化されている
-  const unsigned long BIT_PERIOD = CLOCK_HZ / BAUD; // in simulator cycles
+  const unsigned long CLOCK_HZ = 27000000UL;
+  const unsigned long BAUD = 9600UL;
+  const unsigned long BIT_PERIOD = CLOCK_HZ / BAUD;
 
   unsigned long cycle = 0;
   int uart_tx_prev = 1;
@@ -66,7 +65,7 @@ int main() {
   int sample_count = 0;
   unsigned char sample_byte = 0;
 
-  const unsigned long MAX_CYCLES = 1000UL * 1000UL * 10UL; // safety cap
+  const unsigned long MAX_CYCLES = 1000UL * 1000UL * 10UL;
   for (; cycle < MAX_CYCLES; ++cycle) {
     // 1サイクルを進める
     top->clk = 1; top->eval();
@@ -88,10 +87,9 @@ int main() {
         sample_base = cycle;
         sample_count = 0;
         sample_byte = 0;
-        // printf("start at cycle %lu\n", cycle);
+        //printf("start at cycle %lu\n", cycle);
       }
     } else {
-      // 待機中：sample_base + BIT_PERIOD/2 + n*BIT_PERIOD でサンプリング
       unsigned long target = sample_base + (BIT_PERIOD/2) + (sample_count + 1) * BIT_PERIOD;
       if (cycle >= target) {
         // データビットをサンプリング
@@ -99,10 +97,7 @@ int main() {
         sample_byte |= (bit & 1) << sample_count;
         sample_count++;
         if (sample_count >= 8) {
-          // バイト受信完了；ストップビットは後で期待するか無視
-          // 受信バイトをPTYに書き出す
           write(master_fd, &sample_byte, 1);
-          // 状態をリセット
           awaiting_samples = false;
         }
       }
