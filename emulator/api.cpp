@@ -321,10 +321,13 @@ struct bemu_cpu {
     uint8_t ch;
 
     ssize_t n = read(STDIN_FILENO, &ch, 1);
-    // TODO: 消す
     if (n == 1) {
+      if (ch == '\r') ch = '\n';  // Enter
+      if (ch == 0x7f) ch = 0x08;  // Backspace
+
       uart3_rx_queue.push(ch);
     } else if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
+      std::perror("read stdin");
     }
   }
 
@@ -417,20 +420,15 @@ struct bemu_cpu {
   void tick_one_cycle() {
     poll_stdin();
 
+    if (top->rootp->mcu__DOT__cpu_dmem_ren &&
+        top->rootp->mcu__DOT__dmem_addr_d == 0x0030) {
+      top->rootp->mcu__DOT__uart3_rx_full = 0;
+    }
+
     top->clk = 0;
     eval_settle();
 
     inject_uart3_rx();
-
-    if (top->rootp->mcu__DOT__cpu_dmem_ren) {
-      uint16_t addr = top->rootp->mcu__DOT__dmem_addr_d;
-
-      static int printed = 0;
-      if (printed < 50) {
-        std::fprintf(stderr, "[read] %04x\n", addr);
-        printed++;
-      }
-    }
 
     // CPUがSPIデータレジスタ(0x0020)を読むタイミング（phase_rdmem）を観測する。
     // mcu側は dmem_addr_d を使って dmem_rdata

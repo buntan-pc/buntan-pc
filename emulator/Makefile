@@ -13,7 +13,7 @@ CFLAGS += -DDEBUG
 CXXFLAGS += -DDEBUG
 endif
 ifeq ($(CONFIG_IMAGE_FILE),)
-IMAGE_FILE = sd.img
+IMAGE_FILE = out/sd.img
 else
 IMAGE_FILE = $(CONFIG_IMAGE_FILE)
 endif
