@@ -75,6 +75,46 @@ assign rst_sr = (insn_rst_sr & ~irq_pend) & phase_exec;
 logic phase_decode, phase_exec, phase_rdmem, phase_fetch, irq_pend;
 signalizer signalizer(.*);
 
+logic dec_sign, dec_wr_stk1;
+logic [15:0] dec_imm_mask;
+logic [2:0] dec_src_a;
+logic [1:0] dec_src_b;
+logic [5:0] dec_alu_sel;
+logic dec_pop, dec_push, dec_stk, dec_fp, dec_gp, dec_ip, dec_isr,
+  dec_cpop, dec_cpush, dec_byt, dec_dmem_ren, dec_dmem_wen,
+  dec_set_ien, dec_clear_ien, dec_call, dec_pmem_wenh, dec_pmem_wenl,
+  dec_load_sr, dec_rst_sr;
+decoder decoder(
+  .insn(insn),
+  .sign(dec_sign),
+  .imm_mask(dec_imm_mask),
+  .src_a(dec_src_a),
+  .src_b(dec_src_b),
+  .alu_sel(dec_alu_sel),
+  .wr_stk1(dec_wr_stk1),
+  .pop(dec_pop),
+  .push(dec_push),
+  .load_stk(dec_stk),
+  .load_fp(dec_fp),
+  .load_gp(dec_gp),
+  .load_ip(dec_ip),
+  .load_isr(dec_isr),
+  .cpop(dec_cpop),
+  .cpush(dec_cpush),
+  .byt(dec_byt),
+  .dmem_ren(dec_dmem_ren),
+  .dmem_wen(dec_dmem_wen),
+  .set_ien(dec_set_ien),
+  .clear_ien(dec_clear_ien),
+  .call(dec_call),
+  .pmem_wenh(dec_pmem_wenh),
+  .pmem_wenl(dec_pmem_wenl),
+  .load_sr(dec_load_sr),
+  .rst_sr(dec_rst_sr)
+);
+
+logic insn_sign, insn_wr_stk1;
+logic [15:0] insn_imm_mask;
 logic [2:0] insn_src_a;
 logic [1:0] insn_src_b;
 logic [5:0] insn_alu_sel;
@@ -82,34 +122,38 @@ logic insn_pop, insn_push, insn_stk, insn_fp, insn_gp, insn_ip, insn_isr,
   insn_cpop, insn_cpush, insn_byt, insn_dmem_ren, insn_dmem_wen,
   insn_set_ien, insn_clear_ien, insn_call, insn_pmem_wenh, insn_pmem_wenl,
   insn_load_sr, insn_rst_sr;
-decoder decoder(
-  .insn(insn),
-  .sign(sign),
-  .imm_mask(imm_mask),
-  .src_a(insn_src_a),
-  .src_b(insn_src_b),
-  .alu_sel(insn_alu_sel),
-  .wr_stk1(wr_stk1),
-  .pop(insn_pop),
-  .push(insn_push),
-  .load_stk(insn_stk),
-  .load_fp(insn_fp),
-  .load_gp(insn_gp),
-  .load_ip(insn_ip),
-  .load_isr(insn_isr),
-  .cpop(insn_cpop),
-  .cpush(insn_cpush),
-  .byt(insn_byt),
-  .dmem_ren(insn_dmem_ren),
-  .dmem_wen(insn_dmem_wen),
-  .set_ien(insn_set_ien),
-  .clear_ien(insn_clear_ien),
-  .call(insn_call),
-  .pmem_wenh(insn_pmem_wenh),
-  .pmem_wenl(insn_pmem_wenl),
-  .load_sr(insn_load_sr),
-  .rst_sr(insn_rst_sr)
-);
+
+// タイミング問題を無くすため、デコードと後続の信号の間にレジスタを挟み、つながりを切断する
+always @(posedge clk) begin
+  insn_sign <= dec_sign;
+  insn_imm_mask <= dec_imm_mask;
+  insn_src_a <= dec_src_a;
+  insn_src_b <= dec_src_b;
+  insn_alu_sel <= dec_alu_sel;
+  insn_wr_stk1 <= dec_wr_stk1;
+  insn_pop <= dec_pop;
+  insn_push <= dec_push;
+  insn_stk <= dec_stk;
+  insn_fp <= dec_fp;
+  insn_gp <= dec_gp;
+  insn_ip <= dec_ip;
+  insn_isr <= dec_isr;
+  insn_cpop <= dec_cpop;
+  insn_cpush <= dec_cpush;
+  insn_byt <= dec_byt;
+  insn_dmem_ren <= dec_dmem_ren;
+  insn_dmem_wen <= dec_dmem_wen;
+  insn_set_ien <= dec_set_ien;
+  insn_clear_ien <= dec_clear_ien;
+  insn_call <= dec_call;
+  insn_pmem_wenh <= dec_pmem_wenh;
+  insn_pmem_wenl <= dec_pmem_wenl;
+  insn_load_sr <= dec_load_sr;
+  insn_rst_sr <= dec_rst_sr;
+end
+
+assign sign = insn_sign;
+assign wr_stk1 = insn_wr_stk1;
 
 logic reload_ip;
 assign reload_ip = (insn_ip | irq_pend) & phase_exec;
