@@ -7,25 +7,23 @@
 module signalizer(
   input rst,
   input clk,
-  output phase_decode,
-  output phase_exec,
-  output phase_rdmem,
-  output phase_fetch
+  output logic phase_decode,
+  output logic phase_exec,
+  output logic phase_rdmem,
+  output logic phase_fetch
 );
-
-logic reg1, reg2;
-assign phase_decode = ~reg1 & ~reg2;
-assign phase_exec   =  reg1 & ~reg2;
-assign phase_rdmem  =  reg1 &  reg2;
-assign phase_fetch  = ~reg1 &  reg2;
 
 always @(posedge clk, posedge rst) begin
   if (rst) begin
-    reg1 <= 1'b1;
-    reg2 <= 1'b1;
+    phase_decode <= 1'b0;
+    phase_exec   <= 1'b0;
+    phase_rdmem  <= 1'b1;
+    phase_fetch  <= 1'b0;
   end else begin
-    reg1 <= ~reg2;
-    reg2 <= reg1;
+    phase_decode <= phase_fetch;
+    phase_exec   <= phase_decode;
+    phase_rdmem  <= phase_exec;
+    phase_fetch  <= phase_rdmem;
   end
 end
 
