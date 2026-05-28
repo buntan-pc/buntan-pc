@@ -31,26 +31,26 @@
 
 namespace {
 
-constexpr uint32_t kAddrWidth = 14;                     // アドレス幅 (ビット数)
-constexpr uint32_t kAddrMask = (1u << kAddrWidth) - 1u; // アドレスマスク
-constexpr uint32_t kDmemWords = 1u << (kAddrWidth - 1); // DMEM数
-constexpr uint32_t kPmemWords = 1u << kAddrWidth;       // PMEM数
+constexpr uint32_t kAddrWidth = 14;  // アドレス幅 (ビット数)
+constexpr uint32_t kAddrMask = (1u << kAddrWidth) - 1u;  // アドレスマスク
+constexpr uint32_t kDmemWords = 1u << (kAddrWidth - 1);  // DMEM数
+constexpr uint32_t kPmemWords = 1u << kAddrWidth;        // PMEM数
 
-constexpr uint16_t kAddrSpiData = 0x0020;               // SPI データアドレス
-constexpr uint16_t kAddrKbcQueue = 0x0024;              // KBCキューアドレス
-constexpr uint16_t kAddrKbcStatus = 0x0026;             // KBCステータスアドレス
-constexpr uint16_t kAddrUart3Data = 0x0030;             // UART3データアドレス
+constexpr uint16_t kAddrSpiData = 0x0020;    // SPI データアドレス
+constexpr uint16_t kAddrKbcQueue = 0x0024;   // KBCキューアドレス
+constexpr uint16_t kAddrKbcStatus = 0x0026;  // KBCステータスアドレス
+constexpr uint16_t kAddrUart3Data = 0x0030;  // UART3データアドレス
 
-constexpr uint32_t kPmemMask18 = 0x3ffffu;              // PMEMアドレスマスク
-constexpr uint32_t kDmemMask16 = 0xffffu;               // DMEMアドレスマスク
+constexpr uint32_t kPmemMask18 = 0x3ffffu;  // PMEMアドレスマスク
+constexpr uint32_t kDmemMask16 = 0xffffu;   // DMEMアドレスマスク
 constexpr uint32_t kDmemHexStartWord = 0x100u >> 1;
 
-constexpr int kSectorSize = 512;                        // セクタサイズ
-constexpr int kCmdSize = 6;                             // コマンドサイズ
-constexpr int kWriteCrcSize = 2;                        // CRCサイズ
-constexpr int kUartDiv = 200;                           // UART割り込み周期
-constexpr int kSpiDebugPrintLimit = 40;                 // SPIデバッグ出力制限
-constexpr int kSpiTracePrintLimit = 100;                // SPIトレース出力制限
+constexpr int kSectorSize = 512;          // セクタサイズ
+constexpr int kCmdSize = 6;               // コマンドサイズ
+constexpr int kWriteCrcSize = 2;          // CRCサイズ
+constexpr int kUartDiv = 200;             // UART割り込み周期
+constexpr int kSpiDebugPrintLimit = 40;   // SPIデバッグ出力制限
+constexpr int kSpiTracePrintLimit = 100;  // SPIトレース出力制限
 
 class TerminalRawMode {
  public:
@@ -300,7 +300,7 @@ class SdOverSpi {
       default:
         queue_r1(static_cast<uint8_t>(kR1IllegalCommand | idle_status()));
         break;
-      // TODO
+        // TODO
     }
   }
 
@@ -426,27 +426,29 @@ class SdOverSpi {
 }  // namespace
 
 struct bemu_cpu {
-  VerilatedContext* context = nullptr;      // Verilatorのコンテキスト
-  Vmcu* top = nullptr;                      // Verilatorのトップモジュール
+  VerilatedContext* context = nullptr;  // Verilatorのコンテキスト
+  Vmcu* top = nullptr;                  // Verilatorのトップモジュール
 
-  SdOverSpi sd{};                           // SDカードのSPIオーバーライド
+  SdOverSpi sd{};  // SDカードのSPIオーバーライド
 
-  uint64_t uart3_tx_count = 0;              // UART3のTXバイト数
-  uint64_t spi_shift_count = 0;             // SPIシフトカウント
+  uint64_t uart3_tx_count = 0;   // UART3のTXバイト数
+  uint64_t spi_shift_count = 0;  // SPIシフトカウント
 
-  uint8_t spi_last_tx_byte = 0xff;          // SPIの最後のTXバイト
-  uint8_t spi_current_resp_byte = 0xff;     // SPIの現在のレスポンスバイト
-  uint8_t prev_spi_tx_busy = 0;             // 前回のSPI TXバイスの状態
-  uint8_t prev_spi_cs = 1;                  // 前回のSPI CSの状態
+  uint8_t spi_last_tx_byte = 0xff;       // SPIの最後のTXバイト
+  uint8_t spi_current_resp_byte = 0xff;  // SPIの現在のレスポンスバイト
+  uint8_t prev_spi_tx_busy = 0;          // 前回のSPI TXバイスの状態
+  uint8_t prev_spi_cs = 1;               // 前回のSPI CSの状態
 
-  int spi_debug_transfer_done_printed = 0;  // SPI転送完了時のデバッグ出力が表示されたかどうか
-  int spi_debug_read_printed = 0;           // SPI読み取り時のデバッグ出力が表示されたかどうか
+  int spi_debug_transfer_done_printed =
+      0;  // SPI転送完了時のデバッグ出力が表示されたかどうか
+  int spi_debug_read_printed =
+      0;  // SPI読み取り時のデバッグ出力が表示されたかどうか
 
-  std::queue<uint8_t> uart3_rx_queue;       // UART3のRXキュー
-  int uart3_rx_busy = 0;                    // UART3のRXバイト受信中かどうか
-  int uart3_rx_bit = 0;                     // UART3のRXビットカウント
-  int uart3_rx_div = 0;                     // UART3のRXビットカウントの割り込みカウント
-  uint16_t uart3_rx_frame = 0;              // UART3のRXフレーム
+  std::queue<uint8_t> uart3_rx_queue;  // UART3のRXキュー
+  int uart3_rx_busy = 0;               // UART3のRXバイト受信中かどうか
+  int uart3_rx_bit = 0;                // UART3のRXビットカウント
+  int uart3_rx_div = 0;         // UART3のRXビットカウントの割り込みカウント
+  uint16_t uart3_rx_frame = 0;  // UART3のRXフレーム
 
   /// Verilatorのコンテキストを評価する
   void eval_settle() { top->eval(); }
