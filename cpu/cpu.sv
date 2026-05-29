@@ -127,7 +127,7 @@ SPLA       |011100100000100101| stack から値をアドレスをポップし pm
 alu_sel   ALU の機能選択
 alu_out   ALU 出力
 src_a     ALU-A 入力
-src_a_sel ALU-A 入力選択（`SRCA_xxx マクロ）
+src_a_xx  ALU-A 入力選択
 src_b     ALU-B 入力
 src_b_sel ALU-B 入力選択（`SRCB_xxx マクロ）
 wr_stk1   0/1: dmem_wdata に stack[0/1] を出力
@@ -237,7 +237,7 @@ doc/signal-timing-design に記載
 logic sign, wr_stk1, pop, push,
   load_stk, load_fp, load_gp, load_ip, load_isr, cpop, cpush,
   irq_masked, ien, set_ien, clear_ien, load_sr, rst_sr;
-logic [2:0] src_a_sel;
+logic src_a_stk0, src_a_fp, src_a_gp, src_a_ip, src_a_cstk, src_a_sr;
 logic [1:0] src_b_sel;
 logic [1:0] phase;
 logic [5:0] alu_sel;
@@ -251,11 +251,11 @@ logic [`ADDR_WIDTH-1:0] dmem_addr_d;
 logic [17:0] insn;
 
 // 結線
-assign src_a = src_a_sel === `SRCA_FP   ? fp
-             : src_a_sel === `SRCA_GP   ? gp
-             : src_a_sel === `SRCA_IP   ? ip
-             : src_a_sel === `SRCA_CSTK ? cstack0
-             : src_a_sel === `SRCA_SR   ? get_sysreg(stack0, fpmin)
+assign src_a = src_a_fp   ? fp
+             : src_a_gp   ? gp
+             : src_a_ip   ? ip
+             : src_a_cstk ? cstack0
+             : src_a_sr   ? get_sysreg(stack0, fpmin)
              : stack0;
 assign src_b = src_b_sel === 2'd0 ? stack1
                : src_b_sel === 2'd1 ? mask_imm(insn[15:0], imm_mask, sign)
@@ -305,7 +305,12 @@ signals signals(
   .insn(insn),
   .sign(sign),
   .imm_mask(imm_mask),
-  .src_a_sel(src_a_sel),
+  .src_a_stk0(src_a_stk0),
+  .src_a_fp(src_a_fp),
+  .src_a_gp(src_a_gp),
+  .src_a_ip(src_a_ip),
+  .src_a_cstk(src_a_cstk),
+  .src_a_sr(src_a_sr),
   .src_b_sel(src_b_sel),
   .alu_sel(alu_sel),
   .wr_stk1(wr_stk1),

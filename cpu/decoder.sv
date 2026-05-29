@@ -8,7 +8,6 @@ module decoder(
   input [17:0] insn,
   output sign,
   output [15:0] imm_mask,
-  //output [2:0] src_a,
   output src_a_stk0,
   output src_a_fp,
   output src_a_gp,
@@ -43,6 +42,12 @@ assign {sign, src_a, src_b, alu_sel,
   push, pop, cpush, cpop,
   wr_stk1, byt, dmem_ren, dmem_wen,
   set_ien, clear_ien, call, pmem_wenh, pmem_wenl, load_sr, rst_sr} = decode(insn);
+assign src_a_stk0 = src_a === `SRCA_STK0;
+assign src_a_fp = src_a === `SRCA_FP;
+assign src_a_gp = src_a === `SRCA_GP;
+assign src_a_ip = src_a === `SRCA_IP;
+assign src_a_cstk = src_a === `SRCA_CSTK;
+assign src_a_sr = src_a === `SRCA_SR;
 
 `define STK0 `SRCA_STK0
 `define FP   `SRCA_FP

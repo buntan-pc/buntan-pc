@@ -11,7 +11,6 @@ module signals(
   input [17:0] insn,
   output sign,
   output [15:0] imm_mask,
-  //output [2:0] src_a_sel,
   output src_a_stk0,
   output src_a_fp,
   output src_a_gp,
@@ -42,18 +41,12 @@ module signals(
 
 logic src_a_fp, src_a_gp, src_a_ip, src_a_cstk, src_a_sr;
 
-//assign src_a_sel = src_a_fp ? `SRCA_FP
-//                   : src_a_gp ? `SRCA_GP
-//                   : src_a_ip ? `SRCA_IP
-//                   : src_a_cstk ? `SRCA_CSTK
-//                   : src_a_sr ? `SRCA_SR
-//                   : `SRCA_STK0;
-assign src_a_stk0 = phase_half & (insn_src_a === `SRCA_FP) & ~irq_pend;
-assign src_a_fp = phase_half & (insn_src_a === `SRCA_FP) & ~irq_pend;
-assign src_a_gp = phase_half & (insn_src_a === `SRCA_GP) & ~irq_pend;
-assign src_a_ip = ~phase_half | (insn_src_a === `SRCA_IP) | irq_pend | (insn_call & phase_decode);
-assign src_a_cstk = phase_half & (insn_src_a === `SRCA_CSTK) & ~irq_pend;
-assign src_a_sr = phase_half & (insn_src_a === `SRCA_SR) & ~irq_pend;
+assign src_a_stk0 = phase_half & insn_src_a_stk0 & ~irq_pend;
+assign src_a_fp = phase_half & insn_src_a_fp & ~irq_pend;
+assign src_a_gp = phase_half & insn_src_a_gp & ~irq_pend;
+assign src_a_ip = ~phase_half | insn_src_a_ip | irq_pend | (insn_call & phase_decode);
+assign src_a_cstk = phase_half & insn_src_a_cstk & ~irq_pend;
+assign src_a_sr = phase_half & insn_src_a_sr & ~irq_pend;
 assign src_b_sel = irq_pend ? `SRCB_ISR : insn_src_b;
 assign alu_sel = phase_exec ? (irq_pend ? `ALU_B : insn_alu_sel) : phase_fetch ? `ALU_INC : `ALU_A;
 assign pop = (insn_pop & ~irq_pend) & phase_exec;
@@ -84,7 +77,6 @@ signalizer signalizer(.*);
 
 logic dec_sign, dec_wr_stk1;
 logic [15:0] dec_imm_mask;
-//logic [2:0] dec_src_a;
 logic dec_src_a_stk0, dec_src_a_fp, dec_src_a_gp, dec_src_a_ip,
   dec_src_a_cstk, dec_src_a_sr;
 logic [1:0] dec_src_b;
@@ -97,7 +89,6 @@ decoder decoder(
   .insn(insn),
   .sign(dec_sign),
   .imm_mask(dec_imm_mask),
-  //.src_a(dec_src_a),
   .src_a_stk0(dec_src_stk0),
   .src_a_fp(dec_src_fp),
   .src_a_gp(dec_src_gp),
@@ -130,7 +121,6 @@ decoder decoder(
 
 logic insn_sign, insn_wr_stk1;
 logic [15:0] insn_imm_mask;
-//logic [2:0] insn_src_a;
 logic insn_src_a_stk0, insn_src_a_fp, insn_src_a_gp, insn_src_a_ip,
   insn_src_a_cstk, insn_src_a_sr;
 logic [1:0] insn_src_b;
@@ -144,7 +134,6 @@ logic insn_pop, insn_push, insn_stk, insn_fp, insn_gp, insn_ip, insn_isr,
 always @(posedge clk) begin
   insn_sign <= dec_sign;
   insn_imm_mask <= dec_imm_mask;
-  //insn_src_a <= dec_src_a;
   insn_src_a_stk0 <= dec_src_a_stk0;
   insn_src_a_fp   <= dec_src_a_fp;
   insn_src_a_gp   <= dec_src_a_gp;
