@@ -49,10 +49,10 @@ logic [17:0] recv_data, pmem_wdata;
 logic [`ADDR_WIDTH-1:0] img_recv_addr, pmem_size, dmem_size;
 logic [15:0] dmem_rdata_mem, dmem_rdata_mem_d;
 
-logic cpu_load_insn;
-logic [17:0] cpu_reg_insn;
-logic [1:0] cpu_phase;
-logic [15:0] cpu_stack0, cpu_cstack0;
+//logic cpu_load_insn;
+//logic [17:0] cpu_reg_insn;
+//logic [1:0] cpu_phase;
+//logic [15:0] cpu_stack0, cpu_cstack0;
 
 assign uart_recv_data = recv_data;
 assign img_pmem_size = pmem_size;
@@ -129,11 +129,11 @@ cpu#(.CLOCK_HZ(CLOCK_HZ)) cpu(
   .pmem_addr(cpu_pmem_addr),
   .pmem_rdata(cpu_pmem_rdata),
   .pmem_wdata(cpu_pmem_wdata)
-  , .load_insn(cpu_load_insn)
-  , .reg_insn(cpu_reg_insn)
-  , .phase(cpu_phase)
-  , .stack0(cpu_stack0)
-  , .cstack0(cpu_cstack0)
+  //, .load_insn(cpu_load_insn)
+  //, .reg_insn(cpu_reg_insn)
+  //, .phase(cpu_phase)
+  //, .stack0(cpu_stack0)
+  //, .cstack0(cpu_cstack0)
 );
 
 // データメモリ
@@ -590,48 +590,48 @@ logic [`ADDR_WIDTH-1:0] pmem_addr_buf;
 logic [15:0] stack0_buf, cstack0_buf;
 logic [17:0] insn_buf;
 
-always @(posedge clk, posedge rst) begin
-  if (rst) begin
-    pmem_addr_buf <= `ADDR_WIDTH'd0;
-    stack0_buf <= 16'd0;
-    cstack0_buf <= 16'd0;
-    insn_buf <= 18'd0;
-  end
-  else if (cpu_phase == 2'd3 /* fetch phase */) begin
-    pmem_addr_buf <= cpu_pmem_addr;
-    stack0_buf <= cpu_stack0;
-    cstack0_buf <= cpu_cstack0;
-  end
-  else if (cpu_phase == 2'd0) begin
-    insn_buf <= cpu_reg_insn;
-  end
-end
-
-function [2:0] get_data3(input [11:0] data, input [1:0] phase);
-  case (phase)
-    2'd0: return data[2:0];
-    2'd1: return data[5:3];
-    2'd2: return data[8:6];
-    2'd3: return data[11:9];
-  endcase
-endfunction
-
-function [3:0] get_data4(input [15:0] data, input [1:0] phase);
-  case (phase)
-    2'd0: return data[3:0];
-    2'd1: return data[7:4];
-    2'd2: return data[11:8];
-    2'd3: return data[15:12];
-  endcase
-endfunction
+//always @(posedge clk, posedge rst) begin
+//  if (rst) begin
+//    pmem_addr_buf <= `ADDR_WIDTH'd0;
+//    stack0_buf <= 16'd0;
+//    cstack0_buf <= 16'd0;
+//    insn_buf <= 18'd0;
+//  end
+//  else if (cpu_phase == 2'd3 /* fetch phase */) begin
+//    pmem_addr_buf <= cpu_pmem_addr;
+//    stack0_buf <= cpu_stack0;
+//    cstack0_buf <= cpu_cstack0;
+//  end
+//  else if (cpu_phase == 2'd0) begin
+//    insn_buf <= cpu_reg_insn;
+//  end
+//end
+//
+//function [2:0] get_data3(input [11:0] data, input [1:0] phase);
+//  case (phase)
+//    2'd0: return data[2:0];
+//    2'd1: return data[5:3];
+//    2'd2: return data[8:6];
+//    2'd3: return data[11:9];
+//  endcase
+//endfunction
+//
+//function [3:0] get_data4(input [15:0] data, input [1:0] phase);
+//  case (phase)
+//    2'd0: return data[3:0];
+//    2'd1: return data[7:4];
+//    2'd2: return data[11:8];
+//    2'd3: return data[15:12];
+//  endcase
+//endfunction
 
 //assign debug_a = {cpu_load_addr[11:10], cpu_load_addr[5:0]};
-assign debug_a[2:0] = get_data3(pmem_addr_buf, cpu_phase);
-assign debug_a[3] = cpu_load_insn;
-assign debug_a[7:4] = get_data4({2'd0, insn_buf[17:8], 4'd0}, cpu_phase);
+//assign debug_a[2:0] = get_data3(pmem_addr_buf, cpu_phase);
+//assign debug_a[3] = cpu_load_insn;
+//assign debug_a[7:4] = get_data4({2'd0, insn_buf[17:8], 4'd0}, cpu_phase);
 //assign debug_b = {cpu_reg_insn[3:0], 4'd0};
-assign debug_b[3:0] = 4'd0;
-assign debug_b[7:4] = get_data4(cstack0_buf, cpu_phase);
-assign dbgio = ~rst & clk;
+//assign debug_b[3:0] = 4'd0;
+//assign debug_b[7:4] = get_data4(cstack0_buf, cpu_phase);
+//assign dbgio = ~rst & clk;
 
 endmodule

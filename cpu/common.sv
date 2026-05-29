@@ -13,6 +13,7 @@
 `define ALU_INC3  6'h03
 `define ALU_NOT   6'h04
 `define ALU_SIGN  6'h05
+`define ALU_DEC   6'h07
 `define ALU_B     6'h0f
 `define ALU_AND   6'h10
 `define ALU_OR    6'h11

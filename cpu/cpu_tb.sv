@@ -15,11 +15,11 @@ logic [5:0] alu_sel;
 cpu#(.CLOCK_HZ(1000)) cpu(.*);
 
 initial begin
-  $monitor("%d: insn=%04x alu[%02x]=%04x pmem_rdata=%04x pop/sh=%d%d",
-           $time, cpu.insn, alu_sel, cpu.alu_out, pmem_rdata, cpu.pop, cpu.push,
+  $monitor("%d: insn=%04x alu[%02x]=%04x pmem_addr=%03x/rdata=%04x pop/sh=%d%d",
+           $time, cpu.insn, alu_sel, cpu.alu_out, pmem_addr, pmem_rdata, cpu.pop, cpu.push,
            " stk=[%04x %04x] fp=%04x ip=%04x last_wr[%02x]=%04x",
            cpu.stack0, cpu.stack1, cpu.fp, cpu.ip, last_wr_addr, last_wr_data,
-           " phase=%d",
+           " phase=%c",
            cpu.signals.phase,
            " irq=%d pmem_wenh/wenl=%d/%d",
            cpu.irq, pmem_wenh, pmem_wenl

@@ -20,11 +20,11 @@ module cpu#(
   output [`ADDR_WIDTH-1:0] pmem_addr,
   input  [17:0] pmem_rdata, // プログラムメモリからの読み込みデータ
   output [17:0] pmem_wdata  // プログラムメモリへの書き込みデータ
-  , output load_insn
-  , output [17:0] reg_insn
-  , output [1:0] phase
-  , output [15:0] stack0
-  , output [15:0] cstack0
+  //, output load_insn
+  //, output [17:0] reg_insn
+  //, output [1:0] phase
+  //, output [15:0] stack0
+  //, output [15:0] cstack0
 );
 
 /*
@@ -90,8 +90,6 @@ DUP        |011100000010000000| stack[0] を stack にプッシュ
 DUP1       |011100000010001111| stack[1] を stack にプッシュ
 RET        |011100100000000000| コールスタックからアドレスをポップし、ジャンプ
 CALL       |011100100000000001| IP を cstack にプッシュ。stack からアドレスをポップしジャンプ。
-CPOP FP    |011100100000000010| コールスタックから値をポップし FP に書く
-CPUSH FP   |011100100000000011| コールスタックに FP をプッシュ
 RDSR       |011100100000000100| stack[0] で指定されたシステムレジスタ値を stack にプッシュ
 WRSR       |011100100000000101| stack[0] で指定されたシステムレジスタに stack[1] を書き、stack[0] をポップ
 RSTSR      |011100100000000110| stack[0] で指定されたシステムレジスタをリセット（リセット値はレジスタ毎に異なる）
@@ -241,8 +239,8 @@ logic src_a_stk0, src_a_fp, src_a_gp, src_a_ip, src_a_cstk, src_a_sr;
 logic [1:0] src_b_sel;
 logic [1:0] phase;
 logic [5:0] alu_sel;
-//logic [15:0] stack0, stack1, stack_in, cstack0,
-logic [15:0] stack1, stack_in,
+logic [15:0] stack0, stack1, stack_in, cstack0,
+//logic [15:0] stack1, stack_in,
              alu_out, src_a, src_b, imm_mask, dmem_wdata_raw;
 
 // レジスタ群
@@ -294,7 +292,7 @@ stack cstack(
   .pop(cpop),
   .push(cpush),
   .load(cpush),
-  .data_in(alu_out),
+  .data_in(ip),
   .data0(cstack0)
 );
 

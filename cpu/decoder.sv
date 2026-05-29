@@ -37,6 +37,7 @@ module decoder(
 
 assign imm_mask = calc_imm_mask(insn[17:14]);
 
+logic [2:0] src_a;
 assign {sign, src_a, src_b, alu_sel,
   load_stk, load_fp, load_gp, load_ip, load_isr,
   push, pop, cpush, cpop,
@@ -143,7 +144,7 @@ function [31:0] decode(input [17:0] insn);
     18'b01_11xx_1xxx_xxx1_xx0x: // INT
       return {1'b0, `IP,   `ISR,  `ALU_B,     20'b00010_0010_0000_00_000_00};
     18'b01_11xx_1xxx_xxx1_xx1x: // IRET
-      return {1'b0, `CSTK, `IMM,  `ALU_A,     20'b00010_0001_0000_10_000_00};
+      return {1'b0, `CSTK, `IMM,  `ALU_DEC,   20'b00010_0001_0000_10_000_00};
     18'b01_11xx_1xxx_xx1x_x000: // POP FP
       return {1'b0, `STK0, `IMM,  `ALU_A,     20'b01000_0100_0000_00_000_00};
     18'b01_11xx_1xxx_xx1x_x001: // POP GP

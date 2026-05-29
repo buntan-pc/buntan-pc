@@ -16,6 +16,7 @@ ALU 機能
 04h   NOT   ~A
 05h   SIGN  A ^ 0x8000
 06h   EXTS  A | ((A & 0x80) ? 0xff00 : 0)
+07h   DEC   A - 1
 0fh   B     B
 10h   AND   B & A
 11h   OR    B | A
@@ -73,8 +74,9 @@ begin
   casex (sel)
     6'b0000xx: alu = a + sel[1:0];
     6'b000100: alu = ~a;
-    6'b0001x1: alu = a ^ 16'h8000;
+    6'b000101: alu = a ^ 16'h8000;
     6'b000110: alu = a | (a[7] ? 16'hff00 : 16'd0);
+    6'b000111: alu = a - 1;
     6'b001xxx: alu = b;
     6'b010000: alu = b & a;
     6'b010001: alu = b | a;

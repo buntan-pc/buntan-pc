@@ -597,20 +597,6 @@ int ProcessTextSection(char **src, uint16_t *line_pmem,
       }
     } else if (strcmp(al->mnemonic, "ret") == 0) {
       pmem[ip] = 0x1c800;
-    } else if (strcmp(al->mnemonic, "cpop") == 0) {
-      char *target = GET_STR(0);
-      if (ExpectFP(target)) {
-        fprintf(stderr, "CPOP takes FP: '%s'\n", target);
-        exit(1);
-      }
-      pmem[ip] = 0x1c802;
-    } else if (strcmp(al->mnemonic, "cpush") == 0) {
-      char *target = GET_STR(0);
-      if (ExpectFP(target)) {
-        fprintf(stderr, "CPUSH takes FP: '%s'\n", target);
-        exit(1);
-      }
-      pmem[ip] = 0x1c803;
     } else if (strcmp(al->mnemonic, "rdsr") == 0) {
       pmem[ip] = 0x1c804;
     } else if (strcmp(al->mnemonic, "wrsr") == 0) {

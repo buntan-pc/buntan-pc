@@ -11,11 +11,24 @@ logic sign, wr_stk1, pop, push, load_stk, load_fp, load_gp, load_ip, load_isr,
   cpop, cpush, byt, dmem_ren, dmem_wen, set_ien, clear_ien, call,
   pmem_wenh, pmem_wenl, load_sr, rst_sr;
 logic [15:0] imm_mask;
-logic [2:0] src_a;
+logic src_a_stk0;
+logic src_a_fp;
+logic src_a_gp;
+logic src_a_ip;
+logic src_a_cstk;
+logic src_a_sr;
 logic [1:0] src_b;
 logic [5:0] alu_sel;
 
 decoder decoder(.*);
+
+logic [2:0] src_a;
+assign src_a = src_a_stk0 ? `SRCA_STK0
+             : src_a_fp   ? `SRCA_FP
+             : src_a_gp   ? `SRCA_GP
+             : src_a_ip   ? `SRCA_IP
+             : src_a_cstk ? `SRCA_CSTK
+             : `SRCA_SR;
 
 `define test_sig1(SIG) \
   if (e_``SIG !== 1'bx && SIG !== e_``SIG) $error("%s must be %d", `"SIG`", e_``SIG);
@@ -78,6 +91,7 @@ endtask
 `define x 1'bx
 
 initial begin
+
   $monitor("%d: insn=%04x sign=%d mask=%04x src_a=%d src_b=%d alu=%02x wr_stk1=%d",
            $time, insn, sign, imm_mask, src_a, src_b, alu_sel, wr_stk1,
            " pop=%d push=%d load_stk=%d fp=%d ip=%d isr=%d bar=%d",
@@ -612,7 +626,7 @@ initial begin
               16'hxxxx, // imm_mask
               `SRCA_CSTK,// src_a
               `SRCB_X,  // src_b
-              `ALU_A,   // alu
+              `ALU_DEC, // alu
               `x,       // wr_stk1
               0,        // pop
               0,        // push
