@@ -3,7 +3,7 @@ CXX     = g++
 CFLAGS  = -Wall -Wextra -std=c99
 CXXFLAGS= -Wall -Wextra -std=c++17
 OUT     = out
-BIN     = bemu-system-buntan_pc
+BIN     = temu-system-buntan_pc
 CONFIG  = .config
 
 -include $(CONFIG)
@@ -47,9 +47,9 @@ run: $(SD_IMAGE) all fmt
 	@echo "Running emulator..."
 	@./$(OUT)/$(BIN)
 
-vmcu: verilator_mcu build_verilator_mcu $(OUT)/bemu-system-buntan_mcu
+vmcu: verilator_mcu build_verilator_mcu $(OUT)/$(BIN)_mcu
 	@echo "Running Vmcu..."
-	@./$(OUT)/bemu-system-buntan_mcu
+	@./$(OUT)/$(BIN)_mcu
 
 $(OUT):
 	@mkdir -p $(OUT)
@@ -120,7 +120,7 @@ $(OUT)/$(BIN): $(OBJS_C) $(OBJ_API)
 		$(VERILATOR_DIR)/libVmcu.a \
 		$(VERILATOR_DIR)/libverilated.a
 
-$(OUT)/bemu-system-buntan_mcu: $(OBJ_VMCU)
+$(OUT)/$(BIN)_mcu: $(OBJ_VMCU)
 	@echo "Linking Vmcu -> $@"
 	@$(CXX) $(CXXFLAGS) -pthread -o $@ $(OBJ_VMCU) $(VERILATOR_DIR_MCU)/libVmcu.a $(VERILATOR_DIR_MCU)/libverilated.a
 

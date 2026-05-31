@@ -1,4 +1,4 @@
-# Buntan Emulator - bemu-system-buntan_pc
+# temu - temu-system-buntan_pc
 
 buntanPCのエミュレーターです。Linux / WSL環境で動かすことを想定しています。
 とりあえずDOSが動くくらいまでは完成しています。
