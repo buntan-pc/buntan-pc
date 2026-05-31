@@ -20,11 +20,6 @@ module cpu#(
   output [`ADDR_WIDTH-1:0] pmem_addr,
   input  [17:0] pmem_rdata, // プログラムメモリからの読み込みデータ
   output [17:0] pmem_wdata  // プログラムメモリへの書き込みデータ
-  //, output load_insn
-  //, output [17:0] reg_insn
-  //, output [1:0] phase
-  //, output [15:0] stack0
-  //, output [15:0] cstack0
 );
 
 /*
