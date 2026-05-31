@@ -4,6 +4,7 @@ CFLAGS  = -Wall -Wextra -std=c99
 CXXFLAGS= -Wall -Wextra -std=c++17
 OUT     = out
 BIN     = temu-system-buntan_pc
+LINKER  = linker
 CONFIG  = .config
 
 -include $(CONFIG)
@@ -39,7 +40,7 @@ OBJS_C = $(patsubst %.c,$(OUT)/%.o,$(SRCS_C))
 OBJ_API = $(OUT)/api.o
 OBJ_VMCU = $(OUT)/vmcu_main.o
 
-all: verilator build_verilator $(OUT)/$(BIN)
+all: linker verilator build_verilator $(OUT)/$(BIN)
 
 build: all
 
@@ -53,6 +54,10 @@ vmcu: verilator_mcu build_verilator_mcu $(OUT)/$(BIN)_mcu
 
 $(OUT):
 	@mkdir -p $(OUT)
+
+linker:
+	@echo "Linking..."
+	@gcc -o $(OUT)/$(LINKER) linker.c -DTEMU_LINK_DOS_MAIN
 
 verilator:
 	@echo "Converting Verilog to cpp..."
@@ -145,5 +150,14 @@ clean:
 	@echo "Cleaning up..."
 	@rm -rf $(OUT) $(VERILATOR_DIR) $(VERILATOR_DIR_MCU)
 
-.PHONY: all build run fmt clean verilator build_verilator verilator_mcu build_verilator_mcu vmcu apps
+help:
+	@cat $(PWD)/help.txt
+
+coffee:
+	@echo "[1/2] Brewing coffee..."
+	@sleep 3m
+	@echo "[2/2] Coffee ready!"
+	@echo "Please verify the output manually."
+
+.PHONY: all build run fmt clean linker verilator build_verilator verilator_mcu build_verilator_mcu vmcu apps help coffee
 .DEFAULT_GOAL := all
