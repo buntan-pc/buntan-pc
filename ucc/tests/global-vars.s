@@ -4,7 +4,7 @@ gv:
 
 section .text
 start:
-	call main
+	call buntan_main
 	st 6
 fin:
 	jmp fin
