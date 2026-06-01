@@ -39,7 +39,7 @@ localparam KEY_ROW_FOR_DEBUG = 0;
 localparam KEY_COL_FOR_DEBUG = 0;
 
 // CPU コア
-logic [`ADDR_WIDTH-1:0] cpu_dmem_addr, dmem_addr_d, cpu_pmem_addr, pmem_addr;
+logic [`ADDR_WIDTH-1:0] cpu_dmem_addr, cpu_dmem_addr_d, cpu_pmem_addr, pmem_addr;
 logic [15:0] cpu_dmem_rdata, cpu_dmem_wdata;
 logic [17:0] cpu_pmem_rdata, cpu_pmem_wdata;
 logic cpu_dmem_ren, cpu_dmem_wen, cpu_dmem_byt, cpu_irq;
@@ -104,9 +104,9 @@ assign cpu_rst = rst | ~recv_compl;
 
 always @(posedge cpu_clk, posedge rst) begin
   if (rst)
-    dmem_addr_d <= `ADDR_WIDTH'd0;
+    cpu_dmem_addr_d <= `ADDR_WIDTH'd0;
   else
-    dmem_addr_d <= dmem_addr;
+    cpu_dmem_addr_d <= cpu_dmem_addr;
 end
 
 cpu#(.CLOCK_HZ(CLOCK_HZ)) cpu(
@@ -161,13 +161,13 @@ cdtimer#(.PERIOD(CLOCK_HZ/1000)) cdtimer(
   .timeout(cdtimer_to)
 );
 
-assign load_cdtimer = cpu_dmem_wen & dmem_addr === `ADDR_WIDTH'h002;
+assign load_cdtimer = cpu_dmem_wen & cpu_dmem_addr === `ADDR_WIDTH'h002;
 
 always @(posedge clk, posedge cpu_rst) begin
   if (cpu_rst)
     cdtimer_ie <= 1'b0;
-  else if (cpu_dmem_wen && dmem_addr === `ADDR_WIDTH'h004)
-    cdtimer_ie <= dmem_wdata[1];
+  else if (cpu_dmem_wen && cpu_dmem_addr === `ADDR_WIDTH'h004)
+    cdtimer_ie <= cpu_dmem_wdata[1];
 end
 
 // MCU 内蔵周辺機能：UART
@@ -191,15 +191,15 @@ uart_mux#(.CLOCK_HZ(CLOCK_HZ), .BAUD(UART_BAUD), .TIM_WIDTH(8)) uart_mux(
 );
 
 assign uart_rd = uart_rx_full;
-assign uart_wr = cpu_dmem_wen & dmem_addr === `ADDR_WIDTH'h006;
+assign uart_wr = cpu_dmem_wen & cpu_dmem_addr === `ADDR_WIDTH'h006;
 assign uart_tx_byte = cpu_dmem_wdata[7:0];
 assign end_img_recv = img_recv_state == IMG_RECV_FIN;
 
 always @(posedge clk, posedge rst) begin
   if (rst)
     uart_ie <= 1'b0;
-  else if (cpu_dmem_wen && dmem_addr === `ADDR_WIDTH'h008)
-    uart_ie <= dmem_wdata[1];
+  else if (cpu_dmem_wen && cpu_dmem_addr === `ADDR_WIDTH'h008)
+    uart_ie <= cpu_dmem_wdata[1];
 end
 
 // MCU 内蔵周辺機能：UART2
@@ -219,15 +219,15 @@ uart#(.CLOCK_HZ(CLOCK_HZ), .BAUD(9600), .TIM_WIDTH(12)) uart2(
   .tx_ready(uart2_tx_ready)
 );
 
-assign uart2_rd = cpu_dmem_ren & dmem_addr_d === `ADDR_WIDTH'h02C;
-assign uart2_wr = cpu_dmem_wen & dmem_addr === `ADDR_WIDTH'h02C;
+assign uart2_rd = cpu_dmem_ren & cpu_dmem_addr_d === `ADDR_WIDTH'h02C;
+assign uart2_wr = cpu_dmem_wen & cpu_dmem_addr === `ADDR_WIDTH'h02C;
 assign uart2_tx_byte = cpu_dmem_wdata[7:0];
 
 always @(posedge clk, posedge rst) begin
   if (rst)
     uart2_ie <= 1'b0;
-  else if (cpu_dmem_wen && dmem_addr === `ADDR_WIDTH'h02E)
-    uart2_ie <= dmem_wdata[1];
+  else if (cpu_dmem_wen && cpu_dmem_addr === `ADDR_WIDTH'h02E)
+    uart2_ie <= cpu_dmem_wdata[1];
 end
 
 // MCU 内蔵周辺機能：UART3
@@ -247,15 +247,15 @@ uart#(.CLOCK_HZ(CLOCK_HZ), .BAUD(9600), .TIM_WIDTH(12)) uart3(
   .tx_ready(uart3_tx_ready)
 );
 
-assign uart3_rd = cpu_dmem_ren & dmem_addr_d === `ADDR_WIDTH'h030;
-assign uart3_wr = cpu_dmem_wen & dmem_addr === `ADDR_WIDTH'h030;
+assign uart3_rd = cpu_dmem_ren & cpu_dmem_addr_d === `ADDR_WIDTH'h030;
+assign uart3_wr = cpu_dmem_wen & cpu_dmem_addr === `ADDR_WIDTH'h030;
 assign uart3_tx_byte = cpu_dmem_wdata[7:0];
 
 always @(posedge clk, posedge rst) begin
   if (rst)
     uart3_ie <= 1'b0;
-  else if (cpu_dmem_wen && dmem_addr === `ADDR_WIDTH'h02E)
-    uart3_ie <= dmem_wdata[1];
+  else if (cpu_dmem_wen && cpu_dmem_addr === `ADDR_WIDTH'h02E)
+    uart3_ie <= cpu_dmem_wdata[1];
 end
 
 // MCU 内蔵周辺機能：ADC
@@ -280,12 +280,12 @@ always @(posedge clk, posedge cpu_rst) begin
     uf_din <= 0;
   end
   else if (cpu_dmem_wen)
-    case (dmem_addr)
-      `ADDR_WIDTH'h010: uf_xadr <= dmem_wdata[8:0];
-      `ADDR_WIDTH'h012: uf_yadr <= dmem_wdata[5:0];
-      `ADDR_WIDTH'h014: {uf_nvstr, uf_prog, uf_erase, uf_se, uf_ye, uf_xe} <= dmem_wdata[5:0];
-      `ADDR_WIDTH'h018: uf_din[15:0] <= dmem_wdata;
-      `ADDR_WIDTH'h01A: uf_din[31:16] <= dmem_wdata;
+    case (cpu_dmem_addr)
+      `ADDR_WIDTH'h010: uf_xadr <= cpu_dmem_wdata[8:0];
+      `ADDR_WIDTH'h012: uf_yadr <= cpu_dmem_wdata[5:0];
+      `ADDR_WIDTH'h014: {uf_nvstr, uf_prog, uf_erase, uf_se, uf_ye, uf_xe} <= cpu_dmem_wdata[5:0];
+      `ADDR_WIDTH'h018: uf_din[15:0] <= cpu_dmem_wdata;
+      `ADDR_WIDTH'h01A: uf_din[31:16] <= cpu_dmem_wdata;
       `ADDR_WIDTH'h01C: ; // cannot write to df_uout
       `ADDR_WIDTH'h01E: ; // cannot write to df_uout
     endcase
@@ -295,7 +295,7 @@ end
 logic spi_tx_start, spi_tx_ready, spi_cs_reg;
 logic [7:0] spi_rx_data;
 
-assign spi_tx_start = cpu_dmem_wen & dmem_addr === `ADDR_WIDTH'h020;
+assign spi_tx_start = cpu_dmem_wen & cpu_dmem_addr === `ADDR_WIDTH'h020;
 assign spi_cs = spi_cs_reg;
 
 spi#(.CLOCK_HZ(CLOCK_HZ), .BAUD(100_000)) spi(
@@ -304,7 +304,7 @@ spi#(.CLOCK_HZ(CLOCK_HZ), .BAUD(100_000)) spi(
   .sclk(spi_sclk),
   .mosi(spi_mosi),
   .miso(spi_miso),
-  .tx_data(dmem_wdata[7:0]),
+  .tx_data(cpu_dmem_wdata[7:0]),
   .rx_data(spi_rx_data),
   .tx_start(spi_tx_start),
   .tx_ready(spi_tx_ready)
@@ -313,8 +313,8 @@ spi#(.CLOCK_HZ(CLOCK_HZ), .BAUD(100_000)) spi(
 always @(posedge rst, posedge clk) begin
   if (rst)
     spi_cs_reg <= 1;
-  else if (cpu_dmem_wen & dmem_addr === `ADDR_WIDTH'h022)
-    spi_cs_reg <= dmem_wdata[1];
+  else if (cpu_dmem_wen & cpu_dmem_addr === `ADDR_WIDTH'h022)
+    spi_cs_reg <= cpu_dmem_wdata[1];
 end
 
 // MCU 内蔵周辺機能：KBC
@@ -332,7 +332,7 @@ kbc kbc(
   .queue(kbc_queue)
 );
 
-assign kbc_queue_ren = cpu_dmem_ren & dmem_addr_d === `ADDR_WIDTH'h024;
+assign kbc_queue_ren = cpu_dmem_ren & cpu_dmem_addr_d === `ADDR_WIDTH'h024;
 
 // MCU 内蔵周辺機能：I2C
 logic i2c_data_wen; // I2C データレジスタへの書き込みタイミング
@@ -368,7 +368,7 @@ i2c#(.CLOCK_HZ(CLOCK_HZ)) i2c(
   .rx_ack(i2c_rx_ack)
 );
 
-assign i2c_data_wen = dmem_wen & (dmem_addr === `ADDR_WIDTH'h028);
+assign i2c_data_wen = cpu_dmem_wen & (cpu_dmem_addr === `ADDR_WIDTH'h028);
 assign i2c_tx_start = (i2c_state == ADDR | i2c_state == DATA) & i2c_data_wen;
 
 always @(posedge rst, posedge clk) begin
@@ -396,8 +396,8 @@ end
 always @(posedge rst, posedge clk) begin
   if (rst)
     i2c_cnd_stop <= 0;
-  else if (dmem_wen & dmem_addr === `ADDR_WIDTH'h02A)
-    i2c_cnd_stop <= dmem_wdata[2];
+  else if (cpu_dmem_wen & cpu_dmem_addr === `ADDR_WIDTH'h02A)
+    i2c_cnd_stop <= cpu_dmem_wdata[2];
   else if (~i2c_tx_ready)
     i2c_cnd_stop <= 0;
 end
@@ -413,14 +413,14 @@ always @(posedge rst, posedge clk) begin
   if (rst)
     i2c_tx_data <= 8'd0;
   else if (i2c_data_wen)
-    i2c_tx_data <= dmem_wdata[7:0];
+    i2c_tx_data <= cpu_dmem_wdata[7:0];
 end
 
 always @(posedge rst, posedge clk) begin
   if (rst)
     i2c_addr_rw <= 0;
   else if (i2c_state == ADDR & i2c_data_wen)
-    i2c_addr_rw <= dmem_wdata[0]; // 1 = read
+    i2c_addr_rw <= cpu_dmem_wdata[0]; // 1 = read
 end
 
 always @(posedge rst, posedge clk) begin
@@ -477,7 +477,7 @@ assign pmem_wenh = (img_recv_state == IMG_RECV_WAIT & cpu_pmem_wenh)
 assign pmem_wenl = (img_recv_state == IMG_RECV_WAIT & cpu_pmem_wenl)
                  | (img_recv_state == IMG_RECV_PMEM & img_recv_addr < pmem_size);
 assign pmem_wdata = img_recv_state == IMG_RECV_PMEM ? recv_data : cpu_pmem_wdata;
-assign cpu_dmem_rdata = dmem_rdata_mux(dmem_addr_d, dmem_rdata_mem, dmem_rdata_io);
+assign cpu_dmem_rdata = dmem_rdata_mux(cpu_dmem_addr_d, dmem_rdata_mem, dmem_rdata_io);
 assign cpu_irq  = (cdtimer_to & cdtimer_ie) | (uart_rx_ready & uart_ie) | (uart2_rx_full & uart2_ie);
 
 always @(posedge rst, posedge clk) begin
@@ -565,9 +565,9 @@ always @(posedge cpu_rst, posedge clk) begin
     uart_rx_ready <= 1'b0;
   else if (uart_rx_full)
     uart_rx_ready <= 1'b1;
-  else if (cpu_dmem_ren & dmem_addr_d === `ADDR_WIDTH'h006)
+  else if (cpu_dmem_ren & cpu_dmem_addr_d === `ADDR_WIDTH'h006)
     uart_rx_ready <= 1'b0;
-  else if (cpu_dmem_wen & dmem_addr === `ADDR_WIDTH'h008)
+  else if (cpu_dmem_wen & cpu_dmem_addr === `ADDR_WIDTH'h008)
     uart_rx_ready <= cpu_dmem_wdata[0];
 end
 
