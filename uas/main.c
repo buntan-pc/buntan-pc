@@ -40,8 +40,9 @@ struct AsmLine {
 void SplitOpcode(char *line, struct AsmLine *al) {
   al->label = al->mnemonic = NULL;
   al->num_opr = 0;
+  char *saveptr;
 
-  if (strtok(line, ";#") == NULL) {
+  if (strtok_r(line, ";#", &saveptr) == NULL) {
     return;
   }
 
@@ -329,7 +330,7 @@ int ProcessDataSection(char **src, FILE *list_file,
     *src = next_line;
 
     char line[MAX_LINE];
-    strcpy(line, cur_line);
+    snprintf(line, MAX_LINE, "%s", cur_line);
 
     SplitOpcode(line, al);
     if (first_label && al->label) {
@@ -402,7 +403,7 @@ int ProcessTextSection(char **src, uint16_t *line_pmem,
   char *next_line;
   while ((next_line = ReadLine(*src)) != NULL) {
     char line[MAX_LINE];
-    strcpy(line, *src);
+    snprintf(line, MAX_LINE, "%s", *src);
     *src = next_line;
 
     SplitOpcode(line, al);
