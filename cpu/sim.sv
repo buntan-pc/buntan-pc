@@ -42,14 +42,23 @@ logic [7:0] mcu_uart_tx_data;
 logic mcu_uart_tx_full;
 
 logic [1:0] phase_num;
+logic [2:0] src_a_sel;
 assign phase_num = mcu.cpu.signals.phase_decode ? 0
                    : mcu.cpu.signals.phase_exec ? 1
                    : mcu.cpu.signals.phase_rdmem ? 2 : 3;
+assign src_a_sel = mcu.cpu.src_a_stk0 ? `SRCA_STK0
+                 : mcu.cpu.src_a_fp   ? `SRCA_FP
+                 : mcu.cpu.src_a_gp   ? `SRCA_GP
+                 : mcu.cpu.src_a_ip   ? `SRCA_IP
+                 : mcu.cpu.src_a_cstk ? `SRCA_CSTK
+                 : mcu.cpu.src_a_sr   ? `SRCA_SR
+                 : 7;
 
 assign cur_uart_in = uart_in[uart_index];
 
 // CPU を接続する
-logic rst, clk;
+logic rst, clk, dbgio;
+tri1 [7:0] key_col_n;
 mcu#(.CLOCK_HZ(CLOCK_HZ), .UART_BAUD(UART_BAUD)) mcu(
   .*,
   .uart_rx(mcu_uart_rx), .uart2_rx(1'b1), .uart3_rx(1'b1), .uart_tx(mcu_uart_tx), .uart2_tx(), .uart3_tx(),
@@ -59,7 +68,7 @@ mcu#(.CLOCK_HZ(CLOCK_HZ), .UART_BAUD(UART_BAUD)) mcu(
   .uf_xe(), .uf_ye(), .uf_se(), .uf_erase(), .uf_prog(), .uf_nvstr(),
   .uf_din(), .uf_dout(32'hDEADBEEF),
   .spi_cs(), .spi_sclk(), .spi_mosi(), .spi_miso(1'b0),
-  .key_col_n(8'hFF), .key_row(), .i2c_scl(), .i2c_sda()
+  .key_col_n(key_col_n), .key_row(), .i2c_scl(), .i2c_sda()
 );
 
 // 実行トレース機能
@@ -162,7 +171,7 @@ always @(posedge clk) begin
               mcu.cpu.stack0, mcu.cpu.fp, mcu.cpu.ip, mcu.cpu.insn, mcu.cpu.cstack0,
               // セレクト信号
               "alu_sel=%x src_a_sel=%x src_b_sel=%x ",
-              mcu.cpu.signals.alu_sel, mcu.cpu.src_a_sel, mcu.cpu.src_b_sel,
+              mcu.cpu.signals.alu_sel, src_a_sel, mcu.cpu.src_b_sel,
               "dmem_rdata=%x wr_stk1=%x ",
               mcu.cpu.dmem_rdata, mcu.cpu.wr_stk1,
               // 制御信号

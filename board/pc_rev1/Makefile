@@ -9,7 +9,7 @@ SRCS := src/port.cst src/timing.sdc src/main.sv \
 	src/gowin_rpll/gowin_rpll_20mhz.v \
 	src/gowin_rpll/gowin_rpll_10mhz.v \
 	$(addprefix ../../cpu/, \
-	sim.sv cpu.sv mem.sv alu.sv stack.sv signals.sv cdtimer.sv \
+	sim.sv cpu.sv mem.sv pmem_gowin.sv alu.sv stack.sv signals.sv cdtimer.sv \
 	signalizer.sv decoder.sv mcu.sv uart.sv uart_mux.sv adc.sv \
 	simple_timer.sv spi.sv kbc.sv i2c.sv pmem_init.sv)
 

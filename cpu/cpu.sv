@@ -232,7 +232,6 @@ logic sign, wr_stk1, pop, push,
   irq_masked, ien, set_ien, clear_ien, load_sr, rst_sr;
 logic src_a_stk0, src_a_fp, src_a_gp, src_a_ip, src_a_cstk, src_a_sr;
 logic [1:0] src_b_sel;
-logic [1:0] phase;
 logic [5:0] alu_sel;
 logic [15:0] stack0, stack1, stack_in, cstack0,
 //logic [15:0] stack1, stack_in,
@@ -322,7 +321,7 @@ signals signals(
   .dmem_wen(dmem_wen),
   .set_ien(set_ien),
   .clear_ien(clear_ien),
-  .phase(phase),
+  .phase(),
   .pmem_wenh(pmem_wenh),
   .pmem_wenl(pmem_wenl),
   .load_sr(load_sr),
