@@ -54,7 +54,8 @@ function test_prog() {
 
   case $target in
     sim)
-      got=$(../cpu/sim.exe +pmem=testcase.pmem.hex +dmem=testcase.dmem.hex +uart_in=$uart_in $uart_out_opt_sim 2>&1 1>/dev/null)
+      #got=$(../cpu/sim.exe +pmem=testcase.pmem.hex +dmem=testcase.dmem.hex +uart_in=$uart_in $uart_out_opt_sim 2>&1 1>/dev/null)
+      got=$(../cpu/verilator/obj_dir/Vsim_top +pmem=testcase.pmem.hex +dmem=testcase.dmem.hex +uart_in=$uart_in $uart_out_opt_sim 2>/dev/null)
       ;;
     uart)
       uart_opt="--timeout 3 --pmem testcase.pmem.hex --dmem testcase.dmem.hex"

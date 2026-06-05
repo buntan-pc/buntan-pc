@@ -5,3 +5,4 @@
 /board/*/*.gprj.user
 /sim.exe
 /pmem_init.sv
+/verilator/obj_dir
