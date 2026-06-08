@@ -317,19 +317,12 @@ int main(int argc, char** argv) {
       tick(ctx, top, io_regs, dmem_addr_d);
       uart_in.advance();
       if (top.uart_out_full) {
-        if (!uart_out.is_open() || top.uart_out_data == 4) {
-          if (opt.verbose) {
-            std::cerr << "halt: cycle=" << cycle
-              << " addr=0x" << std::hex << top.dmem_addr
-              << " value=0x" << top.uart_out_data
-              << std::dec << "\n";
-          }
-
+        if (uart_out.is_open() && top.uart_out_data != 4) {
+          uart_out.write(top.uart_out_data);
+        } else {
           std::printf("%02x\n", top.uart_out_data);
           top.final();
           return 0;
-        } else {
-          uart_out.write(top.uart_out_data);
         }
       }
 
