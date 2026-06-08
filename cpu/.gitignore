@@ -5,4 +5,6 @@
 /board/*/*.gprj.user
 /sim.exe
 /pmem_init.sv
+/insn_names_sv.inc
 /verilator/obj_dir
+/verilator/insn_names_cpp.inc

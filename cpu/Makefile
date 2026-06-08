@@ -1,7 +1,16 @@
-sim.exe: sim.sv cpu.sv mem.sv pmem_sim.sv alu.sv stack.sv signals.sv cdtimer.sv \
+SIM_SV = sim.sv cpu.sv mem.sv pmem_sim.sv alu.sv stack.sv signals.sv cdtimer.sv \
 	signalizer.sv decoder.sv mcu.sv uart.sv uart_mux.sv adc.sv \
 	simple_timer.sv spi.sv kbc.sv i2c.sv
-	iverilog -g2012 -o $@ $^
+
+INSN_DEF = insn_names.def
+INSN_GEN = gen_insn_names.py
+INSN_SV_INC = insn_names_sv.inc
+
+sim.exe: $(SIM_SV) $(INSN_SV_INC)
+	iverilog -g2012 -o $@ $(SIM_SV)
+
+$(INSN_SV_INC): $(INSN_DEF) $(INSN_GEN)
+	python3 $(INSN_GEN) sv $(INSN_DEF) > $@
 
 stack_tb.exe: stack_tb.sv stack.sv
 	iverilog -g2012 -o $@ $^
@@ -48,7 +57,7 @@ ipl.pmem.hex: ../dos/dos.c Makefile
 
 .PHONY: clean
 clean:
-	rm -f *.exe
+	rm -f *.exe $(INSN_SV_INC)
 
 .PHONY: test_modules
 test_modules: stack_tb.exe alu_tb.exe decoder_tb.exe signalizer_tb.exe \

@@ -8,11 +8,12 @@
 #include <iomanip>
 #include <iostream>
 #include <array>
-#include <vector>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <sstream>
 #include <utility>
+#include <vector>
 
 #ifndef SIM_CLOCK_HZ
 #define SIM_CLOCK_HZ 27'000'000
@@ -258,6 +259,70 @@ void eval_half_cycle(VerilatedContext& ctx, Vsim_top& top, uint8_t clk) {
   ctx.timeInc(1);
 }
 
+bool match_insn(uint32_t insn, uint32_t mask, uint32_t value) {
+  return (insn & mask) == value;
+}
+
+const char* insn_name(uint32_t insn) {
+#include "insn_names_cpp.inc"
+  return "UNDEF";
+}
+
+uint8_t phase_num(const Vsim_top___024root& root) {
+  return root.sim_top__DOT__mcu__DOT__cpu__DOT__signals__DOT__phase_decode ? 0
+    : root.sim_top__DOT__mcu__DOT__cpu__DOT__signals__DOT__phase_exec ? 1
+    : root.sim_top__DOT__mcu__DOT__cpu__DOT__signals__DOT__phase_rdmem ? 2
+    : 3;
+}
+
+std::string format_hex_or_z(bool valid, uint32_t value, int width) {
+  if (!valid) {
+    return std::string(width, 'z');
+  }
+
+  std::ostringstream oss;
+  oss << std::hex << std::nouppercase << std::setfill('0') << std::setw(width) << value;
+  return oss.str();
+}
+
+std::string monitor_line(const VerilatedContext& ctx, const Vsim_top& top) {
+  const auto& root = *top.rootp;
+  std::ostringstream oss;
+  oss << std::setw(7) << std::dec << ctx.time()
+      << ": rst=" << static_cast<int>(top.rst)
+      << " ip=" << std::hex << std::nouppercase << std::setfill('0') << std::setw(2)
+      << root.sim_top__DOT__mcu__DOT__cpu__DOT__ip
+      << "." << std::dec << static_cast<int>(phase_num(root))
+      << " " << std::hex << std::setw(5) << (root.sim_top__DOT__mcu__DOT__cpu__DOT__insn & 0x3ffffu)
+      << " " << std::left << std::setfill(' ') << std::setw(6)
+      << insn_name(root.sim_top__DOT__mcu__DOT__cpu__DOT__insn) << std::right
+      << " addr=" << std::hex << std::setfill('0') << std::setw(3) << top.dmem_addr
+      << " r=" << std::setw(4) << root.sim_top__DOT__mcu__DOT__cpu__DOT__dmem_rdata
+      << " w=" << format_hex_or_z(top.dmem_wen, top.dmem_wdata, 4)
+      << " byt=" << std::dec << static_cast<int>(top.dmem_byt)
+      << " alu_out=" << std::hex << std::setw(4) << root.sim_top__DOT__mcu__DOT__cpu__DOT__alu_out
+      << " stack{" << std::setw(2) << root.sim_top__DOT__mcu__DOT__cpu__DOT__stack0
+      << " " << std::setw(2) << root.sim_top__DOT__mcu__DOT__cpu__DOT__stack1
+      << "} in=" << std::setw(4) << root.sim_top__DOT__mcu__DOT__cpu__DOT__stack_in
+      << " fp=" << std::setw(4) << root.sim_top__DOT__mcu__DOT__cpu__DOT__fp
+      << " load_sr=" << std::dec << static_cast<int>(root.sim_top__DOT__mcu__DOT__cpu__DOT__load_sr)
+      << " rst_sr=" << static_cast<int>(root.sim_top__DOT__mcu__DOT__cpu__DOT__rst_sr)
+      << " fpmin=" << std::hex << std::setw(4) << root.sim_top__DOT__mcu__DOT__cpu__DOT__fpmin;
+  return oss.str();
+}
+
+void maybe_print_monitor(const VerilatedContext& ctx, const Vsim_top& top, bool verbose, std::string& prev_line) {
+  if (!verbose) {
+    return;
+  }
+
+  const std::string line = monitor_line(ctx, top);
+  if (line != prev_line) {
+    std::cout << line << "\n";
+    prev_line = line;
+  }
+}
+
 void tick(VerilatedContext& ctx, Vsim_top& top, std::array<uint16_t, IO_WORDS>& io_regs, uint16_t& dmem_addr_d) {
   const uint16_t dmem_addr = top.dmem_addr;
   const uint16_t io_addr_d = (dmem_addr_d >> 1) - IO_WORD_START;
@@ -314,12 +379,15 @@ int main(int argc, char** argv) {
     UartOutput uart_out(opt.uart_out_file);
 
     uint16_t dmem_addr_d = 0;
+    std::string prev_monitor_line;
     reset(ctx, top, io_regs, dmem_addr_d);
+    maybe_print_monitor(ctx, top, opt.verbose, prev_monitor_line);
 
     for (uint64_t cycle = 0; cycle < opt.max_cycles; ++cycle) {
       top.uart_rx = uart_in.rx_sig();
       tick(ctx, top, io_regs, dmem_addr_d);
       uart_in.advance();
+      maybe_print_monitor(ctx, top, opt.verbose, prev_monitor_line);
       if (top.uart_out_full) {
         if (uart_out.is_open() && top.uart_out_data != 4) {
           uart_out.write(top.uart_out_data);

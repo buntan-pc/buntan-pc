@@ -241,58 +241,8 @@ uart#(.CLOCK_HZ(CLOCK_HZ), .BAUD(UART_BAUD)) uart(
 
 always @(posedge clk) begin
   if (phase_num == 0) begin
-    casex (mcu.cpu.insn)
-      18'b11_xxxx_xxxx_xxxx_xxxx: insn_name <= "push";
-      18'b00_00xx_xxxx_xxxx_xxxx: insn_name <= "call";
-      18'b00_0100_xxxx_xxxx_xxxx: insn_name <= "jmp";
-      18'b00_0101_xxxx_xxxx_xxxx: insn_name <= "addfp";
-      18'b00_0110_xxxx_xxxx_xxxx: insn_name <= "jz";
-      18'b00_10xx_xxxx_xxxx_xxxx: insn_name <= "ld1";
-      18'b00_11xx_xxxx_xxxx_xxxx: insn_name <= "st1";
-      18'b01_00xx_xxxx_xxxx_xxx0: insn_name <= "ld";
-      18'b01_00xx_xxxx_xxxx_xxx1: insn_name <= "st";
-      18'b01_01xx_xxxx_xxxx_xxxx: insn_name <= "push";
-      18'b01_11xx_0000_0000_0000: insn_name <= "nop";
-      18'b01_11xx_0000_0100_1111: insn_name <= "pop";
-      18'b01_11xx_0000_0100_0000: insn_name <= "pop1";
-      18'b01_11xx_0000_0000_0001: insn_name <= "inc";
-      18'b01_11xx_0000_0000_0010: insn_name <= "inc2";
-      18'b01_11xx_0000_0000_0100: insn_name <= "not";
-      18'b01_11xx_0000_0000_0101: insn_name <= "sign";
-      18'b01_11xx_0000_0000_0110: insn_name <= "exts";
-      18'b01_11xx_0000_0101_0000: insn_name <= "and";
-      18'b01_11xx_0000_0101_0001: insn_name <= "or";
-      18'b01_11xx_0000_0101_0010: insn_name <= "xor";
-      18'b01_11xx_0000_0101_0100: insn_name <= "shr";
-      18'b01_11xx_0000_0101_0101: insn_name <= "sar";
-      18'b01_11xx_0000_0101_0110: insn_name <= "shl";
-      18'b01_11xx_0000_0110_0000: insn_name <= "add";
-      18'b01_11xx_0000_0110_0001: insn_name <= "sub";
-      18'b01_11xx_0000_0110_0010: insn_name <= "mul";
-      18'b01_11xx_0000_0110_1000: insn_name <= "lt";
-      18'b01_11xx_0000_0110_1001: insn_name <= "eq";
-      18'b01_11xx_0000_0110_1010: insn_name <= "neq";
-      18'b01_11xx_0000_1000_0000: insn_name <= "dup";
-      18'b01_11xx_0000_1000_1111: insn_name <= "dup1";
-      18'b01_11xx_1000_0000_0000: insn_name <= "ret";
-      18'b01_11xx_1000_0000_0001: insn_name <= "call";
-      18'b01_11xx_1000_0000_0010: insn_name <= "cpop";
-      18'b01_11xx_1000_0000_0011: insn_name <= "cpush";
-      18'b01_11xx_1000_0000_0100: insn_name <= "rdsr";
-      18'b01_11xx_1000_0000_0101: insn_name <= "wrsr";
-      18'b01_11xx_1000_0000_0110: insn_name <= "rstsr";
-      18'b01_11xx_1000_0000_1000: insn_name <= "ldd";
-      18'b01_11xx_1000_0000_1100: insn_name <= "sta";
-      18'b01_11xx_1000_0000_1110: insn_name <= "std";
-      18'b01_11xx_1000_0000_1001: insn_name <= "ldd1";
-      18'b01_11xx_1000_0000_1101: insn_name <= "sta1";
-      18'b01_11xx_1000_0000_1111: insn_name <= "std1";
-      18'b01_11xx_1000_0001_0000: insn_name <= "int";
-      18'b01_11xx_1000_0001_0001: insn_name <= "isr";
-      18'b01_11xx_1000_0010_0100: insn_name <= "spha";
-      18'b01_11xx_1000_0010_0101: insn_name <= "spla";
-      default:                    insn_name <= "UNDEF";
-    endcase
+    insn_name <= "UNDEF";
+`include "insn_names_sv.inc"
   end
 end
 
