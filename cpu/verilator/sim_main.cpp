@@ -29,7 +29,7 @@ constexpr uint32_t IO_WORD_END = IO_GLOBAL_END >> 1;
 constexpr uint32_t IO_WORDS = IO_WORD_END - IO_WORD_START;
 constexpr uint32_t HALT_ADDR = 0x0006;
 constexpr uint32_t CLOCK_HZ = SIM_CLOCK_HZ;
-constexpr uint32_t UART_BAUD = 115'200;
+constexpr uint32_t UART_BAUD = CLOCK_HZ/10; //115'200;
 constexpr uint32_t UART_BIT_PERIOD = CLOCK_HZ / UART_BAUD;
 
 struct Options {

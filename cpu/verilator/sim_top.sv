@@ -31,15 +31,18 @@ module sim_top#(
   output uart_out_full
 );
 
+localparam UART_BAUD = CLOCK_HZ / 10;
+
 mcu #(
-  .CLOCK_HZ(CLOCK_HZ)
+  .CLOCK_HZ(CLOCK_HZ),
+  .UART_BAUD(UART_BAUD)
 ) mcu(
   .*
 );
 
 uart #(
   .CLOCK_HZ(CLOCK_HZ),
-  .BAUD(115200)
+  .BAUD(UART_BAUD)
 ) uart_out_decoder(
   .rst(rst),
   .clk(clk),
