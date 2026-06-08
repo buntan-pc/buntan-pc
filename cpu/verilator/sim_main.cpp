@@ -324,19 +324,23 @@ void maybe_print_monitor(const VerilatedContext& ctx, const Vsim_top& top, bool 
 }
 
 void tick(VerilatedContext& ctx, Vsim_top& top, std::array<uint16_t, IO_WORDS>& io_regs, uint16_t& dmem_addr_d) {
+  // クロック変化前の各種の値を記録
   const uint16_t dmem_addr = top.dmem_addr;
-  const uint16_t io_addr_d = (dmem_addr_d >> 1) - IO_WORD_START;
+  const uint16_t dmem_wdata = top.dmem_wdata;
+  const uint8_t dmem_wen = top.dmem_wen;
 
+  const uint16_t io_addr_d = (dmem_addr_d >> 1) - IO_WORD_START;
   if (io_addr_d < IO_WORDS) {
     top.dmem_rdata_io = io_regs[io_addr_d];
   } else {
     top.dmem_rdata_io = 0;
   }
+
   eval_half_cycle(ctx, top, 0);
   eval_half_cycle(ctx, top, 1);
 
-  if (top.dmem_wen && dmem_addr >= IO_GLOBAL_START && dmem_addr < IO_GLOBAL_END) {
-    io_regs[(dmem_addr >> 1) - IO_WORD_START] = top.dmem_wdata;
+  if (dmem_wen && dmem_addr >= IO_GLOBAL_START && dmem_addr < IO_GLOBAL_END) {
+    io_regs[(dmem_addr >> 1) - IO_WORD_START] = dmem_wdata;
   }
 
   dmem_addr_d = dmem_addr;
