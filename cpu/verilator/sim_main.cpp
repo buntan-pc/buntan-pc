@@ -14,6 +14,10 @@
 #include <string_view>
 #include <utility>
 
+#ifndef SIM_CLOCK_HZ
+#define SIM_CLOCK_HZ 27'000'000
+#endif
+
 constexpr uint32_t ADDR_WIDTH = 14;
 constexpr uint32_t PMEM_WORDS = 1u << ADDR_WIDTH;
 constexpr uint32_t DMEM_WORDS = 1u << (ADDR_WIDTH - 1);
@@ -24,7 +28,7 @@ constexpr uint32_t IO_WORD_START = IO_GLOBAL_START >> 1;
 constexpr uint32_t IO_WORD_END = IO_GLOBAL_END >> 1;
 constexpr uint32_t IO_WORDS = IO_WORD_END - IO_WORD_START;
 constexpr uint32_t HALT_ADDR = 0x0006;
-constexpr uint32_t CLOCK_HZ = 27'000'000;
+constexpr uint32_t CLOCK_HZ = SIM_CLOCK_HZ;
 constexpr uint32_t UART_BAUD = 115'200;
 constexpr uint32_t UART_BIT_PERIOD = CLOCK_HZ / UART_BAUD;
 
@@ -33,7 +37,7 @@ struct Options {
   std::string dmem_file;
   std::string uart_in_file;
   std::string uart_out_file;
-  uint64_t max_cycles = 10'000'000;
+  uint64_t max_cycles = 1 * CLOCK_HZ; // 1 秒間でタイムアウト
   bool verbose = false;
 };
 
@@ -331,6 +335,7 @@ int main(int argc, char** argv) {
     }
 
     std::cerr << "timeout: exceeded " << opt.max_cycles << " cycles\n";
+    std::cout << "timeout\n";
     top.final();
     return 2;
   } catch (const std::exception& e) {

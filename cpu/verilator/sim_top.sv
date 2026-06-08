@@ -1,6 +1,8 @@
 `include "common.sv"
 
-module sim_top(
+module sim_top#(
+  parameter CLOCK_HZ = 27_000_000
+) (
   input rst, clk, uart_rx, uart2_rx, uart3_rx,
   output uart_tx, uart2_tx, uart3_tx,
   output [`ADDR_WIDTH-1:0] dmem_addr,
@@ -29,12 +31,14 @@ module sim_top(
   output uart_out_full
 );
 
-mcu mcu(
+mcu #(
+  .CLOCK_HZ(CLOCK_HZ)
+) mcu(
   .*
 );
 
 uart #(
-  .CLOCK_HZ(27_000_000),
+  .CLOCK_HZ(CLOCK_HZ),
   .BAUD(115200)
 ) uart_out_decoder(
   .rst(rst),
