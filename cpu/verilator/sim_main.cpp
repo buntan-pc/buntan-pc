@@ -31,7 +31,6 @@ constexpr uint32_t IO_WORDS = IO_WORD_END - IO_WORD_START;
 constexpr uint32_t HALT_ADDR = 0x0006;
 constexpr uint32_t CLOCK_HZ = SIM_CLOCK_HZ;
 constexpr uint32_t UART_BAUD = CLOCK_HZ/10; //115'200;
-constexpr uint32_t UART_BIT_PERIOD = CLOCK_HZ / UART_BAUD;
 
 struct Options {
   std::string pmem_file;
@@ -159,47 +158,20 @@ public:
   explicit UartInput(std::vector<uint8_t> data)
     : bytes_(std::move(data)) {}
 
-  uint8_t rx_sig() const {
-    if (!started_ || byte_index_ >= bytes_.size()) {
-      return 1; // 無信号時は 1
-    }
-
-    if (bit_phase_ == 0) {
-      return 0; // スタートビット
-    }
-    if (bit_phase_ == 9) {
-      return 1; // ストップビット
-    }
-    return (bytes_[byte_index_] >> (bit_phase_ - 1)) & 1u;
-  }
-
-  void advance() {
-    if (byte_index_ >= bytes_.size()) {
+  void drive(Vsim_top& top) {
+    if (byte_index_ < bytes_.size() && top.uart_in_ready) {
+      top.uart_in_data = bytes_[byte_index_++];
+      top.uart_in_wr = 1;
       return;
     }
 
-    ++bit_cycle_;
-    if (bit_cycle_ < UART_BIT_PERIOD) {
-      return;
-    }
-
-    bit_cycle_ = 0;
-    if (!started_) {
-      started_ = true;
-    } else if (bit_phase_ < 9) {
-      ++bit_phase_;
-    } else {
-      bit_phase_ = 0;
-      ++byte_index_;
-    }
+    top.uart_in_data = 0xff;
+    top.uart_in_wr = 0;
   }
 
 private:
   std::vector<uint8_t> bytes_;
   size_t byte_index_ = 0;
-  uint8_t bit_phase_ = 0;
-  uint32_t bit_cycle_ = 0;
-  bool started_ = false;
 };
 
 class UartOutput {
@@ -238,6 +210,8 @@ void set_default_inputs(Vsim_top& top) {
   top.uart_rx = 1;
   top.uart2_rx = 1;
   top.uart3_rx = 1;
+  top.uart_in_data = 0xff;
+  top.uart_in_wr = 0;
   top.dmem_rdata_io = 0;
 
   top.clk125 = 0;
@@ -388,9 +362,8 @@ int main(int argc, char** argv) {
     maybe_print_monitor(ctx, top, opt.verbose, prev_monitor_line);
 
     for (uint64_t cycle = 0; cycle < opt.max_cycles; ++cycle) {
-      top.uart_rx = uart_in.rx_sig();
+      uart_in.drive(top);
       tick(ctx, top, io_regs, dmem_addr_d);
-      uart_in.advance();
       maybe_print_monitor(ctx, top, opt.verbose, prev_monitor_line);
       if (top.uart_out_full) {
         if (uart_out.is_open() && top.uart_out_data != 4) {
@@ -403,7 +376,6 @@ int main(int argc, char** argv) {
       }
 
       set_default_inputs(top);
-      top.uart_rx = uart_in.rx_sig();
     }
 
     std::cerr << "timeout: exceeded " << opt.max_cycles << " cycles\n";

@@ -1,5 +1,5 @@
 TARGET = ./obj_dir/Vsim_top
-CLOCK_HZ = 1000000
+CLOCK_HZ = 100000
 INSN_DEF = ../insn_names.def
 INSN_GEN = ../gen_insn_names.py
 INSN_CPP_INC = insn_names_cpp.inc

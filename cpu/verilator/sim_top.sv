@@ -4,7 +4,10 @@ module sim_top#(
   parameter CLOCK_HZ = 27_000_000
 ) (
   input rst, clk, uart_rx, uart2_rx, uart3_rx,
+  input  [7:0] uart_in_data,
+  input  uart_in_wr,
   output uart_tx, uart2_tx, uart3_tx,
+  output uart_in_ready,
   output [`ADDR_WIDTH-1:0] dmem_addr,
   output dmem_wen, dmem_byt,
   input  [15:0] dmem_rdata_io,
@@ -32,12 +35,30 @@ module sim_top#(
 );
 
 localparam UART_BAUD = CLOCK_HZ / 10;
+logic mcu_uart_rx;
 
 mcu #(
   .CLOCK_HZ(CLOCK_HZ),
   .UART_BAUD(UART_BAUD)
 ) mcu(
-  .*
+  .*,
+  .uart_rx(mcu_uart_rx)
+);
+
+uart #(
+  .CLOCK_HZ(CLOCK_HZ),
+  .BAUD(UART_BAUD)
+) uart_in_encoder(
+  .rst(rst),
+  .clk(clk),
+  .rx(1'b1),
+  .tx(mcu_uart_rx),
+  .rx_data(),
+  .tx_data(uart_in_data),
+  .rd(1'b0),
+  .rx_full(),
+  .wr(uart_in_wr),
+  .tx_ready(uart_in_ready)
 );
 
 uart #(
