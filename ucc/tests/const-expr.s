@@ -6,7 +6,7 @@ start:
 	st 6
 fin:
 	jmp fin
-main:
+buntan_main:
 	.push 2
 	.push 3
 	.push 4

@@ -8,7 +8,7 @@ start:
 	st 6
 fin:
 	jmp fin
-main:
+buntan_main:
 	add fp,-2
 	st fp+0
 	ld gp+gv

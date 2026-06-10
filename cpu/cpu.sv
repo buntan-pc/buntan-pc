@@ -422,6 +422,4 @@ function [15:0] get_sysreg(input [15:0] sr_addr, input [15:0] fpmin);
   endcase
 endfunction
 
-assign reg_insn = insn;
-
 endmodule

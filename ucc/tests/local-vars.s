@@ -6,7 +6,7 @@ start:
 	st 6
 fin:
 	jmp fin
-main:
+buntan_main:
 	add fp,-6
 	st fp+0
 	push 42

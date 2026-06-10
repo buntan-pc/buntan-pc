@@ -8,7 +8,7 @@ fin:
 	jmp fin
 _ISRfoo:
 	iret
-main:
+buntan_main:
 	push _ISRfoo
 	isr
 

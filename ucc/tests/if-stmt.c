@@ -1,4 +1,4 @@
-int main(int argc) {
+int buntan_main(int argc) {
   if (argc < 3) {
     return 42;
   }
