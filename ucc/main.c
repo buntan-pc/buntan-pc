@@ -907,7 +907,12 @@ unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass val
         }
       } else {
         add_fp->kind = kAsmLineDeleted;
-        // frame_size == 0 のとき、return 時の add fp,0 は生成されないので、削除は不要
+        for (int line = line_add_fp + 1; line < line_body_last; ++line) {
+          if (IsAddFp(ctx->asm_lines + line) &&
+              ctx->asm_lines[line].insn.operands[1].val_int == 0) {
+            ctx->asm_lines[line].kind = kAsmLineDeleted;
+          }
+        }
       }
     }
     break;
