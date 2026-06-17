@@ -233,8 +233,8 @@ struct Instruction *GetLastInsn(struct GenContext *ctx) {
   return &last_line->insn;
 }
 
-// 命令が 'ld fp+0' であれば真を返す
-int IsLdFp0(struct AsmLine *al) {
+// 命令が 'ld fp+offset' であれば真を返す
+int IsLdFpOffset(struct AsmLine *al, int offset) {
   if (al->kind != kAsmLineInsn || strcmp("ld", al->insn.opcode) != 0) {
     return 0;
   }
@@ -242,7 +242,7 @@ int IsLdFp0(struct AsmLine *al) {
   if (operands[0].kind == kOprBaseOff && operands[1].kind == kOprNone &&
       operands[0].val_base_off.base != NULL &&
       strcmp("fp", operands[0].val_base_off.base) == 0 &&
-      operands[0].val_base_off.offset == 0) {
+      operands[0].val_base_off.offset == offset) {
     return 1;
   }
   return 0;
@@ -919,11 +919,17 @@ unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass val
       int line_body_last = ctx->num_line;
 
       // 引数が 1 つしかなく、その引数が 1 回しか評価されない場合の最適化
-      if (num_param == 1 && IsLdFp0(ctx->asm_lines + line_add_fp + 2)) {
+      if (num_param == 1 && IsLdFpOffset(ctx->asm_lines + line_add_fp + 2, 0)) {
         // add fp,-2; st fp+0; ld fp+0 という流れである
-        int num_ld = 0; // 2 行目以降で ld fp+0 が登場する回数
-        for (int line = line_add_fp + 3; line < line_body_last; ++line) {
-          if (IsLdFp0(ctx->asm_lines + line)) {
+        // 可変長引数呼び出しで fp がずれる場合、引数アクセスのオフセットも変わるため
+        // add fp,N 命令を追跡して累積変化量を加味して探す
+        int num_ld = 0; // 2 行目以降で ld fp+<fp_adj相当> が登場する回数
+        int fp_adj = 0; // fp の累積変化量
+        for (int line = line_add_fp + 1; line < line_body_last; ++line) {
+          struct AsmLine *al = &ctx->asm_lines[line];
+          if (IsAddFp(al)) {
+            fp_adj += al->insn.operands[1].val_int;
+          } else if (line > line_add_fp + 2 && IsLdFpOffset(al, -fp_adj)) {
             ++num_ld;
           }
         }

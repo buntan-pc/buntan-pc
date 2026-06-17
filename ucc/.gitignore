@@ -3,3 +3,4 @@
 /dump.vcd
 /uart_in.hex
 /uart_out.hex
+/tests/*.c.got.s
