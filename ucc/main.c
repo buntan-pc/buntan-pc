@@ -55,6 +55,7 @@ struct GenContext {
   struct AsmLine asm_lines[MAX_LINE];
   int print_ast;
   int is_isr; // 現在コンパイルしている関数は ISR である
+  int fp_delta; // 可変長引数付きの関数を呼ぶときの FP 変化量
 };
 
 int GenLabel(struct GenContext *ctx) {
@@ -101,11 +102,10 @@ struct Instruction *InsnRegInt(struct GenContext *ctx, const char *opcode, const
   return i;
 }
 
-struct Instruction *InsnBaseOff(struct GenContext *ctx, const char *opcode, const char *base, int off) {
+struct Instruction *InsnBaseOff(struct GenContext *ctx, const char *opcode, struct BaseOff base_off) {
   struct Instruction *i = Insn(ctx, opcode);
   i->operands[0].kind = kOprBaseOff;
-  i->operands[0].val_base_off.base = base;
-  i->operands[0].val_base_off.offset = off;
+  i->operands[0].val_base_off = base_off;
   return i;
 }
 
@@ -297,13 +297,29 @@ void EmitOptimalLdSt(struct GenContext *ctx, int store, int byt, int pop) {
   }
 }
 
-unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass value_class, int req_onstack);
-
-const char *GetBaseReg(struct Symbol *sym) {
-  return sym->kind == kSymLVar ? "fp"
-       : (sym->attr & SYM_ATTR_FIXED_ADDR) ? NULL
-       : "gp";
+// 'add fp,N' の N を設定する。N = 0 なら行を削除する。
+void SetAddFpValueOrDelete(struct AsmLine *al, int v) {
+  if (v != 0) {
+    al->insn.operands[1].val_int = v;
+  } else {
+    al->kind = kAsmLineDeleted;
+  }
 }
+
+struct BaseOff GetBaseOffset(struct GenContext *ctx, struct Symbol *sym) {
+  struct BaseOff base_off = { NULL, sym->offset };
+  if (sym->kind == kSymLVar) {
+    base_off.base = "fp";
+    base_off.offset += ctx->fp_delta;
+  } else if (sym->attr & SYM_ATTR_FIXED_ADDR) {
+    base_off.base = NULL;
+  } else {
+    base_off.base = "gp";
+  }
+  return base_off;
+}
+
+unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass value_class, int req_onstack);
 
 void GenVarInit(struct GenContext *ctx, struct Symbol *var) {
   struct Node *init = var->def->rhs;
@@ -311,7 +327,8 @@ void GenVarInit(struct GenContext *ctx, struct Symbol *var) {
     return;
   }
 
-  const char *base = GetBaseReg(var);
+  struct BaseOff base_off = GetBaseOffset(ctx, var);
+
   const char *insn_st = "st";
   if ((var->type->kind == kTypeArray && SizeofType(var->type->base) == 1) ||
       (SizeofType(var->type) == 1)) {
@@ -320,7 +337,7 @@ void GenVarInit(struct GenContext *ctx, struct Symbol *var) {
 
   if (init->kind != kNodeIList) {
     Generate(ctx, init, VC_CONTENT, 1);
-    InsnBaseOff(ctx, insn_st, base, var->offset);
+    InsnBaseOff(ctx, insn_st, base_off);
   } else {
     assert(var->type->kind == kTypeArray);
     struct Node *init_val = init->rhs;
@@ -328,32 +345,34 @@ void GenVarInit(struct GenContext *ctx, struct Symbol *var) {
     int i = 0;
     for (; init_val; ++i) {
       Generate(ctx, init_val, VC_CONTENT, 1);
-      InsnBaseOff(ctx, insn_st, base, var->offset + inc * i);
+      InsnBaseOff(ctx, insn_st, base_off);
+      base_off.offset += inc;
       init_val = init_val->next;
     }
     for (; i < var->type->len; ++i) {
       InsnInt(ctx, "push", 0);
-      InsnBaseOff(ctx, insn_st, base, var->offset + inc * i);
+      InsnBaseOff(ctx, insn_st, base_off);
+      base_off.offset += inc;
     }
   }
 }
 
 void GenNodeId(struct GenContext *ctx, struct Symbol *sym, enum ValueClass value_class) {
   assert(sym->type);
-  const char *base = GetBaseReg(sym);
+  struct BaseOff base_off = GetBaseOffset(ctx, sym);
 
   if (sym->type->kind == kTypeArray) {
-    InsnBaseOff(ctx, "push", base, sym->offset);
+    InsnBaseOff(ctx, "push", base_off);
   } else {
     if (value_class == VC_ADDRESS) {
-      InsnBaseOff(ctx, "push", base, sym->offset);
+      InsnBaseOff(ctx, "push", base_off);
     } else {
       // value_class == VC_NO_NEED だとしても ld 命令は発効する。
       // 読み込みの副作用のあるメモリマップトレジスタの可能性がある。
       if (SizeofType(sym->type) == 1) {
-        InsnBaseOff(ctx, "ld1", base, sym->offset);
+        InsnBaseOff(ctx, "ld1", base_off);
       } else {
-        InsnBaseOff(ctx, "ld", base, sym->offset);
+        InsnBaseOff(ctx, "ld", base_off);
       }
     }
   }
@@ -398,9 +417,10 @@ unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass val
     size_t element_size = SizeofType(node->lhs->type->base);
     int index = node->rhs->token->value.as_int;
     if (node->lhs->type->kind == kTypeArray) {
-      uint16_t offset = sym->offset + element_size * index;
-      if ((offset & 0xf000) == 0) {
-        InsnBaseOff(ctx, "push", GetBaseReg(sym), offset);
+      struct BaseOff base_off = GetBaseOffset(ctx, sym);
+      base_off.offset += element_size * index;
+      if ((base_off.offset & 0xf000) == 0) {
+        InsnBaseOff(ctx, "push", base_off);
         return gen_result;
       }
       // オフセットが 12 ビットに収まらない場合は最適化を諦める
@@ -614,15 +634,29 @@ unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass val
       int num_fixed_params = 0; // 固定引数の数
       int has_va_param = 0; // 可変長引数があるなら 1
       int normal_func = 0;
-      if (func_sym && func_sym->kind == kSymFunc) {
-        normal_func = 1;
-        struct Node *params = func_sym->def->cond;
-        for (struct Node *param = params; param; param = param->next) {
-          if (param->token->kind == kTokenEllipsis) {
-            has_va_param = 1;
-            break;
+      if (func_sym) {
+        if (func_sym->kind == kSymFunc) {
+          normal_func = 1;
+          struct Node *params = func_sym->def->cond;
+          for (struct Node *param = params; param; param = param->next) {
+            if (param->token->kind == kTokenEllipsis) {
+              has_va_param = 1;
+              break;
+            }
+            ++num_fixed_params;
           }
-          ++num_fixed_params;
+        } else if ((func_sym->kind == kSymLVar || func_sym->kind == kSymGVar) &&
+                   func_sym->type->kind == kTypePtr &&
+                   func_sym->type->base->kind == kTypeFunc) {
+          normal_func = 1;
+          struct Type *param = func_sym->type->base->next; // パラメタ
+          for (; param; param = param->next) {
+            if (param->kind == kTypeEllipsis) {
+              has_va_param = 1;
+              break;
+            }
+            ++num_fixed_params;
+          }
         }
       }
 
@@ -648,12 +682,14 @@ unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass val
       }
 
       if (normal_func && num_args > num_fixed_params) {
-        InsnRegInt(ctx, "add", "fp", -2*(num_args - num_fixed_params));
+        ctx->fp_delta = 2*(num_args - num_fixed_params);
+        InsnRegInt(ctx, "add", "fp", -ctx->fp_delta);
       }
       for (int i = num_args - 1; i >= 0; i--) {
         Generate(ctx, args[i], VC_CONTENT, 1);
         if (normal_func && i >= num_fixed_params) {
-          InsnBaseOff(ctx, "st", "fp", 2*(i - num_fixed_params));
+          struct BaseOff base_off = {"fp", 2*(i - num_fixed_params)};
+          InsnBaseOff(ctx, "st", base_off);
         }
       }
       if (node->lhs->kind == kNodeId) {
@@ -690,7 +726,8 @@ unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass val
         Insn(ctx, "pop");
       }
       if (normal_func && num_args > num_fixed_params) {
-        InsnRegInt(ctx, "add", "fp", 2*(num_args - num_fixed_params));
+        InsnRegInt(ctx, "add", "fp", ctx->fp_delta);
+        ctx->fp_delta = 0;
       }
     }
     break;
@@ -873,7 +910,8 @@ unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass val
           break;
         }
         struct Symbol *sym = FindSymbol(ctx->scope, param->lhs->token);
-        InsnBaseOff(ctx, "st", "fp", sym->offset);
+        struct BaseOff base_off = {"fp", sym->offset};
+        InsnBaseOff(ctx, "st", base_off);
         ++num_param;
       }
 
@@ -898,20 +936,12 @@ unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass val
       }
 
       struct AsmLine *add_fp = &ctx->asm_lines[line_add_fp];
-      if (ctx->frame_size > 0) {
-        add_fp->insn.operands[1].val_int = -ctx->frame_size;
-        for (int line = line_add_fp + 1; line < line_body_last; ++line) {
-          if (IsAddFp(ctx->asm_lines + line)) {
-            ctx->asm_lines[line].insn.operands[1].val_int = ctx->frame_size;
-          }
-        }
-      } else {
-        add_fp->kind = kAsmLineDeleted;
-        for (int line = line_add_fp + 1; line < line_body_last; ++line) {
-          if (IsAddFp(ctx->asm_lines + line) &&
-              ctx->asm_lines[line].insn.operands[1].val_int == 0) {
-            ctx->asm_lines[line].kind = kAsmLineDeleted;
-          }
+      SetAddFpValueOrDelete(add_fp, -ctx->frame_size);
+
+      for (int line = line_add_fp + 1; line < line_body_last; ++line) {
+        if (IsAddFp(ctx->asm_lines + line) &&
+            ctx->asm_lines[line].insn.operands[1].val_int == 0) {
+          SetAddFpValueOrDelete(ctx->asm_lines + line, ctx->frame_size);
         }
       }
     }
@@ -1291,7 +1321,7 @@ int main(int argc, char **argv) {
 
   struct GenContext gen_ctx = {
     parse_ctx.scope,
-    0, 0, 0, {}, {-1, -1}, 0, {}, print_ast, 0
+    0, 0, 0, {}, {-1, -1}, 0, {}, print_ast, 0, 0
   };
   AddLabelStr(&gen_ctx, "start");
 
@@ -1330,7 +1360,8 @@ int main(int argc, char **argv) {
     Insn(&gen_ctx, "ret");
   } else {
     InsnLabelStr(&gen_ctx, "call", "buntan_main");
-    InsnBaseOff(&gen_ctx, "st", NULL, 0x06); // UART へ出力
+    struct BaseOff base_off = {NULL, 0x06};
+    InsnBaseOff(&gen_ctx, "st", base_off); // UART へ出力
     AddLabelStr(&gen_ctx, "fin");
     InsnLabelStr(&gen_ctx, "jmp", "fin");
   }

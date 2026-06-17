@@ -47,16 +47,18 @@ enum OperandKind {
   kOprBaseLabel,
 };
 
+struct BaseOff {
+  const char *base;
+  int offset;
+};
+
 struct Operand {
   enum OperandKind kind;
   union {
     int val_int;
     struct Label val_label;
     const char *val_reg;
-    struct {
-      const char *base;
-      int offset;
-    } val_base_off;
+    struct BaseOff val_base_off;
     struct {
       const char *base;
       struct Label label;

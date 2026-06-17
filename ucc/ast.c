@@ -87,15 +87,16 @@ struct Node *Program(struct ParseContext *ctx) {
 }
 
 struct Node *ExternalDeclaration(struct ParseContext *ctx) {
-  struct Node *tspec = TypeSpec();
+  struct Node *tspec = TypeSpecNode();
 
   if (!tspec) {
     return NULL;
   }
 
   struct Token *id;
-  if (tspec->type->kind == kTypePtr && tspec->type->id) {
-    id = tspec->type->id;
+  if (tspec->type->kind == kTypePtr &&
+      tspec->type->base->kind == kTypeFunc) {
+    id = tspec->type->base->id;
   } else {
     id = Expect(kTokenId);
   }
@@ -636,7 +637,7 @@ struct Node *Cast(struct ParseContext *ctx) {
     return Unary(ctx);
   }
 
-  struct Node *tspec = TypeSpec();
+  struct Node *tspec = TypeSpecNode();
   if (!tspec) {
     cur_token = origin;
     return Unary(ctx);
@@ -700,7 +701,7 @@ struct Node *Postfix(struct ParseContext *ctx) {
       Expect('(');
       struct Token *ap_tk = Expect(kTokenId);
       Expect(',');
-      TypeSpec();
+      TypeSpecNode();
       Expect(')');
 
       struct Symbol *ap_sym = FindSymbol(ctx->scope, ap_tk);
@@ -839,9 +840,14 @@ struct Node *Primary(struct ParseContext *ctx) {
   return node;
 }
 
-struct Node *TypeSpec() {
+struct Type *TypeSpec() {
   struct Type *type = NULL;
   struct Token *token;
+
+  if ((token = Consume(kTokenEllipsis))) {
+    // 可変長引数
+    return NewType(kTypeEllipsis);
+  }
 
   // (un)signed が明示的に指定されたら 1
   int attr_signed = 0, attr_unsigned = 0;
@@ -890,13 +896,32 @@ struct Node *TypeSpec() {
     struct Token *id = Consume(kTokenId);
     Expect(')');
     Expect('(');
-    Expect(')');
 
-    type = NewFuncType(type, id);
+    type = NewType(kTypePtr);
+    type->base = NewFuncType(type, id);
+
+    struct Type *t = type->base;
+    t->next = TypeSpec();
+    while (Consume(',')) {
+      t = t->next;
+      t->next = TypeSpec();
+      Consume(kTokenId); // パラメタ名は無視
+    }
+
+    Expect(')');
   }
 
+  return type;
+}
+
+struct Node *TypeSpecNode() {
+  struct Token *token = cur_token;
+  struct Type *typ = TypeSpec();
+  if (!typ) {
+    return NULL;
+  }
   struct Node *tspec = NewNode(kNodeTypeSpec, token);
-  tspec->type = type;
+  tspec->type = typ;
   return tspec;
 }
 
@@ -907,7 +932,7 @@ struct Node *OneParameter() {
     return NewNode(kNodePList, op);
   }
 
-  struct Node *tspec = TypeSpec();
+  struct Node *tspec = TypeSpecNode();
   if (!tspec) {
     return NULL;
   }
@@ -915,8 +940,9 @@ struct Node *OneParameter() {
   struct Node *param = NewNode(kNodePList, tspec->token);
   param->type = tspec->type;
   struct Token *id;
-  if (tspec->type->kind == kTypePtr && tspec->type->id) {
-    id = tspec->type->id;
+  if (tspec->type->kind == kTypePtr &&
+      tspec->type->base->kind == kTypeFunc) {
+    id = tspec->type->base->id;
   } else {
     id = Expect(kTokenId);
   }

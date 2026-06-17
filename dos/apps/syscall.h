@@ -1,4 +1,4 @@
-int (*syscall)();
+int (*syscall)(int, int*);
 
 void init_syscall(int *info) {
   syscall = info[1];

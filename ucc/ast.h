@@ -126,7 +126,7 @@ struct Node *Unary(struct ParseContext *ctx);
 struct Node *Postfix(struct ParseContext *ctx);
 struct Node *Primary(struct ParseContext *ctx);
 
-struct Node *TypeSpec();
+struct Node *TypeSpecNode();
 struct Node *ParameterList();
 
 void PrintNode(FILE *out, struct Node *n, int indent, const char *key);

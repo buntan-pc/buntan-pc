@@ -18,6 +18,9 @@ all: $(EXES) Makefile
 %.s: %.c Makefile
 	$(CC) --ret-from-start --offset-global-addr 4 -o $@ $<
 
+%.lst: %.s Makefile
+	$(ASM) --list $@ -o $*.exe $<
+
 # for emulation on Linux
 %.elf: %.c buntan_emu.c Makefile
 	$(CC_LINUX) -g -mx32 -c -Dmain=buntan_main -Wno-int-conversion -Wno-incompatible-pointer-types -o $*.o $<

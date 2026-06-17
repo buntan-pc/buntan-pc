@@ -7,12 +7,16 @@
 #include <stddef.h>
 #include <stdio.h>
 
+#include "token.h"
+
 enum TypeKind {
   kTypeChar,
   kTypeInt,
   kTypePtr,
   kTypeArray,
   kTypeVoid,
+  kTypeEllipsis,
+  kTypeFunc,
 };
 
 // 整数型（char, int）はデフォルトで unsigned とみなす
@@ -24,9 +28,10 @@ enum TypeKind {
 struct Type {
   enum TypeKind kind;
   struct Type *base;
+  struct Type *next; // func params
   union {
     int len; // for kTypeArray
-    struct Token *id; // for function pointer
+    struct Token *id; // for kTypeFunc
   };
   unsigned int attr;
 };
