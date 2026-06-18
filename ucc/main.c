@@ -814,9 +814,8 @@ unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass val
       exit(1);
     }
     {
-      char *opr = malloc(16);
-      sprintf(opr, "fp+%d", ctx->frame_size);
-      InsnReg(ctx, "push", opr);
+      struct BaseOff base_off = {"fp", BACKPATCH_FRAME_SIZE};
+      InsnBaseOff(ctx, "push", base_off);
     }
     break;
 
@@ -945,9 +944,15 @@ unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass val
       SetAddFpValueOrDelete(add_fp, -ctx->frame_size);
 
       for (int line = line_add_fp + 1; line < line_body_last; ++line) {
-        if (IsAddFp(ctx->asm_lines + line) &&
-            ctx->asm_lines[line].insn.operands[1].val_int == 0) {
-          SetAddFpValueOrDelete(ctx->asm_lines + line, ctx->frame_size);
+        struct AsmLine *al = &ctx->asm_lines[line];
+        if (IsAddFp(al) && al->insn.operands[1].val_int == 0) {
+          SetAddFpValueOrDelete(al, ctx->frame_size);
+        }
+        // BASEOFF_FRAME_SIZE マーカーを最終 frame_size で置き換える
+        if (al->kind == kAsmLineInsn &&
+            al->insn.operands[0].kind == kOprBaseOff &&
+            al->insn.operands[0].val_base_off.offset == BASEOFF_FRAME_SIZE) {
+          al->insn.operands[0].val_base_off.offset = ctx->frame_size;
         }
       }
     }

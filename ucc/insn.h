@@ -49,8 +49,10 @@ enum OperandKind {
 
 struct BaseOff {
   const char *base;
-  int offset;
+  int offset; // 下位 12 ビットが実際のオフセット
 };
+
+#define BASEOFF_FRAME_SIZE 0x1000 // 関数のスタックフレームサイズ
 
 struct Operand {
   enum OperandKind kind;

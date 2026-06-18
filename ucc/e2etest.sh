@@ -211,3 +211,4 @@ test_value 0f 'int f(){int i; for (i=0; i<2; ++i); return i;} int buntan_main() 
 test_value 02 'int buntan_main() {int a[2]; int *p=a; for (int i=0; i<2; ++i) { *p++ = i+1; } return a[1]; }'
 test_value 01 'int f(){int i; return &i;} int buntan_main() {__builtin_reset_sr(0); int fp0=__builtin_get_sr(0); int fp=f(); return fp0==__builtin_get_fp() && fp==__builtin_get_sr(0); }'
 test_value 08 'int add(int n, ...) { int sum=0; va_list ap; va_start(ap, n); for (int i=0; i<n; ++i){sum+=va_arg(ap, int);} return sum;} int buntan_main() {return add(3,1,2,5);}'
+test_value 06 'int f(int a, ...) {va_list ap; va_start(ap, a); {int d=va_arg(ap, int); return d + a;}} int buntan_main() {return f(1, 5);}'
