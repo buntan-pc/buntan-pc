@@ -1,7 +1,6 @@
 #include "syscall.h"
 #include "mmio.h"
-
-//#include <stdio.h>
+#include "printf.h"
 
 unsigned int board[8];
 unsigned int board_prev[8];
@@ -553,13 +552,7 @@ int buntan_main(int *info) {
 
   print_board_content();
 
-  sys_put_string("Game finished: black=", -1);
-  sys_int2dec(nb, s, 2);
-  sys_put_string(s, 2);
-  sys_put_string(" white=", -1);
-  sys_int2dec(nw, s, 2);
-  sys_put_string(s, 2);
-  sys_put_string("\n", 1);
+  buntan_printf("Game finished: black=%d white=%d\n", nb, nw);
 
   sys_put_string("kifu:\n", -1);
   print_kifu(kifu, kifu_len);
@@ -572,10 +565,6 @@ int buntan_main(int *info) {
   sys_put_string("\n", 1);
 
   unsigned int fpmin = __builtin_get_sr(0);
-  char s[4];
-  sys_int2hex(fpmin, s, 4);
-  sys_put_string("FPMIN=", -1);
-  sys_put_string(s, 4);
-  sys_put_string("\n", 1);
+  buntan_printf("FPMIN=%X\n", fpmin);
   return 0;
 }

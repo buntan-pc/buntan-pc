@@ -220,6 +220,7 @@ int buntan_syscall(int num, int *args) {
 }
 
 
+#ifdef DEF_MAIN
 int main(int argc, char **argv) {
   int buntan_info[4] = {
     0x0000, // .text address
@@ -229,3 +230,4 @@ int main(int argc, char **argv) {
   };
   return buntan_main(buntan_info);
 }
+#endif
