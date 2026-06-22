@@ -22,9 +22,15 @@ all: $(EXES) Makefile
 	$(ASM) --list $@ -o $*.exe $<
 
 # for emulation on Linux
-%.elf: %.c buntan_emu.c Makefile
-	$(CC_LINUX) -g -mx32 -c -Wno-int-conversion -Wno-incompatible-pointer-types -o $*.o $<
-	$(CC_LINUX) -g -mx32 -o $@ $*.o -DDEF_MAIN buntan_emu.c
+buntan_emu.o: buntan_emu.c Makefile
+	$(CC_LINUX) -g -mx32 -c -DDEF_MAIN -o $@ $<
+
+%.elf: %.c buntan_emu.o Makefile
+	$(CC_LINUX) -g -mx32 -c \
+		-Wno-int-conversion -Wno-incompatible-pointer-types -Wno-attributes \
+		-include stdarg.h -include buntan_emu.h \
+		-o $*.o $<
+	$(CC_LINUX) -g -mx32 -o $@ $*.o buntan_emu.o
 
 .PHONY: clean
 clean:
