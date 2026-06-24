@@ -35,6 +35,11 @@ IO_PORT "uart3b_rx" IO_TYPE=LVCMOS33 PULL_MODE=UP;
 IO_LOC "uart3b_tx" 48;
 IO_PORT "uart3b_tx" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
 
+IO_LOC "usb_dp_raw" 77;
+IO_PORT "usb_dp_raw" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC "usb_dm_raw" 76;
+IO_PORT "usb_dm_raw" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+
 IO_LOC "dbg[0]" 86;
 IO_LOC "dbg[1]" 85;
 IO_LOC "dbg[2]" 84;

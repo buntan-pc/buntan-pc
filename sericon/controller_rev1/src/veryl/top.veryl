@@ -15,6 +15,8 @@ module top (
   uart3_tx:  output bit,
   uart3b_rx: input  bit,
   uart3b_tx: output bit,
+  usb_dp_raw: inout 'usb tri logic,
+  usb_dm_raw: inout 'usb tri logic,
   dbg: output bit<16>,
 ) {
   struct DVIParamsSingle {
@@ -71,7 +73,6 @@ module top (
     o_d: rst_n,
   );
 
-  //assign onboard_led = if rst_n ? ~6'b000101 : '1;
 
   var fclk : 'dvif clock;
   var pclk : 'dvi clock;
@@ -542,7 +543,6 @@ module top (
     assign dbg[11:7] = scrn_wr_pos[use_extscrn][11:7];
     assign dbg[6:0] = scrn_wr_data[6:0];
   }
-  assign onboard_led = if rst_n ? ~{use_extscrn, scrn_wr_pos[use_extscrn][4:0]} : '1;
 
   initial {
     $readmemh("../hankaku.hex", font_mem);
@@ -564,6 +564,22 @@ module top (
     i_vsync: state_v == DVIState::sync,
     o_data: dvi_out_data,
   );
+
+  // USB
+  var usb_dp : logic;
+  var usb_dm : logic;
+
+  inst usb_sync: $std::synchronizer_basic #(
+    WIDTH: 2,
+    STAGES: 2,
+  ) (
+    i_clk: sys_clk,
+    i_rst: rst_n,
+    i_d: {usb_dp_raw, usb_dm_raw},
+    o_d: {usb_dp, usb_dm},
+  );
+
+  assign onboard_led = {4'b1111, ~usb_dp, ~usb_dm};
 }
 
 
