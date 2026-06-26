@@ -76,16 +76,16 @@ module top (
 
   var fclk : 'dvif clock;
   var pclk : 'dvi clock;
-  var pll_lock : 'dvi logic;
+  var fclk_pll_lock : 'dvi logic;
 
   unsafe (cdc) {
-    inst pll: $sv::gowin_rpll_fclk(
+    inst fclk_pll: $sv::gowin_rpll_fclk(
       clkin: sys_clk,
       clkout: fclk,
-      lock: pll_lock
+      lock: fclk_pll_lock
     );
 
-    assign dvi_rst_n = rst_n & pll_lock;
+    assign dvi_rst_n = rst_n & fclk_pll_lock;
 
     inst clkdiv: $sv::CLKDIV #(
       DIV_MODE: "5",
@@ -566,20 +566,63 @@ module top (
   );
 
   // USB
-  var usb_dp : logic;
-  var usb_dm : logic;
+  var usb_clk : 'usb clock;
+  var usb_pll_lock : 'usb logic;
+  var usb_rst_n : 'usb reset_async_low;
+
+  unsafe (cdc) {
+    inst usb_pll: $sv::gowin_rpll_usb(
+      clkin: sys_clk,
+      clkout: usb_clk,
+      lock: usb_pll_lock
+    );
+
+    assign usb_rst_n = rst_n & usb_pll_lock;
+  }
+
+  var usb_dp : 'usb logic;
+  var usb_dm : 'usb logic;
 
   inst usb_sync: $std::synchronizer_basic #(
     WIDTH: 2,
     STAGES: 2,
   ) (
-    i_clk: sys_clk,
-    i_rst: rst_n,
+    i_clk: usb_clk,
+    i_rst: usb_rst_n,
     i_d: {usb_dp_raw, usb_dm_raw},
     o_d: {usb_dp, usb_dm},
   );
 
-  assign onboard_led = {4'b1111, ~usb_dp, ~usb_dm};
+  var usb_dir_out : 'usb bit;
+  var usb_dp_out : 'usb logic;
+  var usb_dm_out : 'usb logic;
+  assign usb_dp_raw = if usb_dir_out ? usb_dp_out : 1'bz;
+  assign usb_dm_raw = if usb_dir_out ? usb_dm_out : 1'bz;
+
+  enum USBDevSpeed: bit<2> {
+    None,
+    LS,
+    FS,
+  }
+  var usb_dev_speed : 'usb USBDevSpeed;
+
+  assign usb_dir_out = 1'b0;
+
+  always_ff (usb_clk, usb_rst_n) {
+    if_reset {
+      usb_dev_speed = USBDevSpeed::None;
+    } else if (usb_dm) {
+      usb_dev_speed = USBDevSpeed::LS;
+    } else if (usb_dp) {
+      usb_dev_speed = USBDevSpeed::FS;
+    } else {
+      usb_dev_speed = USBDevSpeed::None;
+    }
+  }
+
+  unsafe (cdc) {
+    assign onboard_led = {if ~usb_rst_n ? 4'b0000 : 4'b1111, ~usb_dev_speed};
+  }
 }
 
 
