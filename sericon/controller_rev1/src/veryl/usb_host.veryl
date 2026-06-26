@@ -1,0 +1,56 @@
+// SPDX-License-Identifier: MIT
+/*
+ * Copyright (c) 2026 Kota UCHIDA
+ */
+
+module usb_host (
+  usb_clk: input clock,
+  usb_rst_n: input reset_async_low,
+  status_led: output logic<6>,
+  usb_dp_raw: inout 'usb_raw tri logic,
+  usb_dm_raw: inout 'usb_raw tri logic,
+) {
+  var usb_dp : logic;
+  var usb_dm : logic;
+  var usb_dir_out : bit;
+  var usb_dp_out : logic;
+  var usb_dm_out : logic;
+
+  unsafe (cdc) {
+    inst usb_sync: $std::synchronizer_basic #(
+      WIDTH: 2,
+      STAGES: 2,
+    ) (
+      i_clk: usb_clk,
+      i_rst: usb_rst_n,
+      i_d: {usb_dp_raw, usb_dm_raw},
+      o_d: {usb_dp, usb_dm},
+    );
+
+    assign usb_dp_raw = if usb_dir_out ? usb_dp_out : 1'bz;
+    assign usb_dm_raw = if usb_dir_out ? usb_dm_out : 1'bz;
+  }
+
+  enum USBDevSpeed: bit<2> {
+    None,
+    LS,
+    FS,
+  }
+  var usb_dev_speed : USBDevSpeed;
+
+  assign usb_dir_out = 1'b0;
+
+  always_ff (usb_clk, usb_rst_n) {
+    if_reset {
+      usb_dev_speed = USBDevSpeed::None;
+    } else if (usb_dm) {
+      usb_dev_speed = USBDevSpeed::LS;
+    } else if (usb_dp) {
+      usb_dev_speed = USBDevSpeed::FS;
+    } else {
+      usb_dev_speed = USBDevSpeed::None;
+    }
+  }
+
+  assign status_led = {if ~usb_rst_n ? 4'b0000 : 4'b1111, ~usb_dev_speed};
+}

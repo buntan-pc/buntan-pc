@@ -15,8 +15,8 @@ module top (
   uart3_tx:  output bit,
   uart3b_rx: input  bit,
   uart3b_tx: output bit,
-  usb_dp_raw: inout 'usb tri logic,
-  usb_dm_raw: inout 'usb tri logic,
+  usb_dp_raw: inout 'usb_raw tri logic,
+  usb_dm_raw: inout 'usb_raw tri logic,
   dbg: output bit<16>,
 ) {
   struct DVIParamsSingle {
@@ -569,6 +569,7 @@ module top (
   var usb_clk : 'usb clock;
   var usb_pll_lock : 'usb logic;
   var usb_rst_n : 'usb reset_async_low;
+  var status_led : 'usb logic<6>;
 
   unsafe (cdc) {
     inst usb_pll: $sv::gowin_rpll_usb(
@@ -578,51 +579,16 @@ module top (
     );
 
     assign usb_rst_n = rst_n & usb_pll_lock;
+    assign onboard_led = status_led;
   }
 
-  var usb_dp : 'usb logic;
-  var usb_dm : 'usb logic;
-
-  inst usb_sync: $std::synchronizer_basic #(
-    WIDTH: 2,
-    STAGES: 2,
-  ) (
-    i_clk: usb_clk,
-    i_rst: usb_rst_n,
-    i_d: {usb_dp_raw, usb_dm_raw},
-    o_d: {usb_dp, usb_dm},
+  inst usb_inst : usb_host(
+    usb_clk,
+    usb_rst_n,
+    status_led,
+    usb_dp_raw,
+    usb_dm_raw,
   );
-
-  var usb_dir_out : 'usb bit;
-  var usb_dp_out : 'usb logic;
-  var usb_dm_out : 'usb logic;
-  assign usb_dp_raw = if usb_dir_out ? usb_dp_out : 1'bz;
-  assign usb_dm_raw = if usb_dir_out ? usb_dm_out : 1'bz;
-
-  enum USBDevSpeed: bit<2> {
-    None,
-    LS,
-    FS,
-  }
-  var usb_dev_speed : 'usb USBDevSpeed;
-
-  assign usb_dir_out = 1'b0;
-
-  always_ff (usb_clk, usb_rst_n) {
-    if_reset {
-      usb_dev_speed = USBDevSpeed::None;
-    } else if (usb_dm) {
-      usb_dev_speed = USBDevSpeed::LS;
-    } else if (usb_dp) {
-      usb_dev_speed = USBDevSpeed::FS;
-    } else {
-      usb_dev_speed = USBDevSpeed::None;
-    }
-  }
-
-  unsafe (cdc) {
-    assign onboard_led = {if ~usb_rst_n ? 4'b0000 : 4'b1111, ~usb_dev_speed};
-  }
 }
 
 
