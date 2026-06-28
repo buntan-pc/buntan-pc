@@ -52,7 +52,7 @@ module DviOut (
     is_xnor = n1 >= 5 || (n1 == 4 && i_data[0] == 0);
 
     o_data[0] = i_data[0];
-    for i: u8 in 0..7 {
+    for i in 0..7 {
       o_data[i+1] = is_xnor ^ (i_data[i+1] ^ o_data[i]);
     }
     return {~is_xnor, o_data};
@@ -101,11 +101,11 @@ module DviOut (
   var dcb : 'dvi DCBalancingResult[3];
   always_ff (clk, rst_n) {
     if_reset {
-      for i: u8 in 0..3 {
+      for i in 0..3 {
         dcb[i].cnt = 0;
       }
     } else if sig_buf.de {
-      for i: u8 in 0..3 {
+      for i in 0..3 {
         dcb[i] = balance_dc(trans_min(sig_buf.color[i]), dcb[i].cnt);
       }
     } else {
