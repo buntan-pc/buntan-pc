@@ -3,12 +3,15 @@
  * Copyright (c) 2026 Kota UCHIDA
  */
 
-module usb_host (
+module usb_host #(
+  param CLOCK_HZ: u32 = 96_000_000,
+) (
   usb_clk: input clock,
   usb_rst_n: input reset_async_low,
   status_led: output logic<6>,
   usb_dp_raw: inout 'usb_raw tri logic,
   usb_dm_raw: inout 'usb_raw tri logic,
+  dbg: output bit<8>,
 ) {
   var usb_dp : logic;
   var usb_dm : logic;
@@ -38,14 +41,12 @@ module usb_host (
   }
   var usb_dev_speed : USBDevSpeed;
 
-  assign usb_dir_out = 1'b0;
-
   always_ff (usb_clk, usb_rst_n) {
     if_reset {
       usb_dev_speed = USBDevSpeed::None;
-    } else if (usb_dm) {
+    } else if usb_dm {
       usb_dev_speed = USBDevSpeed::LS;
-    } else if (usb_dp) {
+    } else if usb_dp {
       usb_dev_speed = USBDevSpeed::FS;
     } else {
       usb_dev_speed = USBDevSpeed::None;
@@ -53,4 +54,96 @@ module usb_host (
   }
 
   assign status_led = {if ~usb_rst_n ? 4'b0000 : 4'b1111, ~usb_dev_speed};
+
+  enum BusState: bit<2> {
+    WaitDevice,   // デバイス接続待ち
+    WaitDebounce, // デバイスが安定するまで 100ms 以上待機
+    Reset,        // バスのリセット中（10ms～20ms）
+    Enabled,      // バス有効
+  }
+  var bus_state : BusState;
+
+  var tick_gen : bit<$clog2(CLOCK_HZ / 1000)>; // 1ms 周期を作り出すタイマ
+  var tick : bit; // 1ms 周期で 1 クロック幅だけ 1 になるイネーブル信号
+
+  always_ff (usb_clk, usb_rst_n) {
+    if_reset {
+      tick_gen = 0;
+      tick = 0;
+    } else if tick_gen == CLOCK_HZ - 1 {
+      tick_gen = 0;
+      tick = 1;
+    } else {
+      tick_gen += 1;
+      tick = 0;
+    }
+  }
+
+  var ms_tim : bit<10>; // 1ms 単位で時間を計るタイマ（0～1023）
+
+  always_ff (usb_clk, usb_rst_n) {
+    if_reset {
+      bus_state = BusState::WaitDevice;
+      ms_tim = 0;
+    } else {
+      case bus_state {
+        BusState::WaitDevice:
+          if usb_dev_speed != USBDevSpeed::None {
+            ms_tim = 0;
+            bus_state = BusState::WaitDebounce;
+          }
+        BusState::WaitDebounce:
+          if usb_dev_speed == USBDevSpeed::None {
+            bus_state = BusState::WaitDevice;
+          } else if tick {
+            if ms_tim == 100-1 {
+              ms_tim = 0;
+              bus_state = BusState::Reset;
+            } else {
+              ms_tim += 1;
+            }
+          }
+        BusState::Reset:
+          if usb_dev_speed == USBDevSpeed::None {
+            bus_state = BusState::WaitDevice;
+          } else if tick {
+            if ms_tim == 10-1 {
+              ms_tim = 0;
+              bus_state = BusState::Enabled;
+            } else {
+              ms_tim += 1;
+            }
+          }
+        BusState::Enabled:
+          if usb_dev_speed == USBDevSpeed::None {
+            bus_state = BusState::WaitDevice;
+          }
+      }
+    }
+  }
+
+  always_comb {
+    case bus_state {
+      BusState::WaitDevice: {
+        usb_dir_out = 0;
+        usb_dp_out  = 0;
+        usb_dm_out  = 0;
+      }
+      BusState::WaitDebounce: {
+        usb_dir_out = 0;
+        usb_dp_out  = 0;
+        usb_dm_out  = 0;
+      }
+      BusState::Reset: {
+        usb_dir_out = 1;
+        usb_dp_out  = 0;
+        usb_dm_out  = 0;
+      }
+      BusState::Enabled: {
+        usb_dir_out = 0;
+        usb_dp_out  = 0;
+        usb_dm_out  = 0;
+      }
+    }
+  }
 }

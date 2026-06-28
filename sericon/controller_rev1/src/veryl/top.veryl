@@ -537,11 +537,10 @@ module top (
     }
   }
 
+  var usb_dbg : 'usb bit<8>;
   unsafe (cdc) {
-    assign dbg[15] = use_extscrn;
-    assign dbg[14:12] = scrn_wr_pos[use_extscrn][2:0];
-    assign dbg[11:7] = scrn_wr_pos[use_extscrn][11:7];
-    assign dbg[6:0] = scrn_wr_data[6:0];
+    assign dbg[15:8] = '0;
+    assign dbg[7:0] = usb_dbg;
   }
 
   initial {
@@ -588,6 +587,7 @@ module top (
     status_led,
     usb_dp_raw,
     usb_dm_raw,
+    dbg: usb_dbg,
   );
 }
 
