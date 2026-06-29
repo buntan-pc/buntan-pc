@@ -1,0 +1,25 @@
+@@@@@@@                             
+@  @  @                             
+@  @  @                             
+   @                                
+   @       @@@     @@ @@   @@   @@  
+   @      @   @   @  @  @   @    @  
+   @     @     @  @  @  @   @    @  
+   @     @@@@@@@  @  @  @   @    @  
+   @     @        @  @  @   @    @  
+   @     @        @  @  @   @    @  
+   @     @     @  @  @  @   @    @  
+   @      @    @  @  @  @   @   @@  
+ @@@@@     @@@@   @@ @@ @@   @@@  @ 
+
+    temu-system build system
+
+Commands:
+    - `make` - build the temu system
+    - `make run` - run the temu system with dos
+    - `make clean` - clean project
+    - `make fmt` - format code with clang-format
+    - `make coffee` - Have some coffee! Please brew it in three minutes. :D
+
+Developers:
+    - tas0dev<github@tas0dev>

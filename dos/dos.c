@@ -1265,6 +1265,7 @@ int buntan_main() {
   return 0;
 }
 
+
 int syscall(int funcnum, int *args) {
   __builtin_set_gp(0x0100);
 
