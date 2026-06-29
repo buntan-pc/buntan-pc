@@ -19,6 +19,14 @@ module top (
   usb_dm_raw: inout 'usb_raw tri logic,
   dbg: output bit<16>,
 ) {
+  const FONT_W: u8 = 8;
+  const FONT_H: u8 = 16;
+  const SCRN_W_PIX: u16 = 1024;
+  const SCRN_H_PIX: u16 = 600;
+  const SCRN_W_CHAR: u16 = SCRN_W_PIX / FONT_W;
+  const SCRN_H_CHAR: u16 = SCRN_H_PIX / FONT_H;
+  const SCRN_ADDR_WIDTH: u8 = $clog2(SCRN_W_CHAR * SCRN_H_CHAR);
+
   struct DVIParamsSingle {
     bp : u16, // back porch
     act: u16, // active
@@ -211,14 +219,6 @@ module top (
   var act_pixel_v : 'dvi bit<PIXEL_WIDTH>;
   assign act_pixel_h = pixel_h - DP.h.syn - DP.h.bp;
   assign act_pixel_v = pixel_v - DP.v.syn - DP.v.bp;
-
-  const FONT_W: u8 = 8;
-  const FONT_H: u8 = 16;
-  const SCRN_W_PIX: u16 = 1024;
-  const SCRN_H_PIX: u16 = 600;
-  const SCRN_W_CHAR: u16 = SCRN_W_PIX / FONT_W;
-  const SCRN_H_CHAR: u16 = SCRN_H_PIX / FONT_H;
-  const SCRN_ADDR_WIDTH: u8 = $clog2(SCRN_W_CHAR * SCRN_H_CHAR);
 
   var font_mem: 'dvi bit<FONT_W>[128 * FONT_H];
   var font_buf: 'dvi bit<FONT_W>;

@@ -1,5 +1,6 @@
 GWPROG := C:\Gowin\Gowin_V1.9.12.01_x64\Programmer\bin\programmer_cli.exe
 GW_DEV := GW1NR-9C
+VERYL  ?= veryl
 
 TARGET := impl/pnr/controller.fs
 
@@ -29,7 +30,7 @@ $(TARGET): $(SRCS) src/controller.f src/hankaku.hex src/scrn_init.hex Makefile
 
 src/controller.f: $(VERYL_SRCS) Makefile
 	rm -f $@
-	cd src && veryl build
+	cd src && $(VERYL) build
 
 src/hankaku.hex: src/hankaku.txt Makefile
 	./makefont.py -o $@ $<
