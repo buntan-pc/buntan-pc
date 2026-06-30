@@ -11,6 +11,7 @@ module usb_host #(
   status_led: output logic<6>,
   usb_dp_raw: inout 'usb_raw tri logic,
   usb_dm_raw: inout 'usb_raw tri logic,
+  //dbg: output bit<16>,
   dbg: output bit<8>,
 ) {
   var usb_dp : logic;
@@ -34,43 +35,30 @@ module usb_host #(
     assign usb_dm_raw = if usb_dir_out ? usb_dm_out : 1'bz;
   }
 
-  enum USBDevSpeed: bit<2> {
+  enum DevSpeed: bit<2> {
     None,
     LS,
     FS,
   }
-  var usb_dev_speed : USBDevSpeed;
+  var dev_speed : DevSpeed;
 
-  always_ff (usb_clk, usb_rst_n) {
-    if_reset {
-      usb_dev_speed = USBDevSpeed::None;
-    } else if usb_dm {
-      usb_dev_speed = USBDevSpeed::LS;
-    } else if usb_dp {
-      usb_dev_speed = USBDevSpeed::FS;
-    } else {
-      usb_dev_speed = USBDevSpeed::None;
-    }
-  }
-
-  assign status_led = {if ~usb_rst_n ? 4'b0000 : 4'b1111, ~usb_dev_speed};
-
-  enum BusState: bit<2> {
+  enum AttachState: bit<2> {
     WaitDevice,   // デバイス接続待ち
     WaitDebounce, // デバイスが安定するまで 100ms 以上待機
     Reset,        // バスのリセット中（10ms～20ms）
     Enabled,      // バス有効
   }
-  var bus_state : BusState;
+  var attach_state : AttachState;
 
-  var tick_gen : bit<$clog2(CLOCK_HZ / 1000)>; // 1ms 周期を作り出すタイマ
+  const TICK_MAX: u32 = CLOCK_HZ / 1000;
+  var tick_gen : bit<$clog2(TICK_MAX)>; // 1ms 周期を作り出すタイマ
   var tick : bit; // 1ms 周期で 1 クロック幅だけ 1 になるイネーブル信号
 
   always_ff (usb_clk, usb_rst_n) {
     if_reset {
       tick_gen = 0;
       tick = 0;
-    } else if tick_gen == CLOCK_HZ - 1 {
+    } else if tick_gen == TICK_MAX - 1 {
       tick_gen = 0;
       tick = 1;
     } else {
@@ -83,67 +71,91 @@ module usb_host #(
 
   always_ff (usb_clk, usb_rst_n) {
     if_reset {
-      bus_state = BusState::WaitDevice;
+      dev_speed = DevSpeed::None;
+      attach_state = AttachState::WaitDevice;
       ms_tim = 0;
     } else {
-      case bus_state {
-        BusState::WaitDevice:
-          if usb_dev_speed != USBDevSpeed::None {
-            ms_tim = 0;
-            bus_state = BusState::WaitDebounce;
+      case attach_state {
+        AttachState::WaitDevice:
+          switch {
+            ms_tim == 0:
+              if usb_dp | usb_dm {
+                ms_tim = 1;
+              }
+            /*1 <= ms_tim & */ms_tim <= 2:
+              if tick {
+                ms_tim += 1;
+              }
+            default: {
+              dev_speed = if usb_dp ? DevSpeed::FS : DevSpeed::LS;
+              attach_state = AttachState::WaitDebounce;
+            }
           }
-        BusState::WaitDebounce:
-          if usb_dev_speed == USBDevSpeed::None {
-            bus_state = BusState::WaitDevice;
-          } else if tick {
+        AttachState::WaitDebounce:
+          if tick {
             if ms_tim == 100-1 {
+              attach_state = AttachState::Reset;
               ms_tim = 0;
-              bus_state = BusState::Reset;
             } else {
               ms_tim += 1;
             }
           }
-        BusState::Reset:
-          if usb_dev_speed == USBDevSpeed::None {
-            bus_state = BusState::WaitDevice;
-          } else if tick {
+        AttachState::Reset:
+          if tick {
             if ms_tim == 10-1 {
+              attach_state = AttachState::Enabled;
               ms_tim = 0;
-              bus_state = BusState::Enabled;
             } else {
               ms_tim += 1;
             }
           }
-        BusState::Enabled:
-          if usb_dev_speed == USBDevSpeed::None {
-            bus_state = BusState::WaitDevice;
+        AttachState::Enabled:
+          if tick & ms_tim <: 2 {
+            ms_tim += 1;
+          } else if ms_tim >= 2 {
+            if ~usb_dir_out & ~usb_dp & ~usb_dm {
+              attach_state = AttachState::WaitDevice;
+            }
           }
       }
     }
   }
 
   always_comb {
-    case bus_state {
-      BusState::WaitDevice: {
+    case attach_state {
+      AttachState::WaitDevice: {
         usb_dir_out = 0;
         usb_dp_out  = 0;
         usb_dm_out  = 0;
       }
-      BusState::WaitDebounce: {
+      AttachState::WaitDebounce: {
         usb_dir_out = 0;
         usb_dp_out  = 0;
         usb_dm_out  = 0;
       }
-      BusState::Reset: {
+      AttachState::Reset: {
         usb_dir_out = 1;
         usb_dp_out  = 0;
         usb_dm_out  = 0;
       }
-      BusState::Enabled: {
-        usb_dir_out = 0;
-        usb_dp_out  = 0;
-        usb_dm_out  = 0;
+      default: {
+        usb_dir_out = ms_tim == 0;
+        usb_dp_out  = dev_speed == DevSpeed::FS;
+        usb_dm_out  = dev_speed == DevSpeed::LS;
       }
     }
   }
+
+  var tick_toggle : logic;
+  always_ff (usb_clk, usb_rst_n) {
+    if_reset {
+      tick_toggle = 0;
+    } else if (tick) {
+      tick_toggle = ~tick_toggle;
+    }
+  }
+
+  assign status_led = {if ~usb_rst_n ? 2'0 : 2'1, ~attach_state, ~dev_speed};
+  //assign dbg = {ms_tim[7:0], attach_state, dev_speed, tick_toggle, 3'0};
+  assign dbg = {attach_state, dev_speed, tick_toggle, 3'0};
 }
