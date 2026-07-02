@@ -279,7 +279,7 @@ module top (
     rst:  rst_n,
     wen:  ~use_extscrn & scrn_wen,
     addr: scrn_wr_pos[0],
-    din:  {0'b0, scrn_wr_data},
+    din:  {1'b0, scrn_wr_data},
 
     clk_dvi:  pclk,
     rst_dvi:  dvi_rst_n,
@@ -293,7 +293,7 @@ module top (
     rst:  rst_n,
     wen:  use_extscrn & scrn_wen,
     addr: scrn_wr_pos[1],
-    din:  {0'b0, scrn_wr_data},
+    din:  {1'b0, scrn_wr_data},
 
     clk_dvi:  pclk,
     rst_dvi:  dvi_rst_n,
