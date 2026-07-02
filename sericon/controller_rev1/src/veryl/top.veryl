@@ -537,11 +537,9 @@ module top (
     }
   }
 
-  //var usb_dbg : 'usb bit<16>;
   var usb_dbg : 'usb bit<8>;
   unsafe (cdc) {
     assign dbg[15:8] = '0;
-    //assign dbg[15:0] = usb_dbg;
     assign dbg[7:0] = usb_dbg;
   }
 

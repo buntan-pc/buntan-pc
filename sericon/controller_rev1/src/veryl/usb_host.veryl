@@ -11,7 +11,6 @@ module usb_host #(
   status_led: output logic<6>,
   usb_dp_raw: inout 'usb_raw tri logic,
   usb_dm_raw: inout 'usb_raw tri logic,
-  //dbg: output bit<16>,
   dbg: output bit<8>,
 ) {
   var usb_dp : logic;
@@ -156,6 +155,5 @@ module usb_host #(
   }
 
   assign status_led = {if ~usb_rst_n ? 2'0 : 2'1, ~attach_state, ~dev_speed};
-  //assign dbg = {ms_tim[7:0], attach_state, dev_speed, tick_toggle, 3'0};
   assign dbg = {attach_state, dev_speed, tick_toggle, 3'0};
 }
