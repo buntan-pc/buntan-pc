@@ -83,7 +83,6 @@ module usb_host #(
     Sync,
     PID,
     Data,
-    Handshake,
     EOP,
   }
   var packet_state : PacketState;
@@ -140,31 +139,33 @@ module usb_host #(
               0..7 /* ADR */: sig_out = D0;
               7..11 /* ENDP */: sig_out = D0;
               11..16 /* CRC5 */: sig_out = if crc5_value[bit_cnt - 11] ? D1 : D0;
-              default: {
-                dir_out = 0;
-              }
             }
-            //case bit_cnt {
-            //  0..8 /* bmRequestType */: case device_request {
-            //    DeviceRequest::SET_ADDRESS: nrzi_out = ~nrzi_out;
-            //    default: nrzi_out = ~nrzi_out;
-            //  }
-            //  8..16 /* bRequest */    : if device_request[bit_cnt - 8] == 0 {
-            //    nrzi_out = ~nrzi_out;
-            //  }
-            //  16..32 /* wValue */     : if devreq_value[bit_cnt - 16] == 0 {
-            //    nrzi_out = ~nrzi_out;
-            //  }
-            //  32..48 /* wIndex */     : nrzi_out = ~nrzi_out;
-            //  48..64 /* wLength */    : nrzi_out = ~nrzi_out;
-            //  default: packet_state = PacketState::Idle;
-            //}
-            if bit_cnt <: 255 {
+            if bit_cnt == 15 {
+              packet_state = PacketState::EOP;
+              bit_cnt = 0;
+            } else {
               bit_cnt += 1;
             }
-
-            if ~dev_en {
-              packet_state = PacketState::Idle;
+          }
+        PacketState::EOP:
+          if ls_tick {
+            case bit_cnt {
+              0,1: {
+                sig_out = SE0;
+                bit_cnt += 1;
+              }
+              2: {
+                sig_out = J;
+                bit_cnt += 1;
+              }
+              3: {
+                dir_out = 0;
+                bit_cnt = 4;
+              }
+              4:
+                if ~dev_en {
+                  packet_state = PacketState::Idle;
+                }
             }
           }
       }
