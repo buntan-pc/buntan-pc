@@ -1,0 +1,177 @@
+// SPDX-License-Identifier: MIT
+/*
+ * Copyright (c) 2026 Kota UCHIDA
+ */
+
+import usb::*;
+import usb::BusState::*;
+import usb::DevSpeed::*;
+
+module usb_bus #(
+  param CLOCK_HZ: u32 = 96_000_000,
+) (
+  clk: input clock,
+  rst_n: input reset_async_low,
+  ms_tick: input bit, // 1ms 間隔の始まりを示す 1 サイクル幅のパルス
+  bit_tick: input bit, // ビットの始まりを示す 1 サイクル幅のパルス
+  dev_speed: output DevSpeed, // 検出したデバイス速度
+  dp_raw: inout 'usb_raw tri logic,
+  dm_raw: inout 'usb_raw tri logic,
+  dir_h2d: input bit, // 1 = output (host to device)
+  sig_h2d: input BusState,
+) {
+  var dp_h2d : logic;
+  var dm_h2d : logic;
+  var dp_d2h : logic;
+  var dm_d2h : logic;
+
+  unsafe (cdc) {
+    inst usb_sync: $std::synchronizer_basic #(
+      WIDTH: 2,
+      STAGES: 2,
+    ) (
+      i_clk: clk,
+      i_rst: rst_n,
+      i_d: {dp_raw, dm_raw},
+      o_d: {dp_d2h, dm_d2h},
+    );
+
+    assign dp_raw = if dir_h2d ? dp_h2d : 1'bz;
+    assign dm_raw = if dir_h2d ? dm_h2d : 1'bz;
+  }
+
+  var sig_d2h : BusState;
+  var sig_d2h_jk : BusState;
+  always_comb {
+    case {dp_d2h, dm_d2h} {
+      0: {
+        sig_d2h = SE0;
+        sig_d2h_jk = SE0;
+      }
+      1: {
+        sig_d2h = D0;
+        sig_d2h_jk = if dev_speed == LS ? J : K;
+      }
+      2: {
+        sig_d2h = D1;
+        sig_d2h_jk = if dev_speed == FS ? J : K;
+      }
+      3: {
+        sig_d2h = SE1;
+        sig_d2h_jk = SE1;
+      }
+    }
+  }
+
+  enum DevDetectPhase: bit<_> {
+    WaitAttach,
+    WaitAttachStable,
+    DetectSpeed,
+    WaitDetach,
+    WaitDetachStable,
+    WaitDetachStable2,
+    DetectDetach,
+  }
+  var dev_detect_phase : DevDetectPhase; // デバイス接続検知の時間待ち
+  import DevDetectPhase::*;
+
+  always_ff (clk, rst_n) {
+    if_reset {
+      dev_speed = NoDevice;
+      dev_detect_phase = WaitAttach;
+    } else {
+      case dev_detect_phase {
+        WaitAttach:
+          if dp_d2h | dm_d2h {
+            dev_detect_phase = WaitAttachStable;
+          }
+        WaitAttachStable:
+          if ms_tick {
+            dev_detect_phase = DetectSpeed;
+          }
+        DetectSpeed:
+          case sig_d2h {
+            BusState::SE0: dev_detect_phase = WaitAttach;
+            BusState::D0: {
+              dev_detect_phase = WaitDetach;
+              dev_speed = LS;
+            }
+            BusState::D1: {
+              dev_detect_phase = WaitDetach;
+              dev_speed = FS;
+            }
+            default: // Error
+              dev_detect_phase = WaitAttach;
+          }
+        WaitDetach:
+          if dir_h2d == 0 && sig_d2h == BusState::SE0 {
+            dev_detect_phase = WaitDetachStable;
+          }
+        WaitDetachStable:
+          if ms_tick {
+            dev_detect_phase = WaitDetachStable2;
+          }
+        WaitDetachStable2:
+          if ms_tick {
+            dev_detect_phase = DetectDetach;
+          }
+        DetectDetach:
+          if dir_h2d == 0 && sig_d2h == BusState::SE0 {
+            dev_speed = NoDevice;
+            dev_detect_phase = WaitAttach;
+          } else {
+            dev_detect_phase = WaitDetach;
+          }
+      }
+    }
+  }
+
+  always_ff (clk, rst_n) {
+    if_reset {
+      dp_h2d = 0;
+      dm_h2d = 0;
+    } else if dev_detect_phase == DetectSpeed {
+      // 最初にゴミデータが出ないよう、J 状態に相当する初期値を設定する
+      // そのためにはデバイスのスピードが判明している必要がある
+      case sig_d2h {
+        BusState::D0: {
+          dp_h2d = 0;
+          dm_h2d = 1;
+        }
+        BusState::D1: {
+          dp_h2d = 1;
+          dm_h2d = 0;
+        }
+        default: {
+          dp_h2d = 0;
+          dm_h2d = 0;
+        }
+      }
+    } else if bit_tick {
+      case sig_h2d {
+        BusState::J: {
+          dp_h2d = dev_speed == FS;
+          dm_h2d = dev_speed == LS;
+        }
+        BusState::K: {
+          dp_h2d = ~(dev_speed == FS);
+          dm_h2d = ~(dev_speed == LS);
+        }
+        BusState::SE0: {
+          dp_h2d = 0;
+          dm_h2d = 0;
+        }
+        BusState::SE1: {
+          dp_h2d = 1;
+          dm_h2d = 1;
+        }
+        default: { // D0 or D1
+          if sig_h2d == BusState::D0 { // NRZI
+            dp_h2d = ~dp_h2d;
+            dm_h2d = ~dm_h2d;
+          }
+        }
+      }
+    }
+  }
+}

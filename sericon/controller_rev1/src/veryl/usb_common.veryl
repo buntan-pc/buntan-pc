@@ -1,0 +1,21 @@
+// SPDX-License-Identifier: MIT
+/*
+ * Copyright (c) 2026 Kota UCHIDA
+ */
+
+package usb {
+  enum BusState: bit<_> {
+    D0,  // Differential 0
+    D1,  // Differential 1
+    J,   // ドライバを Hi-Z にしたときの自然状態（LS なら D0、FS なら D1）
+    K,   // J の逆状態
+    SE0, // Single Ended 0
+    SE1, // Single Ended 1
+  }
+
+  enum DevSpeed: bit<2> {
+    NoDevice,
+    LS,
+    FS,
+  }
+}
