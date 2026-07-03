@@ -41,11 +41,13 @@ module usb_host #(
   }
   var dev_speed : DevSpeed;
 
-  enum AttachState: bit<2> {
+  enum AttachState: bit<3> {
     WaitDevice,   // デバイス接続待ち
     WaitDebounce, // デバイスが安定するまで 100ms 以上待機
-    Reset,        // バスのリセット中（10ms～20ms）
-    Enabled,      // バス有効
+    BusReset,     // バスのリセット中（10ms～20ms）
+    Default,      // デフォルト状態
+    Addressed,    // アドレス設定済み
+    Configured,   // 構成設定済み
   }
   var attach_state : AttachState;
 
@@ -81,7 +83,7 @@ module usb_host #(
               if usb_dp | usb_dm {
                 ms_tim = 1;
               }
-            /*1 <= ms_tim & */ms_tim <= 2:
+            ms_tim <= 2:
               if tick {
                 ms_tim += 1;
               }
@@ -93,25 +95,32 @@ module usb_host #(
         AttachState::WaitDebounce:
           if tick {
             if ms_tim == 100-1 {
-              attach_state = AttachState::Reset;
+              attach_state = AttachState::BusReset;
               ms_tim = 0;
             } else {
               ms_tim += 1;
             }
           }
-        AttachState::Reset:
+        AttachState::BusReset:
           if tick {
-            if ms_tim == 10-1 {
-              attach_state = AttachState::Enabled;
+            if ms_tim == 11 {
+              attach_state = AttachState::Default;
               ms_tim = 0;
             } else {
               ms_tim += 1;
             }
           }
-        AttachState::Enabled:
-          if tick & ms_tim <: 2 {
-            ms_tim += 1;
-          } else if ms_tim >= 2 {
+        AttachState::Default:
+          if tick {
+            if ms_tim <: 20 {
+              ms_tim += 1;
+            } else {
+              attach_state = AttachState::Addressed;
+              ms_tim = 0;
+            }
+          }
+        AttachState::Addressed:
+          if tick {
             if ~usb_dir_out & ~usb_dp & ~usb_dm {
               attach_state = AttachState::WaitDevice;
             }
@@ -120,7 +129,18 @@ module usb_host #(
     }
   }
 
+  var packet_send_req : bit;
+  var nrzi_out : bit;
+
+  enum DeviceRequest: bit<8> {
+    SET_ADDRESS = 5,
+  }
+  var device_request : DeviceRequest;
+
   always_comb {
+    packet_send_req = 0;
+    device_request = DeviceRequest::SET_ADDRESS;
+
     case attach_state {
       AttachState::WaitDevice: {
         usb_dir_out = 0;
@@ -132,15 +152,132 @@ module usb_host #(
         usb_dp_out  = 0;
         usb_dm_out  = 0;
       }
-      AttachState::Reset: {
+      AttachState::BusReset: {
+        if ms_tim <: 11 {
+          usb_dir_out = 1;
+          usb_dp_out  = 0;
+          usb_dm_out  = 0;
+        } else {
+          usb_dir_out = 0;
+          usb_dp_out  = dev_speed == DevSpeed::FS;
+          usb_dm_out  = dev_speed == DevSpeed::LS;
+        }
+      }
+      AttachState::Default: {
+        packet_send_req = tick & ms_tim == 0;
         usb_dir_out = 1;
-        usb_dp_out  = 0;
-        usb_dm_out  = 0;
+        usb_dp_out  = nrzi_out;
+        usb_dm_out  = ~nrzi_out;
       }
       default: {
         usb_dir_out = ms_tim == 0;
         usb_dp_out  = dev_speed == DevSpeed::FS;
         usb_dm_out  = dev_speed == DevSpeed::LS;
+      }
+    }
+  }
+
+  const LS_BIT_PERIOD : u32 = CLOCK_HZ/1_500_000;
+  var ls_tick_gen : bit<$clog2(LS_BIT_PERIOD - 1)>; // LS のビットタイミング 1.5Mbps を作るタイマ
+  var ls_tick : bit; // ビット先頭で 1 クロック期間だけ 1 になる
+
+  always_ff (usb_clk, usb_rst_n) {
+    if_reset {
+      ls_tick_gen = 0;
+      ls_tick = 0;
+    } else if ls_tick_gen == LS_BIT_PERIOD - 1 {
+      ls_tick_gen = 0;
+      ls_tick = 1;
+    } else {
+      ls_tick_gen += 1;
+      ls_tick = 0;
+    }
+  }
+
+  enum PacketState: bit<_> {
+    Idle,
+    Sync,
+    PID,
+    Data,
+    Handshake,
+    EOP,
+  }
+  var packet_state : PacketState;
+  var bit_cnt : u8;
+
+  let pid_setup : bit<4> = 4'b1101;
+  let devreq_value : u16 = 16'h001A;
+  let crc5_value : bit<5> = 5'b00010;
+
+  always_ff (usb_clk, usb_rst_n) {
+    if_reset {
+      packet_state = PacketState::Idle;
+      nrzi_out = 0; // LS だと J-state = differential 0
+    } else {
+      case packet_state {
+        PacketState::Idle: {
+          if attach_state == AttachState::Default {
+            packet_state = PacketState::Sync;
+            nrzi_out = 0;
+            bit_cnt = 0;
+          }
+        }
+        PacketState::Sync:
+          if ls_tick {
+            if bit_cnt <: 7 {
+              bit_cnt += 1;
+              nrzi_out = ~nrzi_out;
+            } else {
+              packet_state = PacketState::PID;
+              bit_cnt = 0;
+            }
+          }
+        PacketState::PID:
+          if ls_tick {
+            if bit_cnt <: 4 {
+              if pid_setup[bit_cnt] == 1'b0 {
+                nrzi_out = ~nrzi_out;
+              }
+              bit_cnt += 1;
+            } else if bit_cnt <: 8 {
+              if pid_setup[bit_cnt - 4] == 1'b1 {
+                nrzi_out = ~nrzi_out;
+              }
+              if bit_cnt == 7 {
+                packet_state = PacketState::Data;
+                bit_cnt = 0;
+              } else {
+                bit_cnt += 1;
+              }
+            }
+          }
+        PacketState::Data:
+          if ls_tick {
+            case bit_cnt {
+              0..7 /* ADR */: nrzi_out = ~nrzi_out;
+              7..11 /* ENDP */: nrzi_out = ~nrzi_out;
+              11..16 /* CRC5 */: if crc5_value[bit_cnt - 11] == 0 {
+                nrzi_out = ~nrzi_out;
+              }
+              default: nrzi_out = 0;
+            }
+            //case bit_cnt {
+            //  0..8 /* bmRequestType */: case device_request {
+            //    DeviceRequest::SET_ADDRESS: nrzi_out = ~nrzi_out;
+            //    default: nrzi_out = ~nrzi_out;
+            //  }
+            //  8..16 /* bRequest */    : if device_request[bit_cnt - 8] == 0 {
+            //    nrzi_out = ~nrzi_out;
+            //  }
+            //  16..32 /* wValue */     : if devreq_value[bit_cnt - 16] == 0 {
+            //    nrzi_out = ~nrzi_out;
+            //  }
+            //  32..48 /* wIndex */     : nrzi_out = ~nrzi_out;
+            //  48..64 /* wLength */    : nrzi_out = ~nrzi_out;
+            //  default: packet_state = PacketState::Idle;
+            //}
+            bit_cnt += 1;
+          }
       }
     }
   }
@@ -154,6 +291,6 @@ module usb_host #(
     }
   }
 
-  assign status_led = {if ~usb_rst_n ? 2'0 : 2'1, ~attach_state, ~dev_speed};
-  assign dbg = {attach_state, dev_speed, tick_toggle, 3'0};
+  assign status_led = {if ~usb_rst_n ? 1'0 : 1'1, ~attach_state, ~dev_speed};
+  assign dbg = {1'0, attach_state, tick_toggle, 3'0};
 }
