@@ -582,11 +582,11 @@ module top (
   }
 
   inst usb_inst : usb_host(
-    usb_clk,
-    usb_rst_n,
+    clk: usb_clk,
+    rst_n: usb_rst_n,
     status_led,
-    usb_dp_raw,
-    usb_dm_raw,
+    dp_raw: usb_dp_raw,
+    dm_raw: usb_dm_raw,
     dbg: usb_dbg,
   );
 }
