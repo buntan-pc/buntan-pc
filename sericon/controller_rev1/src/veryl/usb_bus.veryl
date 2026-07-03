@@ -15,6 +15,7 @@ module usb_bus #(
   ms_tick: input bit, // 1ms 間隔の始まりを示す 1 サイクル幅のパルス
   bit_tick: input bit, // ビットの始まりを示す 1 サイクル幅のパルス
   dev_speed: output DevSpeed, // 検出したデバイス速度
+  dev_en: output bit, // デバイスが接続されバスリセットが完了した状態
   dp_raw: inout 'usb_raw tri logic,
   dm_raw: inout 'usb_raw tri logic,
   dir_h2d: input bit, // 1 = output (host to device)
@@ -24,6 +25,7 @@ module usb_bus #(
   var dm_h2d : logic;
   var dp_d2h : logic;
   var dm_d2h : logic;
+  var force_h2d : bit;
 
   unsafe (cdc) {
     inst usb_sync: $std::synchronizer_basic #(
@@ -36,8 +38,8 @@ module usb_bus #(
       o_d: {dp_d2h, dm_d2h},
     );
 
-    assign dp_raw = if dir_h2d ? dp_h2d : 1'bz;
-    assign dm_raw = if dir_h2d ? dm_h2d : 1'bz;
+    assign dp_raw = if (dir_h2d | force_h2d) ? dp_h2d : 1'bz;
+    assign dm_raw = if (dir_h2d | force_h2d) ? dm_h2d : 1'bz;
   }
 
   var sig_d2h : BusState;
@@ -63,64 +65,109 @@ module usb_bus #(
     }
   }
 
-  enum DevDetectPhase: bit<_> {
-    WaitAttach,
-    WaitAttachStable,
+  enum DevState: bit<_> {
+    WaitAttach,   // デバイス接続待ち
+    WaitDebounce, // デバイスが安定するまで 100ms 以上待機
     DetectSpeed,
-    WaitDetach,
+    BusReset,     // バスのリセット中（10ms～20ms）
+    Enabling,     // デバイス有効化中
+    Enabled,      // デバイス有効
     WaitDetachStable,
-    WaitDetachStable2,
     DetectDetach,
   }
-  var dev_detect_phase : DevDetectPhase; // デバイス接続検知の時間待ち
-  import DevDetectPhase::*;
+  import DevState::*;
+
+  var dev_state : DevState;
+  var ms_tim : bit<10>; // 1ms 単位で時間を計るタイマ（0～1023）
 
   always_ff (clk, rst_n) {
     if_reset {
       dev_speed = NoDevice;
-      dev_detect_phase = WaitAttach;
+      dev_state = WaitAttach;
+      ms_tim = 0;
+      dev_en = 0;
+      force_h2d = 0;
     } else {
-      case dev_detect_phase {
-        WaitAttach:
+      case dev_state {
+        WaitAttach: {
+          dev_speed = NoDevice;
+          ms_tim = 0;
+          dev_en = 0;
+
           if dp_d2h | dm_d2h {
-            dev_detect_phase = WaitAttachStable;
+            dev_state = WaitDebounce;
           }
-        WaitAttachStable:
+        }
+        WaitDebounce:
           if ms_tick {
-            dev_detect_phase = DetectSpeed;
+            if ms_tim == 99 {
+              dev_state = DetectSpeed;
+              ms_tim = 0;
+            } else {
+              ms_tim += 1;
+            }
           }
         DetectSpeed:
           case sig_d2h {
-            BusState::SE0: dev_detect_phase = WaitAttach;
+            BusState::SE0: dev_state = WaitAttach;
             BusState::D0: {
-              dev_detect_phase = WaitDetach;
+              dev_state = BusReset;
               dev_speed = LS;
             }
             BusState::D1: {
-              dev_detect_phase = WaitDetach;
+              dev_state = BusReset;
               dev_speed = FS;
             }
             default: // Error
-              dev_detect_phase = WaitAttach;
+              dev_state = WaitAttach;
           }
-        WaitDetach:
+        BusReset: {
+          force_h2d = 1;
+          if ms_tick {
+            if ms_tim == 10 {
+              dev_state = Enabling;
+              ms_tim = 0;
+            } else {
+              ms_tim += 1;
+            }
+          }
+        }
+        Enabling: {
+          dev_state = Enabled;
+          force_h2d = 0;
+        }
+        Enabled: {
+          dev_en = 1;
           if dir_h2d == 0 && sig_d2h == BusState::SE0 {
-            dev_detect_phase = WaitDetachStable;
+            dev_state = WaitDetachStable;
           }
+          if ms_tick {
+            if ms_tim == 1000 {
+              // デバッグのための処理。
+              // デバイスを抜き挿ししなくても信号を観測できるように、
+              // 1 秒間隔でデバイス接続から再実行する。
+              dev_state = WaitAttach;
+              ms_tim = 0;
+            } else {
+              ms_tim += 1;
+            }
+          }
+        }
         WaitDetachStable:
           if ms_tick {
-            dev_detect_phase = WaitDetachStable2;
-          }
-        WaitDetachStable2:
-          if ms_tick {
-            dev_detect_phase = DetectDetach;
+            if ms_tim == 2 {
+              dev_state = DetectDetach;
+              ms_tim = 0;
+            } else {
+              ms_tim += 1;
+            }
           }
         DetectDetach:
           if dir_h2d == 0 && sig_d2h == BusState::SE0 {
             dev_speed = NoDevice;
-            dev_detect_phase = WaitAttach;
+            dev_state = WaitAttach;
           } else {
-            dev_detect_phase = WaitDetach;
+            dev_state = Enabled;
           }
       }
     }
@@ -130,23 +177,14 @@ module usb_bus #(
     if_reset {
       dp_h2d = 0;
       dm_h2d = 0;
-    } else if dev_detect_phase == DetectSpeed {
+    } else if dev_state == BusReset {
+      dp_h2d = 0;
+      dm_h2d = 0;
+    } else if dev_state == Enabling {
       // 最初にゴミデータが出ないよう、J 状態に相当する初期値を設定する
       // そのためにはデバイスのスピードが判明している必要がある
-      case sig_d2h {
-        BusState::D0: {
-          dp_h2d = 0;
-          dm_h2d = 1;
-        }
-        BusState::D1: {
-          dp_h2d = 1;
-          dm_h2d = 0;
-        }
-        default: {
-          dp_h2d = 0;
-          dm_h2d = 0;
-        }
-      }
+      dp_h2d = dev_speed == FS;
+      dm_h2d = dev_speed == LS;
     } else if bit_tick {
       case sig_h2d {
         BusState::J: {
@@ -174,4 +212,5 @@ module usb_bus #(
       }
     }
   }
+
 }
