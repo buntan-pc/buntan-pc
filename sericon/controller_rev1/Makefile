@@ -29,6 +29,7 @@ $(TARGET): $(SRCS) src/controller.f src/hankaku.hex src/scrn_init.hex Makefile
 		done; \
 		[ $$err -eq 0 ] || exit 1; \
 	}
+	@./check-timing.py
 
 src/controller.f: $(VERYL_SRCS) Makefile
 	rm -f $@
