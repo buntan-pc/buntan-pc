@@ -18,4 +18,22 @@ package usb {
     LS,
     FS,
   }
+
+  enum PID: bit<4> {
+    OUT   = 4'b0001,
+    IN    = 4'b1001,
+    SOF   = 4'b0101,
+    SETUP = 4'b1101,
+    DATA0 = 4'b0011,
+    DATA1 = 4'b1011,
+    DATA2 = 4'b0111,
+    MDATA = 4'b1111,
+    ACK   = 4'b0010,
+    NACK  = 4'b1010,
+    STALL = 4'b1110,
+    NYET  = 4'b0110,
+    ERR   = 4'b1100,
+    SPLIT = 4'b1000,
+    PING  = 4'b0100,
+  }
 }

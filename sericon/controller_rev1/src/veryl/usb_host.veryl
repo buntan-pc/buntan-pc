@@ -78,22 +78,34 @@ module usb_host #(
     sig_h2d: sig_out,
   );
 
+  struct Packet {
+    pid : PID,
+    data : bit<64>,
+    data_len : u8,
+  }
+  let packets_to_send : Packet[2] = '{
+    Packet'{pid: PID::SETUP, data: {53'0, 4'h3, 7'h12}, data_len: 11},
+    Packet'{pid: PID::DATA0, data: {8'h00, 8'h5, 16'h41, 16'h0, 16'h0}, data_len: 64},
+  };
+  var packet_index : u8;
+
   enum PacketState: bit<_> {
     Idle,
+    Ready,
     Sync,
     PID,
     Data,
+    CRC5,
     EOP,
   }
   var packet_state : PacketState;
   var bit_cnt : u8;
 
-  let pid_setup : bit<4> = 4'b1101;
-  let devreq_value : u16 = 16'h001A;
-  let crc5_value : bit<5> = 5'b00010;
+  var crc5 : bit<5>;
 
   always_ff (clk, rst_n) {
     if_reset {
+      packet_index = 0;
       packet_state = PacketState::Idle;
       dir_out = 0;
       sig_out = J;
@@ -101,11 +113,15 @@ module usb_host #(
       case packet_state {
         PacketState::Idle: {
           if dev_en {
-            packet_state = PacketState::Sync;
-            dir_out = 1;
+            packet_state = PacketState::Ready;
             sig_out = J;
             bit_cnt = 0;
+            crc5 = '1;
           }
+        }
+        PacketState::Ready: {
+          packet_state = PacketState::Sync;
+          dir_out = 1;
         }
         PacketState::Sync:
           if ls_tick {
@@ -121,12 +137,16 @@ module usb_host #(
         PacketState::PID:
           if ls_tick {
             if bit_cnt <: 4 {
-              sig_out = if pid_setup[bit_cnt] ? D1 : D0;
+              sig_out = if packets_to_send[packet_index].pid[bit_cnt] ? D1 : D0;
               bit_cnt += 1;
             } else if bit_cnt <: 8 {
-              sig_out = if pid_setup[bit_cnt - 4] ? D0 : D1;
+              sig_out = if packets_to_send[packet_index].pid[bit_cnt - 4] ? D0 : D1;
               if bit_cnt == 7 {
-                packet_state = PacketState::Data;
+                if packets_to_send[packet_index].data_len == 0 {
+                  packet_state = PacketState::EOP;
+                } else {
+                  packet_state = PacketState::Data;
+                }
                 bit_cnt = 0;
               } else {
                 bit_cnt += 1;
@@ -135,12 +155,28 @@ module usb_host #(
           }
         PacketState::Data:
           if ls_tick {
-            case bit_cnt {
-              0..7 /* ADR */: sig_out = D0;
-              7..11 /* ENDP */: sig_out = D0;
-              11..16 /* CRC5 */: sig_out = if crc5_value[bit_cnt - 11] ? D1 : D0;
+            var next_bit : bit;
+            next_bit = packets_to_send[packet_index].data[bit_cnt];
+            sig_out = if next_bit ? D1 : D0;
+
+            let feedback : bit = next_bit ^ crc5[0];
+            crc5[0] = crc5[1];
+            crc5[1] = crc5[2];
+            crc5[2] = crc5[3] ^ feedback;
+            crc5[3] = crc5[4];
+            crc5[4] = feedback;
+
+            if bit_cnt == packets_to_send[packet_index].data_len - 1 {
+              packet_state = PacketState::CRC5;
+              bit_cnt = 0;
+            } else {
+              bit_cnt += 1;
             }
-            if bit_cnt == 15 {
+          }
+        PacketState::CRC5:
+          if ls_tick {
+            sig_out = if crc5[bit_cnt] ? D0 : D1;
+            if bit_cnt == 5 - 1 {
               packet_state = PacketState::EOP;
               bit_cnt = 0;
             } else {
