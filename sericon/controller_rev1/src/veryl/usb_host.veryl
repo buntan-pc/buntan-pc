@@ -87,7 +87,9 @@ module usb_host #(
     Packet'{pid: PID::SETUP, data: {53'0, 4'h3, 7'h12}, data_len: 11},
     Packet'{pid: PID::DATA0, data: {8'h00, 8'h5, 16'h41, 16'h0, 16'h0}, data_len: 64},
   };
+  let packets_len : u8 = 2;
   var packet_index : u8;
+  var packet_cache : Packet;
 
   enum PacketState: bit<_> {
     Idle,
@@ -112,16 +114,22 @@ module usb_host #(
     } else {
       case packet_state {
         PacketState::Idle: {
-          if dev_en {
+          if dev_en && packet_index <: packets_len {
             packet_state = PacketState::Ready;
             sig_out = J;
             bit_cnt = 0;
             crc5 = '1;
+          } else if ~dev_en {
+            packet_index = 0;
           }
         }
         PacketState::Ready: {
           packet_state = PacketState::Sync;
-          dir_out = 1;
+          dir_out = 1; // sig_out=J をした後に出力モードにする
+
+          // packets_to_send[packet_index] をそのまま使うとクリティカルパスが
+          // 長くなりすぎるので、キャッシュしてそれを使う。
+          packet_cache = packets_to_send[packet_index];
         }
         PacketState::Sync:
           if ls_tick {
@@ -137,12 +145,12 @@ module usb_host #(
         PacketState::PID:
           if ls_tick {
             if bit_cnt <: 4 {
-              sig_out = if packets_to_send[packet_index].pid[bit_cnt] ? D1 : D0;
+              sig_out = if packet_cache.pid[bit_cnt] ? D1 : D0;
               bit_cnt += 1;
             } else if bit_cnt <: 8 {
-              sig_out = if packets_to_send[packet_index].pid[bit_cnt - 4] ? D0 : D1;
+              sig_out = if packet_cache.pid[bit_cnt - 4] ? D0 : D1;
               if bit_cnt == 7 {
-                if packets_to_send[packet_index].data_len == 0 {
+                if packet_cache.data_len == 0 {
                   packet_state = PacketState::EOP;
                 } else {
                   packet_state = PacketState::Data;
@@ -156,7 +164,7 @@ module usb_host #(
         PacketState::Data:
           if ls_tick {
             var next_bit : bit;
-            next_bit = packets_to_send[packet_index].data[bit_cnt];
+            next_bit = packet_cache.data[bit_cnt];
             sig_out = if next_bit ? D1 : D0;
 
             let feedback : bit = next_bit ^ crc5[0];
@@ -166,7 +174,7 @@ module usb_host #(
             crc5[3] = crc5[4];
             crc5[4] = feedback;
 
-            if bit_cnt == packets_to_send[packet_index].data_len - 1 {
+            if bit_cnt == packet_cache.data_len - 1 {
               packet_state = PacketState::CRC5;
               bit_cnt = 0;
             } else {
@@ -198,10 +206,12 @@ module usb_host #(
                 dir_out = 0;
                 bit_cnt = 4;
               }
-              4:
-                if ~dev_en {
-                  packet_state = PacketState::Idle;
+              default: {
+                packet_state = PacketState::Idle;
+                if packet_index <: packets_len {
+                  packet_index += 1;
                 }
+              }
             }
           }
       }
