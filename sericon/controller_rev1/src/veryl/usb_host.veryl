@@ -5,9 +5,10 @@
 
 import usb::*;
 import usb::BusState::*;
+import usb::DevReq::*;
 
 module usb_host #(
-  param CLOCK_HZ: u32 = 96_000_000,
+  param CLOCK_HZ: u32 = 48_000_000,
 ) (
   clk: input clock,
   rst_n: input reset_async_low,
@@ -37,11 +38,6 @@ module usb_host #(
 
   var packet_send_req : bit;
   var nrzi_out : bit;
-
-  enum DeviceRequest: bit<8> {
-    SET_ADDRESS = 5,
-  }
-  var device_request : DeviceRequest;
 
   const LS_BIT_PERIOD : u32 = CLOCK_HZ/1_500_000;
   var ls_tick_gen : bit<$clog2(LS_BIT_PERIOD - 1)>; // LS のビットタイミング 1.5Mbps を作るタイマ
@@ -84,8 +80,8 @@ module usb_host #(
     data_len : u8,
   }
   let packets_to_send : Packet[2] = '{
-    Packet'{pid: PID::SETUP, data: {53'0, 4'h3, 7'h12}, data_len: 11},
-    Packet'{pid: PID::DATA0, data: {8'h00, 8'h5, 16'h41, 16'h0, 16'h0}, data_len: 64},
+    Packet'{pid: PID::SETUP, data: {53'0, 4'h0 /* ENDP */, 7'h0 /* ADDR */}, data_len: 11},
+    Packet'{pid: PID::DATA0, data: {16'h0, 16'h0, 16'd6, SET_ADDRESS, 8'h00}, data_len: 64},
   };
   let packets_len : u8 = 2;
   var packet_index : u8;
@@ -98,12 +94,15 @@ module usb_host #(
     PID,
     Data,
     CRC5,
+    CRC16,
     EOP,
   }
   var packet_state : PacketState;
   var bit_cnt : u8;
 
   var crc5 : bit<5>;
+  var crc16 : bit<16>;
+  var use_crc5 : bit; // 1=CRC5 0=CRC16
 
   always_ff (clk, rst_n) {
     if_reset {
@@ -119,6 +118,7 @@ module usb_host #(
             sig_out = J;
             bit_cnt = 0;
             crc5 = '1;
+            crc16 = '1;
           } else if ~dev_en {
             packet_index = 0;
           }
@@ -131,7 +131,9 @@ module usb_host #(
           // 長くなりすぎるので、キャッシュしてそれを使う。
           packet_cache = packets_to_send[packet_index];
         }
-        PacketState::Sync:
+        PacketState::Sync: {
+          use_crc5 = packet_cache.pid == PID::DATA0 ||
+                     packet_cache.pid == PID::DATA1;
           if ls_tick {
             if bit_cnt <: 7 {
               bit_cnt += 1;
@@ -142,6 +144,7 @@ module usb_host #(
               sig_out = D1;
             }
           }
+        }
         PacketState::PID:
           if ls_tick {
             if bit_cnt <: 4 {
@@ -167,15 +170,37 @@ module usb_host #(
             next_bit = packet_cache.data[bit_cnt];
             sig_out = if next_bit ? D1 : D0;
 
-            let feedback : bit = next_bit ^ crc5[0];
+            // x^5 + x^2 + x^0
+            let fb5 : bit = next_bit ^ crc5[0];
             crc5[0] = crc5[1];
             crc5[1] = crc5[2];
-            crc5[2] = crc5[3] ^ feedback;
+            crc5[2] = crc5[3] ^ fb5;
             crc5[3] = crc5[4];
-            crc5[4] = feedback;
+            crc5[4] = fb5;
+
+            // x^16 + x^15 + x^2 + x^0
+            let fb16 : bit = next_bit ^ crc16[0];
+            crc16[0]  = crc16[1] ^ fb16;
+            crc16[1]  = crc16[2];
+            crc16[2]  = crc16[3];
+            crc16[3]  = crc16[4];
+            crc16[4]  = crc16[5];
+            crc16[5]  = crc16[6];
+            crc16[6]  = crc16[7];
+            crc16[7]  = crc16[8];
+            crc16[8]  = crc16[9];
+            crc16[9]  = crc16[10];
+            crc16[10] = crc16[11];
+            crc16[11] = crc16[12];
+            crc16[12] = crc16[13];
+            crc16[13] = crc16[14] ^ fb16;
+            crc16[14] = crc16[15];
+            crc16[15] = fb16;
 
             if bit_cnt == packet_cache.data_len - 1 {
-              packet_state = PacketState::CRC5;
+              packet_state = if use_crc5
+                              ? PacketState::CRC16
+                              : PacketState::CRC5;
               bit_cnt = 0;
             } else {
               bit_cnt += 1;
@@ -185,6 +210,16 @@ module usb_host #(
           if ls_tick {
             sig_out = if crc5[bit_cnt] ? D0 : D1;
             if bit_cnt == 5 - 1 {
+              packet_state = PacketState::EOP;
+              bit_cnt = 0;
+            } else {
+              bit_cnt += 1;
+            }
+          }
+        PacketState::CRC16:
+          if ls_tick {
+            sig_out = if crc16[bit_cnt] ? D0 : D1;
+            if bit_cnt == 16 - 1 {
               packet_state = PacketState::EOP;
               bit_cnt = 0;
             } else {

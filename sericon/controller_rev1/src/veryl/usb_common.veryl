@@ -36,4 +36,8 @@ package usb {
     SPLIT = 4'b1000,
     PING  = 4'b0100,
   }
+
+  enum DevReq: bit<8> {
+    SET_ADDRESS = 5,
+  }
 }

@@ -8,7 +8,7 @@ import usb::BusState::*;
 import usb::DevSpeed::*;
 
 module usb_bus #(
-  param CLOCK_HZ: u32 = 96_000_000,
+  param CLOCK_HZ: u32 = 48_000_000,
 ) (
   clk: input clock,
   rst_n: input reset_async_low,
