@@ -5,18 +5,18 @@
 
 package usb {
   enum BusState: bit<_> {
-    D0,  // Differential 0
-    D1,  // Differential 1
     J,   // ドライバを Hi-Z にしたときの自然状態（LS なら D0、FS なら D1）
     K,   // J の逆状態
+    L0,  // Logic 0
+    L1,  // Logic 1
     SE0, // Single Ended 0
     SE1, // Single Ended 1
   }
 
   enum DevSpeed: bit<2> {
-    NoDevice,
-    LS,
-    FS,
+    NoDevice, // 0
+    LS,       // 1
+    FS,       // 2
   }
 
   enum PID: bit<4> {

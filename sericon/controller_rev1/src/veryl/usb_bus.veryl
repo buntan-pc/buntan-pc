@@ -13,19 +13,18 @@ module usb_bus #(
   clk: input clock,
   rst_n: input reset_async_low,
   ms_tick: input bit, // 1ms 間隔の始まりを示す 1 サイクル幅のパルス
-  bit_tick: input bit, // ビットの始まりを示す 1 サイクル幅のパルス
   dev_speed: output DevSpeed, // 検出したデバイス速度
   dev_en: output bit, // デバイスが接続されバスリセットが完了した状態
   dp_raw: inout 'usb_raw tri logic,
   dm_raw: inout 'usb_raw tri logic,
   dir_h2d: input bit, // 1 = output (host to device)
   sig_h2d: input BusState,
+  valid_h2d: input bit, // sig_h2d が有効であることを示す
   sig_d2h: output BusState,
+  valid_d2h: output bit, // sig_d2h が有効であることを示す
 ) {
-  var dp_h2d : logic;
-  var dm_h2d : logic;
-  var dp_d2h : logic;
-  var dm_d2h : logic;
+  var dat_h2d : logic<2>; // [1]=D+ [0]=D-
+  var dat_d2h : logic<2>;
   var force_h2d : bit;
 
   unsafe (cdc) {
@@ -36,31 +35,82 @@ module usb_bus #(
       i_clk: clk,
       i_rst: rst_n,
       i_d: {dp_raw, dm_raw},
-      o_d: {dp_d2h, dm_d2h},
+      o_d: dat_d2h,
     );
 
-    assign dp_raw = if (dir_h2d | force_h2d) ? dp_h2d : 1'bz;
-    assign dm_raw = if (dir_h2d | force_h2d) ? dm_h2d : 1'bz;
+    assign dp_raw = if (dir_h2d | force_h2d) ? dat_h2d[1] : 1'bz;
+    assign dm_raw = if (dir_h2d | force_h2d) ? dat_h2d[0] : 1'bz;
   }
 
-  //var sig_d2h_jk : BusState;
-  always_comb {
-    case {dp_d2h, dm_d2h} {
-      0: {
-        sig_d2h = SE0;
-        //sig_d2h_jk = SE0;
-      }
-      1: {
-        sig_d2h = D0;
-        //sig_d2h_jk = if dev_speed == LS ? J : K;
-      }
-      2: {
-        sig_d2h = D1;
-        //sig_d2h_jk = if dev_speed == FS ? J : K;
-      }
-      3: {
-        sig_d2h = SE1;
-        //sig_d2h_jk = SE1;
+
+  var bit_tim_max : bit<$clog2(CLOCK_HZ / 1_500_000)>; // 1 ビットの期間
+  always_ff (clk, rst_n) {
+    if_reset {
+      bit_tim_max = 0;
+    } else if bit_tim_max == 0 {
+      bit_tim_max = case dev_speed {
+        LS: CLOCK_HZ / 1_500_000 - 1,
+        FS: CLOCK_HZ / 12_000_000 - 1,
+        default: 0,
+      };
+    }
+  }
+
+  enum RecvState {
+    Send, // 送信中（受信待機）
+    Init, // スタートビット待ち（初期 J 状態）
+    Recv, // 受信中
+  }
+
+  var recv_state : RecvState;
+  var recv_tim : bit<$clog2(CLOCK_HZ / 1_500_000)>;
+  var dat_prev : logic<2>;
+
+  always_ff (clk, rst_n) {
+    if_reset {
+      recv_state = RecvState::Send;
+      recv_tim = '0;
+      dat_prev = '0;
+      valid_d2h = 0;
+      sig_d2h = SE0;
+    } else if dir_h2d {
+      recv_state = RecvState::Send;
+      recv_tim = '0;
+      valid_d2h = 0;
+    } else {
+      case recv_state {
+        RecvState::Send: {
+          if dat_d2h == dev_speed { // J state
+            recv_state = RecvState::Init;
+            dat_prev = dat_d2h;
+          }
+        }
+        RecvState::Init: {
+          if dat_d2h == ~dev_speed { // K state
+            recv_state = RecvState::Recv;
+            sig_d2h = L0;
+          }
+        }
+        RecvState::Recv: {
+          if recv_tim == bit_tim_max / 2 - 1 {
+            valid_d2h = 1;
+            recv_tim += 1;
+
+            if dat_prev == dat_d2h {
+              sig_d2h = L1;
+            } else {
+              sig_d2h = L0;
+              dat_prev = dat_d2h;
+            }
+          } else {
+            valid_d2h = 0;
+            if recv_tim == bit_tim_max {
+              recv_tim = '0;
+            } else {
+              recv_tim += 1;
+            }
+          }
+        }
       }
     }
   }
@@ -94,7 +144,7 @@ module usb_bus #(
           ms_tim = 0;
           dev_en = 0;
 
-          if dp_d2h | dm_d2h {
+          if dat_d2h[1] | dat_d2h[0] {
             dev_state = WaitDebounce;
           }
         }
@@ -108,13 +158,13 @@ module usb_bus #(
             }
           }
         DetectSpeed:
-          case sig_d2h {
-            BusState::SE0: dev_state = WaitAttach;
-            BusState::D0: {
+          case dat_d2h {
+            2'b00: dev_state = WaitAttach;
+            2'b01: {
               dev_state = BusReset;
               dev_speed = LS;
             }
-            BusState::D1: {
+            2'b10: {
               dev_state = BusReset;
               dev_speed = FS;
             }
@@ -134,11 +184,11 @@ module usb_bus #(
         }
         Enabling: {
           dev_state = Enabled;
-          force_h2d = 0;
         }
         Enabled: {
+          force_h2d = 0;
           dev_en = 1;
-          if dir_h2d == 0 && sig_d2h == BusState::SE0 {
+          if dir_h2d == 0 && dat_d2h == 2'b00 {
             dev_state = WaitDetachStable;
           }
           if ms_tick {
@@ -163,7 +213,7 @@ module usb_bus #(
             }
           }
         DetectDetach:
-          if dir_h2d == 0 && sig_d2h == BusState::SE0 {
+          if dir_h2d == 0 && dat_d2h == 2'b00 {
             dev_speed = NoDevice;
             dev_state = WaitAttach;
           } else {
@@ -175,38 +225,32 @@ module usb_bus #(
 
   always_ff (clk, rst_n) {
     if_reset {
-      dp_h2d = 0;
-      dm_h2d = 0;
+      dat_h2d = 0;
     } else if dev_state == BusReset {
-      dp_h2d = 0;
-      dm_h2d = 0;
+      dat_h2d = 0;
     } else if dev_state == Enabling {
       // 最初にゴミデータが出ないよう、J 状態に相当する初期値を設定する
       // そのためにはデバイスのスピードが判明している必要がある
-      dp_h2d = dev_speed == FS;
-      dm_h2d = dev_speed == LS;
-    } else if bit_tick {
+      dat_h2d = dev_speed;
+    } else if ~dir_h2d {
+      dat_h2d = dev_speed;
+    } else if valid_h2d {
       case sig_h2d {
-        BusState::J: {
-          dp_h2d = dev_speed == FS;
-          dm_h2d = dev_speed == LS;
+        J: {
+          dat_h2d = dev_speed;
         }
-        BusState::K: {
-          dp_h2d = ~(dev_speed == FS);
-          dm_h2d = ~(dev_speed == LS);
+        K: {
+          dat_h2d = ~dev_speed;
         }
-        BusState::SE0: {
-          dp_h2d = 0;
-          dm_h2d = 0;
+        SE0: {
+          dat_h2d = '0;
         }
-        BusState::SE1: {
-          dp_h2d = 1;
-          dm_h2d = 1;
+        SE1: {
+          dat_h2d = '1;
         }
-        default: { // D0 or D1
-          if sig_h2d == BusState::D0 { // NRZI
-            dp_h2d = ~dp_h2d;
-            dm_h2d = ~dm_h2d;
+        default: { // L0 or L1
+          if sig_h2d == L0 { // NRZI
+            dat_h2d = ~dat_h2d;
           }
         }
       }
