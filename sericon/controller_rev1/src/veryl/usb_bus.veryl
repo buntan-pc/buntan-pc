@@ -96,12 +96,27 @@ module usb_bus #(
             valid_d2h = 1;
             recv_tim += 1;
 
-            if dat_prev == dat_d2h {
-              sig_d2h = L1;
+            if dat_d2h == 2'b00 {
+              sig_d2h = SE0;
+            } else if dat_d2h == 2'b11 {
+              sig_d2h = SE1;
+            } else if dat_d2h == dev_speed {
+              // J state
+              if dat_prev == ~dev_speed {
+                sig_d2h = L0;
+              } else {
+                sig_d2h = J;
+              }
             } else {
-              sig_d2h = L0;
-              dat_prev = dat_d2h;
+              // K state
+              if dat_prev == dev_speed {
+                sig_d2h = L0;
+              } else {
+                sig_d2h = K;
+              }
             }
+
+            dat_prev = dat_d2h;
           } else {
             valid_d2h = 0;
             if recv_tim == bit_tim_max {

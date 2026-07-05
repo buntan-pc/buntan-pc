@@ -123,7 +123,7 @@ module usb_host #(
   var packet_index : u8;
   var packet_cache : Packet;
 
-  enum PacketState: bit<_> {
+  enum PacketState: bit<4> {
     Idle, // 0
     Ready,
     Sync,
@@ -138,6 +138,8 @@ module usb_host #(
     RecvCRC5,
     RecvCRC16,
     RecvEOP,
+    Reserved,
+    Error, // 15
   }
   var packet_state : PacketState;
   var bit_cnt : u8;
@@ -146,6 +148,7 @@ module usb_host #(
   var crc16 : bit<16>;
   var use_crc5 : bit; // 1=CRC5 0=CRC16
   var sync_buf : bit<8>;
+  var pid_buf : bit<4>;
 
   always_ff (clk, rst_n) {
     if_reset {
@@ -299,19 +302,75 @@ module usb_host #(
           }
         PacketState::RecvSync:
           if valid_in {
-            if bit_cnt <: 8 {
-              sync_buf[bit_cnt] = if sig_in == L0 ? 0 : 1;
-              bit_cnt += 1;
-            }
+            sync_buf[bit_cnt] = if sig_in == L0 ? 0 : 1;
+            bit_cnt += 1;
           } else if bit_cnt == 8 {
             if sync_buf == 8'h80 {
               packet_state = PacketState::RecvPID;
               bit_cnt = 0;
+            } else {
+              packet_state = PacketState::Error;
             }
           }
         PacketState::RecvPID:
           if valid_in {
-            packet_state = PacketState::Idle;
+            if bit_cnt <: 4 {
+              packet_cache.pid[bit_cnt] = if sig_in == L0 ? 0 : 1;
+              bit_cnt += 1;
+            } else {
+              pid_buf[bit_cnt - 4] = if sig_in == L0 ? 0 : 1;
+              bit_cnt += 1;
+            }
+          } else if bit_cnt == 8 {
+            if packet_cache.pid == ~pid_buf {
+              packet_state = PacketState::RecvData;
+              bit_cnt = 0;
+
+              packet_cache.payload_len = case packet_cache.pid {
+                PID::ACK: 0,
+                default: 0,
+              };
+            } else {
+              packet_state = PacketState::Error;
+            }
+          }
+        PacketState::RecvData:
+          if valid_in {
+            if bit_cnt <: 4 {
+              packet_cache.pid[bit_cnt] = if sig_in == L0 ? 0 : 1;
+              bit_cnt += 1;
+            }
+          } else if bit_cnt == packet_cache.payload_len {
+            packet_state = PacketState::RecvEOP;
+          }
+        PacketState::RecvCRC5:
+          packet_state = PacketState::Idle;
+        PacketState::RecvCRC16:
+          packet_state = PacketState::Idle;
+        PacketState::RecvEOP:
+          if valid_in {
+            case bit_cnt {
+              0,1: {
+                if sig_in == SE0 {
+                  bit_cnt += 1;
+                } else {
+                  packet_state = PacketState::Error;
+                }
+              }
+              2: {
+                if sig_in == J {
+                  bit_cnt += 1;
+                } else {
+                  packet_state = PacketState::Error;
+                }
+              }
+              default: {
+                packet_state = PacketState::Idle;
+                if packet_index <: packets_len {
+                  packet_index += 1;
+                }
+              }
+            }
           }
       }
     }
@@ -337,5 +396,5 @@ module usb_host #(
   }
 
   assign status_led = {~packet_state, ~dev_speed};
-  assign dbg = {packet_state, valid_in, 3'0};
+  assign dbg = {packet_state, sig_in[1:0], 2'0};
 }
