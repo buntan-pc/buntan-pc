@@ -38,6 +38,15 @@ package usb {
   }
 
   enum DevReq: bit<8> {
-    SET_ADDRESS = 5,
+    SET_ADDRESS    = 5,
+    GET_DESCRIPTOR = 6,
+  }
+
+  enum DescType: bit<_> {
+    Device        = 1,
+    Configuration = 2,
+    String        = 3,
+    Interface     = 4,
+    Endpoint      = 5,
   }
 }

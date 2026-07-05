@@ -20,6 +20,7 @@ module usb_bus #(
   dm_raw: inout 'usb_raw tri logic,
   dir_h2d: input bit, // 1 = output (host to device)
   sig_h2d: input BusState,
+  sig_d2h: output BusState,
 ) {
   var dp_h2d : logic;
   var dm_h2d : logic;
@@ -42,25 +43,24 @@ module usb_bus #(
     assign dm_raw = if (dir_h2d | force_h2d) ? dm_h2d : 1'bz;
   }
 
-  var sig_d2h : BusState;
-  var sig_d2h_jk : BusState;
+  //var sig_d2h_jk : BusState;
   always_comb {
     case {dp_d2h, dm_d2h} {
       0: {
         sig_d2h = SE0;
-        sig_d2h_jk = SE0;
+        //sig_d2h_jk = SE0;
       }
       1: {
         sig_d2h = D0;
-        sig_d2h_jk = if dev_speed == LS ? J : K;
+        //sig_d2h_jk = if dev_speed == LS ? J : K;
       }
       2: {
         sig_d2h = D1;
-        sig_d2h_jk = if dev_speed == FS ? J : K;
+        //sig_d2h_jk = if dev_speed == FS ? J : K;
       }
       3: {
         sig_d2h = SE1;
-        sig_d2h_jk = SE1;
+        //sig_d2h_jk = SE1;
       }
     }
   }
