@@ -101,15 +101,23 @@ module usb_bus #(
             } else if dat_d2h == 2'b11 {
               sig_d2h = SE1;
             } else if dat_d2h == dev_speed {
-              // J state
+              // dat_d2h is J state
               if dat_prev == ~dev_speed {
                 sig_d2h = L0;
+              } else if dat_prev == dev_speed {
+                sig_d2h = L1;
+              } else if dat_prev == 2'b00 {
+                // EOP: SE0 -> J
+                sig_d2h = J;
+                recv_state = RecvState::Init;
               } else {
                 sig_d2h = J;
               }
             } else {
-              // K state
-              if dat_prev == dev_speed {
+              // dat_d2h is K state
+              if dat_prev == ~dev_speed {
+                sig_d2h = L1;
+              } else if dat_prev == dev_speed {
                 sig_d2h = L0;
               } else {
                 sig_d2h = K;

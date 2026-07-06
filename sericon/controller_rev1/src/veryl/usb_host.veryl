@@ -15,7 +15,7 @@ module usb_host #(
   status_led: output logic<6>,
   dp_raw: inout 'usb_raw tri logic,
   dm_raw: inout 'usb_raw tri logic,
-  dbg: output bit<8>,
+  dbg: output bit<16>,
 ) {
   var dir_out : bit;
 
@@ -99,8 +99,10 @@ module usb_host #(
     payload_len: u8,
   }
 
+  const NUM_INITIAL_PACKET : u8 = 9;
   let dev_addr: bit<7> = 6;
-  let packets_to_send : Packet[5] = '{
+  let packets_to_send : Packet[NUM_INITIAL_PACKET] = '{
+    // Setup stage
     Packet'{h2d: 1, pid: PID::SETUP,
             payload: PP_Setup'{addr: 0, endp: 0, resv: 0},
             payload_len: 11},
@@ -110,18 +112,37 @@ module usb_host #(
                                    wValue: dev_addr, wIndex: 0, wLength: 0},
             payload_len: 64},
     Packet'{h2d: 0, pid: PID::ACK, payload: '0, payload_len: 0},
+
+    // Data stage (none)
+
+    // Status stage
+    Packet'{h2d: 1, pid: PID::IN, // Data stage が無い場合は IN
+            payload: PP_Setup'{addr: 0, endp: 0, resv: 0},
+            payload_len: 11},
+    Packet'{h2d: 0, pid: PID::DATA1, payload: '0, payload_len: 0},
+    Packet'{h2d: 1, pid: PID::ACK, payload: '0, payload_len: 0},
+
+    // Setup stage
     Packet'{h2d: 1, pid: PID::SETUP,
             payload: PP_Setup'{addr: dev_addr, endp: 0, resv: 0},
             payload_len: 11},
     Packet'{h2d: 1, pid: PID::DATA0,
             payload: PP_SetupData'{bmRequestType: 8'b10000000,
                                    bRequest: GET_DESCRIPTOR,
-                                   wValue: DescType::Device << 8 | 0, wIndex: 0, wLength: 16'd18},
+                                   wValue: DescType::Device << 8 | 0,
+                                   wIndex: 0,
+                                   wLength: 16'd18},
             payload_len: 64},
+    Packet'{h2d: 0, pid: PID::ACK, payload: '0, payload_len: 0},
   };
-  let packets_len : u8 = 5;
+  let packets_len : u8 = NUM_INITIAL_PACKET;
   var packet_index : u8;
+  var next_packet_index : u8;
   var packet_cache : Packet;
+
+  // 各トランザクションの先頭のパケット番号
+  let transaction : u8[4] = '{0, 3, 6, 255};
+  var transaction_index : u8;
 
   enum PacketState: bit<4> {
     Idle, // 0
@@ -135,10 +156,10 @@ module usb_host #(
     RecvSync, // 8
     RecvPID,
     RecvData,
-    RecvCRC5,
-    RecvCRC16,
     RecvEOP,
-    Reserved,
+    Reserved12,
+    Reserved13,
+    Reserved14,
     Error, // 15
   }
   var packet_state : PacketState;
@@ -153,6 +174,8 @@ module usb_host #(
   always_ff (clk, rst_n) {
     if_reset {
       packet_index = 0;
+      next_packet_index = 0;
+      transaction_index = 0;
       packet_state = PacketState::Idle;
       dir_out = 0;
       sig_out = J;
@@ -166,6 +189,7 @@ module usb_host #(
             crc16 = '1;
           } else if ~dev_en {
             packet_index = 0;
+            transaction_index = 0;
           }
         }
         PacketState::Ready: {
@@ -181,10 +205,14 @@ module usb_host #(
             dir_out = 0;
             packet_cache = '0;
           }
+
+          next_packet_index = packet_index + 1;
+          if packet_index >= transaction[transaction_index + 1] {
+            transaction_index += 1;
+          }
         }
         PacketState::Sync: {
-          use_crc5 = packet_cache.pid == PID::DATA0 ||
-                     packet_cache.pid == PID::DATA1;
+          use_crc5 = (packet_cache.pid & 4'b0011) != 4'b0011;
           if ls_tick {
             if bit_cnt <: 7 {
               bit_cnt += 1;
@@ -250,8 +278,8 @@ module usb_host #(
 
             if bit_cnt == packet_cache.payload_len - 1 {
               packet_state = if use_crc5
-                              ? PacketState::CRC16
-                              : PacketState::CRC5;
+                              ? PacketState::CRC5
+                              : PacketState::CRC16;
               bit_cnt = 0;
             } else {
               bit_cnt += 1;
@@ -294,9 +322,7 @@ module usb_host #(
               }
               default: {
                 packet_state = PacketState::Idle;
-                if packet_index <: packets_len {
-                  packet_index += 1;
-                }
+                packet_index = next_packet_index;
               }
             }
           }
@@ -322,31 +348,32 @@ module usb_host #(
               bit_cnt += 1;
             }
           } else if bit_cnt == 8 {
-            if packet_cache.pid == ~pid_buf {
+            if packet_cache.pid != ~pid_buf {
+              packet_state = PacketState::Error;
+            } else {
               packet_state = PacketState::RecvData;
               bit_cnt = 0;
-
-              packet_cache.payload_len = case packet_cache.pid {
-                PID::ACK: 0,
-                default: 0,
-              };
-            } else {
-              packet_state = PacketState::Error;
+              if packet_cache.pid != packets_to_send[packet_index].pid {
+                // トランザクションをやりなおす
+                next_packet_index = transaction[transaction_index];
+              } else {
+                packet_cache.payload_len = case packet_cache.pid {
+                  PID::ACK: 0,
+                  default: 0,
+                };
+              }
             }
           }
         PacketState::RecvData:
           if valid_in {
-            if bit_cnt <: 4 {
+            if sig_in == SE0 {
+              packet_state = PacketState::RecvEOP;
+              bit_cnt = 1;
+            } else {
               packet_cache.pid[bit_cnt] = if sig_in == L0 ? 0 : 1;
               bit_cnt += 1;
             }
-          } else if bit_cnt == packet_cache.payload_len {
-            packet_state = PacketState::RecvEOP;
           }
-        PacketState::RecvCRC5:
-          packet_state = PacketState::Idle;
-        PacketState::RecvCRC16:
-          packet_state = PacketState::Idle;
         PacketState::RecvEOP:
           if valid_in {
             case bit_cnt {
@@ -366,12 +393,12 @@ module usb_host #(
               }
               default: {
                 packet_state = PacketState::Idle;
-                if packet_index <: packets_len {
-                  packet_index += 1;
-                }
+                packet_index = next_packet_index;
               }
             }
           }
+        PacketState::Error: {
+        }
       }
     }
   }
@@ -396,5 +423,5 @@ module usb_host #(
   }
 
   assign status_led = {~packet_state, ~dev_speed};
-  assign dbg = {packet_state, sig_in[1:0], 2'0};
+  assign dbg = {5'0, sig_in, packet_state, 1'0, valid_in, 2'0};
 }
