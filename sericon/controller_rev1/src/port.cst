@@ -39,6 +39,8 @@ IO_LOC "usb_dp_raw" 77;
 IO_PORT "usb_dp_raw" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
 IO_LOC "usb_dm_raw" 76;
 IO_PORT "usb_dm_raw" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC "usb_vbus_ctrl" 63;
+IO_PORT "usb_vbus_ctrl" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
 
 IO_LOC "dbg[0]" 86;
 IO_LOC "dbg[1]" 85;

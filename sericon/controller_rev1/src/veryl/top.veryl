@@ -17,6 +17,7 @@ module top (
   uart3b_tx: output bit,
   usb_dp_raw: inout 'usb_raw tri logic,
   usb_dm_raw: inout 'usb_raw tri logic,
+  usb_vbus_ctrl: output logic,
   dbg: output bit<16>,
 ) {
   const FONT_W: u8 = 8;
@@ -580,6 +581,7 @@ module top (
 
     assign usb_rst_n = rst_n & usb_pll_lock;
     assign onboard_led = status_led;
+    assign usb_vbus_ctrl = usb_rst_n;
   }
 
   inst usb_inst : usb_host(
