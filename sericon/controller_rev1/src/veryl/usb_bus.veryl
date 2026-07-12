@@ -214,17 +214,6 @@ module usb_bus #(
           if dir_h2d == 0 && dat_d2h == 2'b00 {
             dev_state = WaitDetachStable;
           }
-          if ms_tick {
-            if ms_tim == 1000 {
-              // デバッグのための処理。
-              // デバイスを抜き挿ししなくても信号を観測できるように、
-              // 1 秒間隔でデバイス接続から再実行する。
-              dev_state = WaitAttach;
-              ms_tim = 0;
-            } else {
-              ms_tim += 1;
-            }
-          }
         }
         WaitDetachStable:
           if ms_tick {
