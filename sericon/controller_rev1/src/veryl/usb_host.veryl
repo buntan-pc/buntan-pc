@@ -604,5 +604,5 @@ module usb_host #(
   }
 
   assign status_led = {~packet_state, ~dev_speed};
-  assign dbg = {recv_payload_pos[6:0], repeat_data, packet_state, command_state, data01, 2'0};
+  assign dbg = {4'0, sig_in, repeat_data, packet_state, command_state, valid_in, 2'0};
 }

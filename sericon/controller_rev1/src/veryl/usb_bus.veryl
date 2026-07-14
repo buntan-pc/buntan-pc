@@ -60,22 +60,26 @@ module usb_bus #(
     Send, // 送信中（受信待機）
     Init, // スタートビット待ち（初期 J 状態）
     Recv, // 受信中
+    Error, // 受信エラー検出
   }
 
   var recv_state : RecvState;
   var recv_tim : bit<$clog2(CLOCK_HZ / 1_500_000)>;
   var dat_prev : logic<2>;
+  var recv_bit1_cnt : bit<3>; // 連続する 1 の数（ビットスタッフィング用）
 
   always_ff (clk, rst_n) {
     if_reset {
       recv_state = RecvState::Send;
       recv_tim = '0;
       dat_prev = '0;
+      recv_bit1_cnt = 0;
       valid_d2h = 0;
       sig_d2h = SE0;
     } else if dir_h2d {
       recv_state = RecvState::Send;
       recv_tim = '0;
+      recv_bit1_cnt = 0;
       valid_d2h = 0;
     } else {
       case recv_state {
@@ -93,35 +97,41 @@ module usb_bus #(
         }
         RecvState::Recv: {
           if recv_tim == bit_tim_max / 2 - 1 {
-            valid_d2h = 1;
             recv_tim += 1;
 
-            if dat_d2h == 2'b00 {
-              sig_d2h = SE0;
-            } else if dat_d2h == 2'b11 {
-              sig_d2h = SE1;
-            } else if dat_d2h == dev_speed {
-              // dat_d2h is J state
-              if dat_prev == ~dev_speed {
-                sig_d2h = L0;
-              } else if dat_prev == dev_speed {
-                sig_d2h = L1;
-              } else if dat_prev == 2'b00 {
-                // EOP: SE0 -> J
-                sig_d2h = J;
-                recv_state = RecvState::Init;
+            let sig : BusState = switch {
+              dat_d2h == 2'b00 : SE0,
+              dat_d2h == 2'b11 : SE1,
+              default : switch { // 2'b01 or 2'b10
+                dat_d2h == ~dat_prev  : L0,
+                dat_d2h == dat_prev   : L1,
+                dat_d2h == dev_speed  : J, // L0/L1 以外からの J への遷移
+                default               : K, // L0/L1 以外からの K への遷移
+              }
+            };
+            sig_d2h = sig;
+
+            if dat_prev == 2'b00 && sig == J {
+              // EOP: SE0 -> J
+              recv_state = RecvState::Init;
+            }
+
+            if sig == L0 {
+              if recv_bit1_cnt >= 6 {
+                // ビットスタッフィングなので無視する
               } else {
-                sig_d2h = J;
+                valid_d2h = 1;
+              }
+              recv_bit1_cnt = 0;
+            } else if sig == L1 {
+              if recv_bit1_cnt >= 6 {
+                recv_state = RecvState::Error;
+              } else {
+                recv_bit1_cnt += 1;
+                valid_d2h = 1;
               }
             } else {
-              // dat_d2h is K state
-              if dat_prev == ~dev_speed {
-                sig_d2h = L1;
-              } else if dat_prev == dev_speed {
-                sig_d2h = L0;
-              } else {
-                sig_d2h = K;
-              }
+              valid_d2h = 1;
             }
 
             dat_prev = dat_d2h;
@@ -133,6 +143,8 @@ module usb_bus #(
               recv_tim += 1;
             }
           }
+        }
+        RecvState::Error: {
         }
       }
     }
