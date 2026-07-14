@@ -395,7 +395,9 @@ module usb_host #(
               sig_out = if pid_buf[bit_cnt - 4] ? L0 : L1;
               if bit_cnt == 7 {
                 if command_cache.data.payload_len == 0 {
-                  packet_state = PacketState::EOP;
+                  packet_state = if use_crc5
+                                  ? PacketState::CRC5
+                                  : PacketState::CRC16;
                 } else {
                   packet_state = PacketState::Data;
                 }
