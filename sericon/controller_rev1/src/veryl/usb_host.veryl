@@ -95,7 +95,8 @@ module usb_host #(
   struct Packet {
     pid: PID,
     payload: bit<64>,
-    payload_len: u8,
+    payload_ext: bit, // ペイロードを外部に書くなら 1。その場合、payload には DescType を書く
+    payload_len: bit<3+8>,
   }
 
   enum CommandKind {
@@ -111,9 +112,10 @@ module usb_host #(
     data: Packet,
   }
 
-  var desc_device : bit<8*18 + 16>;
+  var desc_device : bit<8*18>;
+  var desc_config : bit<8*9>;
 
-  const NUM_INITIAL_COMMAND : u8 = 16;
+  const NUM_INITIAL_COMMAND : u8 = 25;
   let dev_addr: bit<7> = 6;
   let commands : Command[NUM_INITIAL_COMMAND] = '{
     // Setup stage
@@ -121,7 +123,7 @@ module usb_host #(
       kind: CommandKind::SendPacket,
       data: Packet'{pid: PID::SETUP,
                     payload: PP_Setup'{addr: 0, endp: 0, resv: 0},
-                    payload_len: 11},
+                    payload_ext: 0, payload_len: 11},
     },
     Command'{ // 1
       kind: CommandKind::SendPacket,
@@ -130,11 +132,11 @@ module usb_host #(
                                            bRequest: SET_ADDRESS,
                                            wValue: dev_addr,
                                            wIndex: 0, wLength: 0},
-                    payload_len: 64},
+                    payload_ext: 0, payload_len: 64},
     },
     Command'{ // 2
       kind: CommandKind::RecvPacket,
-      data: Packet'{pid: PID::ACK, payload: '0, payload_len: 0},
+      data: Packet'{pid: PID::ACK, payload: '0, payload_ext: 0, payload_len: 0},
     },
 
     // Data stage (none)
@@ -144,21 +146,21 @@ module usb_host #(
       kind: CommandKind::SendPacket,
       data: Packet'{pid: PID::IN, // Data stage が無い場合は IN
                     payload: PP_Setup'{addr: 0, endp: 0, resv: 0},
-                    payload_len: 11},
+                    payload_ext: 0, payload_len: 11},
     },
     Command'{ // 4
       kind: CommandKind::RecvPacket,
-      data: Packet'{pid: PID::DATA1, payload: '0, payload_len: 0},
+      data: Packet'{pid: PID::DATA1, payload: '0, payload_ext: 0, payload_len: 0},
     },
     Command'{ // 5
       kind: CommandKind::SendPacket,
-      data: Packet'{pid: PID::ACK, payload: '0, payload_len: 0},
+      data: Packet'{pid: PID::ACK, payload: '0, payload_ext: 0, payload_len: 0},
     },
 
     // Delay >= 2ms
     Command'{ // 6
       kind: CommandKind::Other,
-      data: Packet'{pid: CID::Delay as PID, payload: 2, payload_len: 8},
+      data: Packet'{pid: CID::Delay as PID, payload: 2, payload_ext: 0, payload_len: 8},
     },
 
     // Setup stage
@@ -166,7 +168,7 @@ module usb_host #(
       kind: CommandKind::SendPacket,
       data: Packet'{pid: PID::SETUP,
                     payload: PP_Setup'{addr: dev_addr, endp: 0, resv: 0},
-                    payload_len: 11},
+                    payload_ext: 0, payload_len: 11},
     },
     Command'{ // 8
       kind: CommandKind::SendPacket,
@@ -176,11 +178,11 @@ module usb_host #(
                                            wValue: DescType::Device << 8 | 0,
                                            wIndex: 0,
                                            wLength: 16'd18},
-                    payload_len: 64},
+                    payload_ext: 0, payload_len: 64},
     },
     Command'{ // 9
       kind: CommandKind::RecvPacket,
-      data: Packet'{pid: PID::ACK, payload: '0, payload_len: 0},
+      data: Packet'{pid: PID::ACK, payload: '0, payload_ext: 0, payload_len: 0},
     },
 
     // Data stage
@@ -188,15 +190,15 @@ module usb_host #(
       kind: CommandKind::SendPacket,
       data: Packet'{pid: PID::IN,
                     payload: PP_Setup'{addr: dev_addr, endp: 0, resv: 0},
-                    payload_len: 11},
+                    payload_ext: 0, payload_len: 11},
     },
     Command'{ // 11
       kind: CommandKind::RecvPacket,
-      data: Packet'{pid: PID::DATA1, payload: DescType::Device, payload_len: 8*18},
+      data: Packet'{pid: PID::DATA1, payload: DescType::Device, payload_ext: 1, payload_len: 8*18},
     },
     Command'{ // 12
       kind: CommandKind::SendPacket,
-      data: Packet'{pid: PID::ACK, payload: '0, payload_len: 0},
+      data: Packet'{pid: PID::ACK, payload: '0, payload_ext: 0, payload_len: 0},
     },
 
     // Status stage
@@ -204,15 +206,69 @@ module usb_host #(
       kind: CommandKind::SendPacket,
       data: Packet'{pid: PID::OUT, // 直前が IN 転送なのでステータスは OUT
                     payload: PP_Setup'{addr: dev_addr, endp: 0, resv: 0},
-                    payload_len: 11},
+                    payload_ext: 0, payload_len: 11},
     },
     Command'{ // 14
       kind: CommandKind::SendPacket,
-      data: Packet'{pid: PID::DATA1, payload: '0, payload_len: 0},
+      data: Packet'{pid: PID::DATA1, payload: '0, payload_ext: 0, payload_len: 0},
     },
     Command'{ // 15
       kind: CommandKind::RecvPacket,
-      data: Packet'{pid: PID::ACK, payload: '0, payload_len: 0},
+      data: Packet'{pid: PID::ACK, payload: '0, payload_ext: 0, payload_len: 0},
+    },
+
+    // Setup stage
+    Command'{ // 16
+      kind: CommandKind::SendPacket,
+      data: Packet'{pid: PID::SETUP,
+                    payload: PP_Setup'{addr: dev_addr, endp: 0, resv: 0},
+                    payload_ext: 0, payload_len: 11},
+    },
+    Command'{ // 17
+      kind: CommandKind::SendPacket,
+      data: Packet'{pid: PID::DATA0,
+                    payload: PP_SetupData'{bmRequestType: 8'b10000000,
+                                           bRequest: GET_DESCRIPTOR,
+                                           wValue: DescType::Configuration << 8 | 0,
+                                           wIndex: 0,
+                                           wLength: 16'd9},
+                    payload_ext: 0, payload_len: 64},
+    },
+    Command'{ // 18
+      kind: CommandKind::RecvPacket,
+      data: Packet'{pid: PID::ACK, payload: '0, payload_ext: 0, payload_len: 0},
+    },
+
+    // Data stage
+    Command'{ // 19
+      kind: CommandKind::SendPacket,
+      data: Packet'{pid: PID::IN,
+                    payload: PP_Setup'{addr: dev_addr, endp: 0, resv: 0},
+                    payload_ext: 0, payload_len: 11},
+    },
+    Command'{ // 20
+      kind: CommandKind::RecvPacket,
+      data: Packet'{pid: PID::DATA1, payload: DescType::Configuration, payload_ext: 1, payload_len: 8*9},
+    },
+    Command'{ // 21
+      kind: CommandKind::SendPacket,
+      data: Packet'{pid: PID::ACK, payload: '0, payload_ext: 0, payload_len: 0},
+    },
+
+    // Status stage
+    Command'{ // 22
+      kind: CommandKind::SendPacket,
+      data: Packet'{pid: PID::OUT, // 直前が IN 転送なのでステータスは OUT
+                    payload: PP_Setup'{addr: dev_addr, endp: 0, resv: 0},
+                    payload_ext: 0, payload_len: 11},
+    },
+    Command'{ // 23
+      kind: CommandKind::SendPacket,
+      data: Packet'{pid: PID::DATA1, payload: '0, payload_ext: 0, payload_len: 0},
+    },
+    Command'{ // 24
+      kind: CommandKind::RecvPacket,
+      data: Packet'{pid: PID::ACK, payload: '0, payload_ext: 0, payload_len: 0},
     },
   };
   let commands_len : u8 = NUM_INITIAL_COMMAND;
@@ -222,7 +278,7 @@ module usb_host #(
   var recv_packet : Packet;
 
   // 各トランザクションの先頭のコマンド番号
-  let transaction : u8[7] = '{0, 3, 6, 7, 10, 13, 255};
+  let transaction : u8[10] = '{0, 3, 6, 7, 10, 13, 16, 19, 22, 255};
   var transaction_index : u8;
 
   enum CommandState {
@@ -538,11 +594,17 @@ module usb_host #(
               packet_state = PacketState::EOP;
               bit_cnt = 1;
             } else {
-              case command_cache.data.payload {
-                DescType::Device:
-                  desc_device[bit_cnt] = if sig_in == L0 ? 0 : 1;
-                default:
-                  recv_packet.payload[bit_cnt] = if sig_in == L0 ? 0 : 1;
+              if command_cache.data.payload_ext {
+                if bit_cnt <: command_cache.data.payload_len {
+                  case command_cache.data.payload {
+                    DescType::Device:
+                      desc_device[bit_cnt] = if sig_in == L0 ? 0 : 1;
+                    default:
+                      desc_config[bit_cnt] = if sig_in == L0 ? 0 : 1;
+                  }
+                }
+              } else {
+                recv_packet.payload[bit_cnt] = if sig_in == L0 ? 0 : 1;
               }
               recv_payload_pos += 1;
               bit_cnt += 1;
