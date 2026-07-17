@@ -5,7 +5,6 @@
 
 import usb::*;
 import usb::BusState::*;
-import usb::DevReq::*;
 
 module usb_host #(
   param CLOCK_HZ: u32 = 48_000_000,
@@ -106,6 +105,7 @@ module usb_host #(
   }
   enum CID: bit<4> { // Command ID
     Delay,
+    SearchBootInterface,
   }
   struct Command {
     kind: CommandKind,
@@ -116,7 +116,10 @@ module usb_host #(
   var desc_config : bit<8*128>;
   var config_total_len : u16; // bytes
 
-  const NUM_INITIAL_COMMAND : u8 = 40;
+  var desc_byte_index : u8;
+  var boot_interface_number : u8;
+
+  const NUM_INITIAL_COMMAND : u8 = 47;
   let dev_addr: bit<7> = 6;
   let commands : Command[NUM_INITIAL_COMMAND] = '{
     // Setup stage
@@ -365,6 +368,51 @@ module usb_host #(
       kind: CommandKind::SendPacket,
       data: Packet'{pid: PID::ACK, payload: '0, payload_ext: 0, payload_len: 0},
     },
+
+    Command'{ // 40
+      kind: CommandKind::Other,
+      data: Packet'{pid: CID::SearchBootInterface as PID, payload: 1, payload_ext: 0, payload_len: 0},
+    },
+
+    // Setup stage
+    Command'{ // 41
+      kind: CommandKind::SendPacket,
+      data: Packet'{pid: PID::SETUP,
+                    payload: PP_Setup'{addr: dev_addr, endp: 0, resv: 0},
+                    payload_ext: 0, payload_len: 11},
+    },
+    Command'{ // 42
+      kind: CommandKind::SendPacket,
+      data: Packet'{pid: PID::DATA0,
+                    payload: PP_SetupData'{bmRequestType: 8'b00100001,
+                                           bRequest: SET_PROTOCOL,
+                                           wValue: 0, // Boot Protocol
+                                           wIndex: boot_interface_number,
+                                           wLength: 0},
+                    payload_ext: 0, payload_len: 64},
+    },
+    Command'{ // 43
+      kind: CommandKind::RecvPacket,
+      data: Packet'{pid: PID::ACK, payload: '0, payload_ext: 0, payload_len: 0},
+    },
+
+    // Data stage (none)
+
+    // Status stage
+    Command'{ // 44
+      kind: CommandKind::SendPacket,
+      data: Packet'{pid: PID::IN, // Data stage が無い場合は IN
+                    payload: PP_Setup'{addr: dev_addr, endp: 0, resv: 0},
+                    payload_ext: 0, payload_len: 11},
+    },
+    Command'{ // 45
+      kind: CommandKind::RecvPacket,
+      data: Packet'{pid: PID::DATA1, payload: '0, payload_ext: 0, payload_len: 0},
+    },
+    Command'{ // 46
+      kind: CommandKind::SendPacket,
+      data: Packet'{pid: PID::ACK, payload: '0, payload_ext: 0, payload_len: 0},
+    },
   };
   let commands_len : u8 = NUM_INITIAL_COMMAND;
   var command_index : u8;
@@ -373,7 +421,7 @@ module usb_host #(
   var recv_packet : Packet;
 
   // 各トランザクションの先頭のコマンド番号
-  let transaction : u8[15] = '{0, 3, 6, 7, 10, 13, 16, 19, 22, 25, 28, 31, 34, 37, 255};
+  let transaction : u8[17] = '{0, 3, 6, 7, 10, 13, 16, 19, 22, 25, 28, 31, 34, 37, 41, 44, 255};
   var transaction_index : u8;
 
   enum CommandState {
@@ -487,6 +535,9 @@ module usb_host #(
       repeat_data = 0;
       recv_payload_pos = 0;
       config_total_len = 0;
+
+      desc_byte_index = 0;
+      boot_interface_number = 0;
     } else if command_state == CommandState::Ready {
       packet_state = PacketState::Ready;
       bit_cnt = 0;
@@ -498,6 +549,18 @@ module usb_host #(
         CID::Delay: {
           if ms_tick {
             bit_cnt += 1;
+          }
+        }
+        CID::SearchBootInterface: {
+          if desc_config[8*(desc_byte_index + 1) +: 8] == DescType::Interface &&
+             desc_config[8*(desc_byte_index + 5) +: 8] == 3 && // HID
+             desc_config[8*(desc_byte_index + 6) +: 8] == 1 && // Boot Interface
+             desc_config[8*(desc_byte_index + 7) +: 8] == 1    // Keyboard
+          {
+            boot_interface_number = desc_config[desc_byte_index + 2];
+            bit_cnt = 1; // bit_cnt >= payload にするとコマンド終了
+          } else {
+            desc_byte_index += desc_config[8*desc_byte_index +: 8];
           }
         }
         default: {

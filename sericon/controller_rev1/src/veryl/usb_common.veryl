@@ -32,11 +32,10 @@ package usb {
     PRE   = 4'b1100,
   }
 
-  enum DevReq: bit<8> {
-    SET_ADDRESS       = 5,
-    GET_DESCRIPTOR    = 6,
-    SET_CONFIGURATION = 9,
-  }
+  const SET_ADDRESS       : u8 = 5;
+  const GET_DESCRIPTOR    : u8 = 6;
+  const SET_CONFIGURATION : u8 = 9;
+  const SET_PROTOCOL      : u8 = 8'h0B;
 
   enum DescType: bit<_> {
     Device        = 1,
