@@ -22,9 +22,10 @@ module usb_bus #(
   valid_h2d: input bit, // sig_h2d が有効であることを示す
   sig_d2h: output BusState,
   valid_d2h: output bit, // sig_d2h が有効であることを示す
+  dat_d2h: output logic<2>,
 ) {
   var dat_h2d : logic<2>; // [1]=D+ [0]=D-
-  var dat_d2h : logic<2>;
+  //var dat_d2h : logic<2>;
   var force_h2d : bit;
 
   unsafe (cdc) {
@@ -157,8 +158,7 @@ module usb_bus #(
     BusReset,     // バスのリセット中（10ms～20ms）
     Enabling,     // デバイス有効化中
     Enabled,      // デバイス有効
-    WaitDetachStable,
-    DetectDetach,
+    WaitDetachStable, // SE0 が続いているか確認中（本当に切断されたか判定するため）
   }
   import DevState::*;
 
@@ -223,25 +223,24 @@ module usb_bus #(
         Enabled: {
           force_h2d = 0;
           dev_en = 1;
+          ms_tim = 0;
           if dir_h2d == 0 && dat_d2h == 2'b00 {
             dev_state = WaitDetachStable;
           }
         }
         WaitDetachStable:
-          if ms_tick {
+          if dir_h2d == 0 && dat_d2h != 2'b00 {
+            // 受信中(非送信中)なのに SE0 が途切れた。パケットの EOP による
+            // 一瞬の SE0 だったということなので、切断ではない。
+            dev_state = Enabled;
+          } else if ms_tick {
             if ms_tim == 2 {
-              dev_state = DetectDetach;
-              ms_tim = 0;
+              // 2-3ms の間ずっと SE0 が継続した。本当に切断されたと判断する。
+              dev_speed = NoDevice;
+              dev_state = WaitAttach;
             } else {
               ms_tim += 1;
             }
-          }
-        DetectDetach:
-          if dir_h2d == 0 && dat_d2h == 2'b00 {
-            dev_speed = NoDevice;
-            dev_state = WaitAttach;
-          } else {
-            dev_state = Enabled;
           }
       }
     }

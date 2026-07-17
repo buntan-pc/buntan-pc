@@ -61,6 +61,7 @@ module usb_host #(
   var valid_out : bit;
   var sig_in : BusState;
   var valid_in : bit;
+  var dat_d2h : logic<2>;
   inst bus : usb_bus #(
     CLOCK_HZ,
   ) (
@@ -76,6 +77,7 @@ module usb_host #(
     valid_h2d: valid_out,
     sig_d2h: sig_in,
     valid_d2h: valid_in,
+    dat_d2h,
   );
 
   // PP: PacketPayload
@@ -106,6 +108,7 @@ module usb_host #(
   enum CID: bit<4> { // Command ID
     Delay,
     SearchBootInterface,
+    SearchEndpointDesc,
   }
   struct Command {
     kind: CommandKind,
@@ -122,14 +125,15 @@ module usb_host #(
 
   var desc_byte_index : u8;
   var boot_interface_number : u8;
+  var boot_interface_desc_byte_index : u8;
+  var boot_interface_in_endp_addr : u8;
 
   var recv_byte_buf : bit<8>; // desc_config へバイト単位で書き込むためのバッファ
   var desc_rd_addr : u8;
   var desc_rd_data : bit<8>; // desc_config の読み出し結果
-  var sbi_phase : bit<4>; // SearchBootInterface のサブステート
-  var sbi_match : bit;
+  var sbi_match : bit; // SearchBootInterface で目的のディスクリプタが見つかったら 1
 
-  const NUM_INITIAL_COMMAND : u8 = 47;
+  const NUM_INITIAL_COMMAND : u8 = 51;
   let dev_addr: bit<7> = 6;
   let commands : Command[NUM_INITIAL_COMMAND] = '{
     // Setup stage
@@ -381,7 +385,7 @@ module usb_host #(
 
     Command'{ // 40
       kind: CommandKind::Other,
-      data: Packet'{pid: CID::SearchBootInterface as PID, payload: 1, payload_ext: 0, payload_len: 0},
+      data: Packet'{pid: CID::SearchBootInterface as PID, payload: 255, payload_ext: 0, payload_len: 0},
     },
 
     // Setup stage
@@ -423,6 +427,27 @@ module usb_host #(
       kind: CommandKind::SendPacket,
       data: Packet'{pid: PID::ACK, payload: '0, payload_ext: 0, payload_len: 0},
     },
+
+    Command'{ // 47
+      kind: CommandKind::Other,
+      data: Packet'{pid: CID::SearchEndpointDesc as PID, payload: 255, payload_ext: 0, payload_len: 0},
+    },
+
+    // Interrupt IN transfer
+    Command'{ // 48
+      kind: CommandKind::SendPacket,
+      data: Packet'{pid: PID::IN,
+                    payload: PP_Setup'{addr: dev_addr, endp: boot_interface_in_endp_addr, resv: 0},
+                    payload_ext: 0, payload_len: 11},
+    },
+    Command'{ // 49
+      kind: CommandKind::RecvPacket,
+      data: Packet'{pid: PID::DATA1, payload: '0, payload_ext: 0, payload_len: 8*8},
+    },
+    Command'{ // 50
+      kind: CommandKind::SendPacket,
+      data: Packet'{pid: PID::ACK, payload: '0, payload_ext: 0, payload_len: 0},
+    },
   };
   let commands_len : u8 = NUM_INITIAL_COMMAND;
   var command_index : u8;
@@ -431,8 +456,9 @@ module usb_host #(
   var recv_packet : Packet;
 
   // 各トランザクションの先頭のコマンド番号
-  let transaction : u8[17] = '{0, 3, 6, 7, 10, 13, 16, 19, 22, 25, 28, 31, 34, 37, 41, 44, 255};
+  let transaction : u8[18] = '{0, 3, 6, 7, 10, 13, 16, 19, 22, 25, 28, 31, 34, 37, 41, 44, 48, 255};
   var transaction_index : u8;
+  let repeat_command_from : u8 = 48; // このコマンド以降をずっと繰り返す
 
   enum CommandState {
     Ready,
@@ -483,6 +509,8 @@ module usb_host #(
           if next_i == transaction[transaction_index + 1] && repeat_data {
             // トランザクションを繰り返す
             next_command_index = transaction[transaction_index];
+          } else if next_i >= commands_len {
+            next_command_index = repeat_command_from;
           } else {
             next_command_index = next_i;
           }
@@ -549,11 +577,12 @@ module usb_host #(
 
       desc_byte_index = 0;
       boot_interface_number = 0;
+      boot_interface_desc_byte_index = 0;
+      boot_interface_in_endp_addr = 0;
 
       recv_byte_buf = 0;
       desc_rd_addr = 0;
       desc_rd_data = 0;
-      sbi_phase = 0;
       sbi_match = 0;
     } else if command_state == CommandState::Ready {
       packet_state = PacketState::Ready;
@@ -568,70 +597,119 @@ module usb_host #(
             bit_cnt += 1;
           }
         }
+
         CID::SearchBootInterface: {
           // desc_config は BRAM 化してあるため、1 サイクルにつき 1 バイトだけ読み出す。
           // 読み出しアドレスをセットしてから、結果が desc_rd_data に出るまで1サイクルかかる。
-          case sbi_phase {
+          case bit_cnt {
             0: { // bDescriptorType (offset+1) を要求
               desc_rd_addr = desc_byte_index + 1;
               sbi_match = 1;
-              sbi_phase = 1;
+              bit_cnt = 1;
             }
             1: { // 読み出し待ち
               desc_rd_data = desc_config[desc_rd_addr];
-              sbi_phase = 2;
+              bit_cnt = 2;
             }
             2: { // bDescriptorType を判定し、bInterfaceClass (offset+5) を要求
               sbi_match &= desc_rd_data == DescType::Interface;
               desc_rd_addr = desc_byte_index + 5;
-              sbi_phase = 3;
+              bit_cnt = 3;
             }
             3: {
               desc_rd_data = desc_config[desc_rd_addr];
-              sbi_phase = 4;
+              bit_cnt = 4;
             }
             4: { // bInterfaceClass (HID) を判定し、bInterfaceSubClass (offset+6) を要求
               sbi_match &= desc_rd_data == 3;
               desc_rd_addr = desc_byte_index + 6;
-              sbi_phase = 5;
+              bit_cnt = 5;
             }
             5: {
               desc_rd_data = desc_config[desc_rd_addr];
-              sbi_phase = 6;
+              bit_cnt = 6;
             }
             6: { // bInterfaceSubClass (Boot Interface) を判定し、bInterfaceProtocol (offset+7) を要求
               sbi_match &= desc_rd_data == 1;
               desc_rd_addr = desc_byte_index + 7;
-              sbi_phase = 7;
+              bit_cnt = 7;
             }
             7: {
               desc_rd_data = desc_config[desc_rd_addr];
-              sbi_phase = 8;
+              bit_cnt = 8;
             }
             8: { // bInterfaceProtocol (Keyboard) を判定する。
                  // 一致していれば bInterfaceNumber (offset+2)、不一致なら bLength (offset+0) を要求する
               sbi_match &= desc_rd_data == 1;
               desc_rd_addr = if sbi_match ? desc_byte_index + 2 : desc_byte_index;
-              sbi_phase = 9;
+              bit_cnt = 9;
             }
             9: {
               desc_rd_data = desc_config[desc_rd_addr];
-              sbi_phase = 10;
+              bit_cnt = 10;
             }
             10: {
               if sbi_match {
                 boot_interface_number = desc_rd_data;
-                bit_cnt = 1; // bit_cnt >= payload にするとコマンド終了
+                boot_interface_desc_byte_index = desc_byte_index;
+                bit_cnt = 255; // bit_cnt >= payload にするとコマンド終了
               } else {
                 desc_byte_index += desc_rd_data; // bLength だけ進めて次のディスクリプタへ
+                bit_cnt = 0;
               }
-              sbi_phase = 0;
             }
             default: {
-              sbi_phase = 0;
+              bit_cnt = 0;
             }
           }
         }
+
+        CID::SearchEndpointDesc: {
+          case bit_cnt {
+            0: { // 初期化
+              desc_byte_index = boot_interface_desc_byte_index;
+              bit_cnt = 1;
+            }
+            1: { // bDescriptorType (offset+1) を要求
+              desc_rd_addr = desc_byte_index + 1;
+              bit_cnt = 2;
+            }
+            2: { // 読み出し待ち
+              desc_rd_data = desc_config[desc_rd_addr];
+              bit_cnt = 3;
+            }
+            3: { // bDescriptorType を判定する。
+                 // 一致していれば bEndpointAddress (offset+2)、不一致なら bLength (offset+0) を要求する
+              if desc_rd_data == DescType::Endpoint {
+                desc_rd_addr = desc_byte_index + 2;
+                bit_cnt = 10;
+              } else {
+                desc_rd_addr = desc_byte_index + 0;
+                bit_cnt = 4;
+              }
+            }
+            4: { // bLength を読む
+              desc_rd_data = desc_config[desc_rd_addr];
+              bit_cnt = 5;
+            }
+            5: { // 次のディスクリプタに進む
+              desc_byte_index += desc_rd_data;
+              bit_cnt = 1;
+            }
+            10: { // bEndpointAddress を読む
+              desc_rd_data = desc_config[desc_rd_addr];
+              bit_cnt = 11;
+            }
+            11: { // bEndpointAddress を読む
+              boot_interface_in_endp_addr = desc_rd_data;
+              bit_cnt = 255;
+            }
+            default: {
+              bit_cnt = 0;
+            }
+          }
+        }
+
         default: {
         }
       }
@@ -910,5 +988,5 @@ module usb_host #(
   }
 
   assign status_led = {~packet_state, ~dev_speed};
-  assign dbg = {config_total_len[6:0], repeat_data, packet_state, command_state, valid_in, 2'0};
+  assign dbg = {dev_speed, dat_d2h, sig_in, repeat_data, packet_state, command_state, valid_in, 2'0};
 }
