@@ -113,11 +113,21 @@ module usb_host #(
   }
 
   var desc_device : bit<8*18>;
-  var desc_config : bit<8*128>;
+  // バイト配列にすることで BRAM 化できるようにする。
+  // フラットな bit ベクタのまま可変位置でビット選択すると、合成時に巨大なマルチプレクサになり
+  // 大量の LUT を消費してしまう。
+  var desc_config : bit<8>[128];
   var config_total_len : u16; // bytes
+  var config_value : u8; // bConfigurationValue
 
   var desc_byte_index : u8;
   var boot_interface_number : u8;
+
+  var recv_byte_buf : bit<8>; // desc_config へバイト単位で書き込むためのバッファ
+  var desc_rd_addr : u8;
+  var desc_rd_data : bit<8>; // desc_config の読み出し結果
+  var sbi_phase : bit<4>; // SearchBootInterface のサブステート
+  var sbi_match : bit;
 
   const NUM_INITIAL_COMMAND : u8 = 47;
   let dev_addr: bit<7> = 6;
@@ -342,7 +352,7 @@ module usb_host #(
       data: Packet'{pid: PID::DATA0,
                     payload: PP_SetupData'{bmRequestType: 0,
                                            bRequest: SET_CONFIGURATION,
-                                           wValue: desc_config[5] /* bConfigurationValue */,
+                                           wValue: config_value /* bConfigurationValue */,
                                            wIndex: 0, wLength: 0},
                     payload_ext: 0, payload_len: 64},
     },
@@ -535,9 +545,16 @@ module usb_host #(
       repeat_data = 0;
       recv_payload_pos = 0;
       config_total_len = 0;
+      config_value = 0;
 
       desc_byte_index = 0;
       boot_interface_number = 0;
+
+      recv_byte_buf = 0;
+      desc_rd_addr = 0;
+      desc_rd_data = 0;
+      sbi_phase = 0;
+      sbi_match = 0;
     } else if command_state == CommandState::Ready {
       packet_state = PacketState::Ready;
       bit_cnt = 0;
@@ -552,15 +569,67 @@ module usb_host #(
           }
         }
         CID::SearchBootInterface: {
-          if desc_config[8*(desc_byte_index + 1) +: 8] == DescType::Interface &&
-             desc_config[8*(desc_byte_index + 5) +: 8] == 3 && // HID
-             desc_config[8*(desc_byte_index + 6) +: 8] == 1 && // Boot Interface
-             desc_config[8*(desc_byte_index + 7) +: 8] == 1    // Keyboard
-          {
-            boot_interface_number = desc_config[desc_byte_index + 2];
-            bit_cnt = 1; // bit_cnt >= payload にするとコマンド終了
-          } else {
-            desc_byte_index += desc_config[8*desc_byte_index +: 8];
+          // desc_config は BRAM 化してあるため、1 サイクルにつき 1 バイトだけ読み出す。
+          // 読み出しアドレスをセットしてから、結果が desc_rd_data に出るまで1サイクルかかる。
+          case sbi_phase {
+            0: { // bDescriptorType (offset+1) を要求
+              desc_rd_addr = desc_byte_index + 1;
+              sbi_match = 1;
+              sbi_phase = 1;
+            }
+            1: { // 読み出し待ち
+              desc_rd_data = desc_config[desc_rd_addr];
+              sbi_phase = 2;
+            }
+            2: { // bDescriptorType を判定し、bInterfaceClass (offset+5) を要求
+              sbi_match &= desc_rd_data == DescType::Interface;
+              desc_rd_addr = desc_byte_index + 5;
+              sbi_phase = 3;
+            }
+            3: {
+              desc_rd_data = desc_config[desc_rd_addr];
+              sbi_phase = 4;
+            }
+            4: { // bInterfaceClass (HID) を判定し、bInterfaceSubClass (offset+6) を要求
+              sbi_match &= desc_rd_data == 3;
+              desc_rd_addr = desc_byte_index + 6;
+              sbi_phase = 5;
+            }
+            5: {
+              desc_rd_data = desc_config[desc_rd_addr];
+              sbi_phase = 6;
+            }
+            6: { // bInterfaceSubClass (Boot Interface) を判定し、bInterfaceProtocol (offset+7) を要求
+              sbi_match &= desc_rd_data == 1;
+              desc_rd_addr = desc_byte_index + 7;
+              sbi_phase = 7;
+            }
+            7: {
+              desc_rd_data = desc_config[desc_rd_addr];
+              sbi_phase = 8;
+            }
+            8: { // bInterfaceProtocol (Keyboard) を判定する。
+                 // 一致していれば bInterfaceNumber (offset+2)、不一致なら bLength (offset+0) を要求する
+              sbi_match &= desc_rd_data == 1;
+              desc_rd_addr = if sbi_match ? desc_byte_index + 2 : desc_byte_index;
+              sbi_phase = 9;
+            }
+            9: {
+              desc_rd_data = desc_config[desc_rd_addr];
+              sbi_phase = 10;
+            }
+            10: {
+              if sbi_match {
+                boot_interface_number = desc_rd_data;
+                bit_cnt = 1; // bit_cnt >= payload にするとコマンド終了
+              } else {
+                desc_byte_index += desc_rd_data; // bLength だけ進めて次のディスクリプタへ
+              }
+              sbi_phase = 0;
+            }
+            default: {
+              sbi_phase = 0;
+            }
           }
         }
         default: {
@@ -752,19 +821,29 @@ module usb_host #(
             if sig_in == SE0 {
               packet_state = PacketState::EOP;
               bit_cnt = 1;
-
-              if command_cache.data.payload_ext && command_cache.data.payload == DescType::Configuration {
-                config_total_len = desc_config[8*2 +: 16];
-                // [A+:B] == [(A+B-1):A] （A から B ビットの幅を選択）
-              }
             } else {
               if command_cache.data.payload_ext {
                 if recv_payload_pos <: command_cache.data.payload_len {
                   case command_cache.data.payload {
                     DescType::Device:
                       desc_device[recv_payload_pos] = if sig_in == L0 ? 0 : 1;
-                    default:
-                      desc_config[recv_payload_pos] = if sig_in == L0 ? 0 : 1;
+                    default: { // DescType::Configuration
+                      let recv_bit : bit = if sig_in == L0 ? 0 : 1;
+                      if recv_payload_pos[2:0] == 3'b111 {
+                        // 1バイト分そろったので desc_config (BRAM) に書き込む。
+                        // recv_byte_buf に前の7ビット分が入っているので、今回のビットと合わせて1バイトにする。
+                        let byte_val : bit<8> = {recv_bit, recv_byte_buf[6:0]};
+                        let byte_index : u8 = recv_payload_pos[10:3];
+                        desc_config[byte_index] = byte_val;
+                        case byte_index {
+                          8'd2: config_total_len[7:0] = byte_val;  // wTotalLength 下位バイト
+                          8'd3: config_total_len[15:8] = byte_val; // wTotalLength 上位バイト
+                          8'd5: config_value = byte_val;           // bConfigurationValue
+                          default: {}
+                        }
+                      }
+                      recv_byte_buf[recv_payload_pos[2:0]] = recv_bit;
+                    }
                   }
                 }
               } else {
@@ -831,5 +910,5 @@ module usb_host #(
   }
 
   assign status_led = {~packet_state, ~dev_speed};
-  assign dbg = {desc_config[16 +: 7], repeat_data, packet_state, command_state, valid_in, 2'0};
+  assign dbg = {config_total_len[6:0], repeat_data, packet_state, command_state, valid_in, 2'0};
 }
