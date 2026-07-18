@@ -132,6 +132,7 @@ module usb_host #(
     Delay,
     SearchBootInterface,
     SearchEndpointDesc,
+    DetectKey,
   }
   struct Command {
     kind: CommandKind,
@@ -156,7 +157,7 @@ module usb_host #(
   var desc_rd_data : bit<8>; // desc_config の読み出し結果
   var sbi_match : bit; // SearchBootInterface で目的のディスクリプタが見つかったら 1
 
-  const NUM_INITIAL_COMMAND : u8 = 51;
+  const NUM_INITIAL_COMMAND : u8 = 52;
   let dev_addr: bit<7> = 6;
   let commands : Command[NUM_INITIAL_COMMAND] = '{
     // Setup stage
@@ -471,6 +472,11 @@ module usb_host #(
       kind: CommandKind::SendPacket,
       data: Packet'{pid: PID::ACK, payload: '0, payload_ext: 0, payload_len: 0},
     },
+
+    Command'{ // 51
+      kind: CommandKind::Other,
+      data: Packet'{pid: CID::DetectKey as PID, payload: 255, payload_ext: 0, payload_len: 0},
+    },
   };
   let commands_len : u8 = NUM_INITIAL_COMMAND;
   var command_index : u8;
@@ -583,6 +589,11 @@ module usb_host #(
     }
   }
 
+  var key_report_prev : bit<64>;
+  var key_report_cur : bit<64>;
+  var key_pressed : bit;
+  var pressed_key_code : bit<8>;
+
   always_ff (clk, rst_n) {
     if_reset {
       packet_state = PacketState::Ready;
@@ -607,6 +618,11 @@ module usb_host #(
       desc_rd_addr = 0;
       desc_rd_data = 0;
       sbi_match = 0;
+
+      key_report_prev = 0;
+      key_report_cur = 0;
+      key_pressed = 0;
+      pressed_key_code = 0;
     } else if command_state == CommandState::Ready {
       packet_state = PacketState::Ready;
       bit_cnt = 0;
@@ -729,6 +745,33 @@ module usb_host #(
             }
             default: {
               bit_cnt = 0;
+            }
+          }
+        }
+
+        CID::DetectKey: {
+          case bit_cnt {
+            0..64: {
+              // キーコードを総当たりで press 判定
+              let cur_index = bit_cnt[5:3];
+              let prev_index = bit_cnt[2:0];
+              if cur_index >= 2 {
+                let key_cur = key_report_cur[8*cur_index +: 8];
+                if key_cur != 0 {
+                  if prev_index == 0 {
+                    key_pressed = 1;
+                  } else if prev_index == 7 {
+                    pressed_key_code = if key_pressed ? key_cur : 0;
+                  } else {
+                    let key_prev = key_report_prev[8*(1 + prev_index) +: 8];
+                    key_pressed &= key_cur != key_prev;
+                  }
+                }
+              }
+              bit_cnt += 1;
+            }
+            64: {
+              bit_cnt = 255;
             }
           }
         }
@@ -981,6 +1024,11 @@ module usb_host #(
                     recv_payload_pos = new_pos;
                     repeat_data = 1;
                   }
+
+                  if command_index == 49 {
+                    key_report_prev = key_report_cur;
+                    key_report_cur = recv_packet.payload[63:0];
+                  }
                 }
               }
             }
@@ -1011,5 +1059,5 @@ module usb_host #(
   }
 
   assign status_led = {~packet_state, ~dev_speed};
-  assign dbg = {dev_speed, dat_d2h, sig_in, repeat_data, packet_state, command_state, valid_in, 2'0};
+  assign dbg = {pressed_key_code[7:0], packet_state, command_state, valid_in, 2'0};
 }
