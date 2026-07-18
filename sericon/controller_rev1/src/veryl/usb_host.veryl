@@ -3,6 +3,29 @@
  * Copyright (c) 2026 Kota UCHIDA
  */
 
+/*
+設計改善案（そのうち検討したい）
+
+## commands の冗長性排除
+
+commands はパケット単位で書く必要があり面倒。
+例えば ACK が重複していたり、SET_ADDRESSの Setup や Status の複数パケットを毎回書き下ろしたり。
+
+理想は下記のレイヤ分割：
+- トランザクション層: token+data+handshake の 3 パケット組。
+  上位層から ACK を明示せず、トランザクション層が自動で処理する。
+- コントロール転送層: {bRequest,wValue,wIndex,wLength,方向} を渡すと
+  Setup/Data/Status の 3 ステージを構成してトランザクション層に渡す。
+- スクリプト層: 「SET_ADDRESS 6」とか「GET_DESCRIPTOR Configuration」くらいの粒度で指示を書く。
+
+## その他の改善
+
+- 現状、Device ディスクリプタの bDeviceClass を見ていない。
+  単純な HID キーボードなら 0 のはず。非 0（ハブやIAD複合デバイス等）を弾くべき。
+- SearchBootInterface / SearchEndpointDesc は目的の記述子が見つからない場合の上限が無く、
+  想定外デバイスで無限にスキャンし続けてしまう。ハングではないが、無反応に見える。
+*/
+
 import usb::*;
 import usb::BusState::*;
 
