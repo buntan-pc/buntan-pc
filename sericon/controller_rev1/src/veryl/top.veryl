@@ -338,8 +338,32 @@ module top (
   var uart_rx_full:  bit;
   var uart_wr:       bit;
   var uart_tx_ready: bit;
-  assign uart_tx_data = 8'hA5;
-  assign uart_wr = 0;
+
+  // USB キーボードの入力を UART へ送る
+  var usb_key_ascii : 'usb bit<8>;
+  var usb_key_req : 'usb bit;
+  var key_req_sync : bit<2>; // usb_key_req を 2 段 D-FF で同期
+  var key_req_prev : bit;    // エッジ検出用
+
+  unsafe (cdc) {
+    always_ff (sys_clk, rst_n) {
+      if_reset {
+        key_req_sync = 0;
+        key_req_prev = 0;
+        uart_tx_data = 0;
+        uart_wr = 0;
+      } else {
+        key_req_sync = {key_req_sync[0], usb_key_req};
+        if key_req_sync[msb] != key_req_prev {
+          uart_tx_data = usb_key_ascii;
+          uart_wr = 1;
+        } else {
+          uart_wr = 0;
+        }
+        key_req_prev = key_req_sync[1];
+      }
+    }
+  }
 
   var uart_rx: bit;
   var uart_tx: bit;
@@ -591,6 +615,8 @@ module top (
     dp_raw: usb_dp_raw,
     dm_raw: usb_dm_raw,
     dbg: usb_dbg,
+    key_ascii: usb_key_ascii,
+    key_req: usb_key_req,
   );
 }
 
