@@ -13,6 +13,7 @@ module usb_bus #(
   clk: input clock,
   rst_n: input reset_async_low,
   ms_tick: input bit, // 1ms 間隔の始まりを示す 1 サイクル幅のパルス
+  bit_tick: output bit, // ビット間隔を示す 1 サイクル幅のパルス
   dev_speed: output DevSpeed, // 検出したデバイス速度
   dev_en: output bit, // デバイスが接続されバスリセットが完了した状態
   dp_raw: inout 'usb_raw tri logic,
@@ -54,6 +55,20 @@ module usb_bus #(
         FS: CLOCK_HZ / 12_000_000 - 1,
         default: 0,
       };
+    }
+  }
+
+  var bit_tim_cnt : bit<$clog2(CLOCK_HZ / 1_500_000)>;
+  always_ff (clk, rst_n) {
+    if_reset {
+      bit_tim_cnt = 0;
+      bit_tick = 0;
+    } else if bit_tim_cnt == bit_tim_max {
+      bit_tim_cnt = 0;
+      bit_tick = 1;
+    } else {
+      bit_tim_cnt += 1;
+      bit_tick = 0;
     }
   }
 

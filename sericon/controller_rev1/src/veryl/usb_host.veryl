@@ -60,26 +60,7 @@ module usb_host #(
     }
   }
 
-  var packet_send_req : bit;
-  var nrzi_out : bit;
-
-  const LS_BIT_PERIOD : u32 = CLOCK_HZ/1_500_000;
-  var ls_tick_gen : bit<$clog2(LS_BIT_PERIOD - 1)>; // LS のビットタイミング 1.5Mbps を作るタイマ
-  var ls_tick : bit; // ビット先頭で 1 クロック期間だけ 1 になる
-
-  always_ff (clk, rst_n) {
-    if_reset {
-      ls_tick_gen = 0;
-      ls_tick = 0;
-    } else if ls_tick_gen == LS_BIT_PERIOD - 1 {
-      ls_tick_gen = 0;
-      ls_tick = 1;
-    } else {
-      ls_tick_gen += 1;
-      ls_tick = 0;
-    }
-  }
-
+  var bit_tick : bit;
   var dev_speed : DevSpeed;
   var dev_en : bit;
   var sig_out : BusState;
@@ -93,6 +74,7 @@ module usb_host #(
     clk,
     rst_n,
     ms_tick,
+    bit_tick,
     dev_speed,
     dev_en,
     dp_raw,
@@ -879,7 +861,7 @@ module usb_host #(
           if pid_buf[2:0] == PID::DATA0[2:0] {
             pid_buf[3] = data01;
           }
-          if ls_tick {
+          if bit_tick {
             if bit_cnt <: 7 {
               bit_cnt += 1;
               sig_out = L0;
@@ -891,7 +873,7 @@ module usb_host #(
           }
         }
         PacketState::PID:
-          if ls_tick {
+          if bit_tick {
             if bit_cnt <: 4 {
               sig_out = if pid_buf[bit_cnt] ? L1 : L0;
               bit_cnt += 1;
@@ -912,7 +894,7 @@ module usb_host #(
             }
           }
         PacketState::Data:
-          if ls_tick {
+          if bit_tick {
             var next_bit : bit;
             next_bit = command_cache.data.payload[bit_cnt];
             sig_out = if next_bit ? L1 : L0;
@@ -954,7 +936,7 @@ module usb_host #(
             }
           }
         PacketState::CRC5:
-          if ls_tick {
+          if bit_tick {
             sig_out = if crc5[bit_cnt] ? L0 : L1;
             if bit_cnt == 5 - 1 {
               packet_state = PacketState::EOP;
@@ -964,7 +946,7 @@ module usb_host #(
             }
           }
         PacketState::CRC16:
-          if ls_tick {
+          if bit_tick {
             sig_out = if crc16[bit_cnt] ? L0 : L1;
             if bit_cnt == 16 - 1 {
               packet_state = PacketState::EOP;
@@ -974,7 +956,7 @@ module usb_host #(
             }
           }
         PacketState::EOP:
-          if ls_tick {
+          if bit_tick {
             case bit_cnt {
               0,1: {
                 sig_out = SE0;
@@ -1118,7 +1100,7 @@ module usb_host #(
   always_ff (clk, rst_n) {
     if_reset {
       valid_out = 0;
-    } else if ls_tick {
+    } else if bit_tick {
       valid_out = dir_out;
     } else {
       valid_out = 0;
