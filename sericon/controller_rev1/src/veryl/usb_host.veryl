@@ -40,6 +40,7 @@ module usb_host #(
   dbg: output bit<16>,
   key_ascii: output bit<8>, // 新しく押されたキーのコード（CDC用、key_reqとセットで使う）
   key_req: output bit, // key_asciiを更新するたびトグルする（CDC用、ackなしの簡易版）
+  skip_key_auth: input bit, // 1=キーボード認証をしない
 ) {
   var dir_out : bit;
 
@@ -637,6 +638,7 @@ module usb_host #(
   var key_report_cur : bit<64>;
   var key_pressed : bit;
   var pressed_key_code : bit<8>;
+  var key_req_internal : bit;
 
   always_ff (clk, rst_n) {
     if_reset {
@@ -667,7 +669,7 @@ module usb_host #(
       key_report_cur = 0;
       key_pressed = 0;
       key_ascii = 0;
-      key_req = 0;
+      key_req_internal = 0;
       pressed_key_code = 0;
     } else if command_state == CommandState::Ready {
       packet_state = PacketState::Ready;
@@ -837,7 +839,7 @@ module usb_host #(
                 } else {
                   key_ascii = usage_id_to_ascii_map[pressed_key_code];
                 }
-                key_req = ~key_req;
+                key_req_internal = ~key_req_internal;
               }
             }
           }
@@ -1106,6 +1108,134 @@ module usb_host #(
     }
   }
 
+  var key_req_prev : bit;
+  let key_req_pulse : bit = key_req_internal ^ key_req_prev;
+  always_ff (clk, rst_n) {
+    if_reset {
+      key_req_prev = 0;
+    } else {
+      key_req_prev = key_req_internal;
+    }
+  }
+
+  enum DevAuthState {
+    WaitInitialized,
+    GenChar0,
+    WaitChar0,
+    GenChar1,
+    WaitChar1,
+    Authorized,
+    Failed,
+    BadDevice,
+  }
+
+  var lfsr_set : bit;
+  var lfsr_out : bit<5>;
+  inst lfsr_inst : $std::lfsr_galois #(
+    SIZE: 5, // lfsr_out: 0..32
+  ) (
+    i_clk: clk,
+    i_en: 1,
+    i_set: lfsr_set,
+    i_setval: 5'd1,
+    o_val: lfsr_out,
+  );
+
+  function MakeRandomChar(lfsr_val : input bit<5>) -> bit<8> {
+    return case lfsr_val {
+       0..26 : 8'h41 + lfsr_val,
+      default: 8'h30 + (lfsr_val - 26),
+    };
+  }
+
+  var dev_auth_state : DevAuthState;
+  var challenge_char : bit<8>;
+  var num_fail : bit<2>;
+  var auth_tim : bit<10>;
+  always_ff (clk, rst_n) {
+    if_reset {
+      lfsr_set = 1;
+      dev_auth_state = DevAuthState::WaitInitialized;
+      challenge_char = 0;
+      num_fail = 0;
+      auth_tim = 0;
+    } else {
+      lfsr_set = 0;
+      case dev_auth_state {
+        DevAuthState::WaitInitialized: {
+          if dev_en & skip_key_auth {
+            dev_auth_state = DevAuthState::Authorized;
+            auth_tim = 0;
+          } else if command_index >= repeat_command_from {
+            dev_auth_state = DevAuthState::GenChar0;
+            auth_tim = 0;
+          } else if ms_tick {
+            auth_tim += 1;
+          }
+          challenge_char = 0;
+        }
+        DevAuthState::GenChar0,DevAuthState::GenChar1: {
+          if ~dev_en {
+            dev_auth_state = DevAuthState::WaitInitialized;
+          } else {
+            dev_auth_state = case dev_auth_state {
+              DevAuthState::GenChar0: DevAuthState::WaitChar0,
+              default:                DevAuthState::WaitChar1,
+            };
+          }
+          challenge_char = MakeRandomChar(lfsr_out);
+        }
+        DevAuthState::WaitChar0,DevAuthState::WaitChar1: {
+          if ~dev_en {
+            dev_auth_state = DevAuthState::WaitInitialized;
+          } else if key_req_pulse {
+            let input_char : bit<8> = if key_ascii >= 8'h60 // 小文字だったら
+                                      ? key_ascii - 8'h20   // 大文字へ
+                                      : key_ascii;
+            if input_char != challenge_char {
+              dev_auth_state = DevAuthState::Failed;
+            } else {
+            dev_auth_state = case dev_auth_state {
+              DevAuthState::WaitChar0: DevAuthState::GenChar1,
+              default:                 DevAuthState::Authorized,
+            };
+            }
+          }
+        }
+        DevAuthState::Authorized: {
+          if ~dev_en {
+            dev_auth_state = DevAuthState::WaitInitialized;
+          } else if ms_tick && auth_tim <: 1000 {
+            auth_tim += 1;
+          }
+          challenge_char = 0;
+        }
+        DevAuthState::Failed: {
+          if ~dev_en {
+            dev_auth_state = DevAuthState::WaitInitialized;
+          } else if num_fail >= 3 { // 失敗が 3 回を超えたら認証失敗
+            dev_auth_state = DevAuthState::BadDevice;
+          } else {
+            dev_auth_state = DevAuthState::GenChar0;
+            num_fail += 1;
+          }
+        }
+        DevAuthState::BadDevice: {
+          if ~dev_en {
+            dev_auth_state = DevAuthState::WaitInitialized;
+          } else if ms_tick {
+            auth_tim += 1;
+          }
+        }
+      }
+    }
+  }
+
+  // Authorized になったらキー入力を許可
+  assign key_req = key_req_internal & (
+    skip_key_auth | dev_auth_state == DevAuthState::Authorized
+  );
+
   always_ff (clk, rst_n) {
     if_reset {
       valid_out = 0;
@@ -1125,6 +1255,21 @@ module usb_host #(
     }
   }
 
-  assign status_led = {~packet_state, ~dev_speed};
+  assign status_led = case dev_auth_state {
+    DevAuthState::WaitInitialized:
+      6'b001100 ^ {auth_tim[9] repeat 6},
+    DevAuthState::Authorized:
+      case auth_tim {
+        0..128*5: ~(6'd1 << auth_tim[9:7]),
+        default : 6'd0,
+      },
+    DevAuthState::BadDevice:
+      case auth_tim[9:8] {
+        0..2:    6'b010101 ^ {auth_tim[7] repeat 6},
+        default: {auth_tim[7] repeat 6},
+      },
+    default:
+      ~(challenge_char - 8'h20),
+  };
   assign dbg = {1'0, dir_out, command_cache.data.pid, command_cache.kind, bit_cnt[5:0], 2'0};
 }

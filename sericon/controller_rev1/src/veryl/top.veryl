@@ -5,7 +5,8 @@
 
 module top (
   sys_clk: input clock,
-  rst_n_raw: input reset_async_low,
+  rst_n_raw: input 'noclk reset_async_low,
+  sw_n_raw: input 'noclk logic,
   onboard_led: output logic<6>,
   clk_p: output 'dvi clock,
   clk_n: output 'dvi clock,
@@ -70,19 +71,19 @@ module top (
   const DP : DVIParams = CVT_RBv2;
 
   var rst_n : reset_async_low;
+  unsafe (cdc) {
+    inst rst_synchronizer: $std::synchronizer_basic #(
+      WIDTH: 1,
+      STAGES: 2,
+    ) (
+      i_clk: sys_clk,
+      i_rst: rst_n_raw,
+      i_d: 1,
+      o_d: rst_n,
+    );
+  }
+
   var dvi_rst_n : 'dvi reset_async_low;
-
-  inst rst_synchronizer: $std::synchronizer_basic #(
-    WIDTH: 1,
-    STAGES: 2,
-  ) (
-    i_clk: sys_clk,
-    i_rst: rst_n_raw,
-    i_d: 1'b1,
-    o_d: rst_n,
-  );
-
-
   var fclk : 'dvif clock;
   var pclk : 'dvi clock;
   var fclk_pll_lock : 'dvi logic;
@@ -608,6 +609,40 @@ module top (
     assign usb_vbus_ctrl = usb_rst_n;
   }
 
+  var sw_n : 'usb reset_async_low;
+  inst sw_synchronizer: $std::synchronizer_basic #(
+    WIDTH: 1,
+    STAGES: 2,
+  ) (
+    i_clk: usb_clk,
+    i_rst: usb_rst_n,
+    i_d: sw_n_raw,
+    o_d: sw_n,
+  );
+
+  var sw_n_latch : 'usb bit; // 起動時の sw_n の状態を保持
+  var sw_latch_state : 'usb bit<2>;
+
+  always_ff (usb_clk, usb_rst_n) {
+    if_reset {
+      sw_n_latch = 0;
+      sw_latch_state = 0;
+    } else {
+      case sw_latch_state {
+        0,1: {
+          sw_latch_state += 1;
+        }
+        2: {
+          sw_n_latch = sw_n;
+          sw_latch_state += 1;
+        }
+        default: {
+          sw_latch_state = '1;
+        }
+      }
+    }
+  }
+
   inst usb_inst : usb_host(
     clk: usb_clk,
     rst_n: usb_rst_n,
@@ -617,6 +652,7 @@ module top (
     dbg: usb_dbg,
     key_ascii: usb_key_ascii,
     key_req: usb_key_req,
+    skip_key_auth: ~sw_n_latch,
   );
 }
 
