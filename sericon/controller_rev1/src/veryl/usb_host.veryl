@@ -546,6 +546,9 @@ module usb_host #(
           }
         }
         CommandState::Exec: {
+          if ~dev_en {
+            command_state = CommandState::Ready;
+          }
           case command_cache.kind {
             CommandKind::SendPacket: {
               if packet_state == PacketState::EOP && bit_cnt >= 4 {
@@ -668,6 +671,8 @@ module usb_host #(
       pressed_key_code = 0;
     } else if command_state == CommandState::Ready {
       packet_state = PacketState::Ready;
+      dir_out = 0;
+      sig_out = J;
       bit_cnt = 0;
       crc5 = '1;
       crc16 = '1;
@@ -684,60 +689,64 @@ module usb_host #(
           // desc_config は BRAM 化してあるため、1 サイクルにつき 1 バイトだけ読み出す。
           // 読み出しアドレスをセットしてから、結果が desc_rd_data に出るまで1サイクルかかる。
           case bit_cnt {
-            0: { // bDescriptorType (offset+1) を要求
-              desc_rd_addr = desc_byte_index + 1;
-              sbi_match = 1;
+            0: { // 初期化
+              desc_byte_index = 0;
               bit_cnt = 1;
             }
-            1: { // 読み出し待ち
-              desc_rd_data = desc_config[desc_rd_addr];
+            1: { // bDescriptorType (offset+1) を要求
+              desc_rd_addr = desc_byte_index + 1;
+              sbi_match = 1;
               bit_cnt = 2;
             }
-            2: { // bDescriptorType を判定し、bInterfaceClass (offset+5) を要求
-              sbi_match &= desc_rd_data == DescType::Interface;
-              desc_rd_addr = desc_byte_index + 5;
+            2: { // 読み出し待ち
+              desc_rd_data = desc_config[desc_rd_addr];
               bit_cnt = 3;
             }
-            3: {
-              desc_rd_data = desc_config[desc_rd_addr];
+            3: { // bDescriptorType を判定し、bInterfaceClass (offset+5) を要求
+              sbi_match &= desc_rd_data == DescType::Interface;
+              desc_rd_addr = desc_byte_index + 5;
               bit_cnt = 4;
             }
-            4: { // bInterfaceClass (HID) を判定し、bInterfaceSubClass (offset+6) を要求
-              sbi_match &= desc_rd_data == 3;
-              desc_rd_addr = desc_byte_index + 6;
+            4: {
+              desc_rd_data = desc_config[desc_rd_addr];
               bit_cnt = 5;
             }
-            5: {
-              desc_rd_data = desc_config[desc_rd_addr];
+            5: { // bInterfaceClass (HID) を判定し、bInterfaceSubClass (offset+6) を要求
+              sbi_match &= desc_rd_data == 3;
+              desc_rd_addr = desc_byte_index + 6;
               bit_cnt = 6;
             }
-            6: { // bInterfaceSubClass (Boot Interface) を判定し、bInterfaceProtocol (offset+7) を要求
-              sbi_match &= desc_rd_data == 1;
-              desc_rd_addr = desc_byte_index + 7;
+            6: {
+              desc_rd_data = desc_config[desc_rd_addr];
               bit_cnt = 7;
             }
-            7: {
-              desc_rd_data = desc_config[desc_rd_addr];
+            7: { // bInterfaceSubClass (Boot Interface) を判定し、bInterfaceProtocol (offset+7) を要求
+              sbi_match &= desc_rd_data == 1;
+              desc_rd_addr = desc_byte_index + 7;
               bit_cnt = 8;
             }
-            8: { // bInterfaceProtocol (Keyboard) を判定する。
+            8: {
+              desc_rd_data = desc_config[desc_rd_addr];
+              bit_cnt = 9;
+            }
+            9: { // bInterfaceProtocol (Keyboard) を判定する。
                  // 一致していれば bInterfaceNumber (offset+2)、不一致なら bLength (offset+0) を要求する
               sbi_match &= desc_rd_data == 1;
               desc_rd_addr = if sbi_match ? desc_byte_index + 2 : desc_byte_index;
-              bit_cnt = 9;
-            }
-            9: {
-              desc_rd_data = desc_config[desc_rd_addr];
               bit_cnt = 10;
             }
             10: {
+              desc_rd_data = desc_config[desc_rd_addr];
+              bit_cnt = 11;
+            }
+            11: {
               if sbi_match {
                 boot_interface_number = desc_rd_data;
                 boot_interface_desc_byte_index = desc_byte_index;
                 bit_cnt = 255; // bit_cnt >= payload にするとコマンド終了
               } else {
                 desc_byte_index += desc_rd_data; // bLength だけ進めて次のディスクリプタへ
-                bit_cnt = 0;
+                bit_cnt = 1;
               }
             }
             default: {
@@ -1117,5 +1126,5 @@ module usb_host #(
   }
 
   assign status_led = {~packet_state, ~dev_speed};
-  assign dbg = {pressed_key_code[7:0], packet_state, command_state, valid_in, 2'0};
+  assign dbg = {1'0, dir_out, command_cache.data.pid, command_cache.kind, bit_cnt[5:0], 2'0};
 }
