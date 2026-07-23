@@ -14,6 +14,7 @@ SRCS := src/port.cst \
 	src/veryl/usb_common.veryl \
 	src/veryl/usb_host.veryl \
 	src/veryl/usb_bus.veryl \
+	src/veryl/flip_sync.veryl \
 	../../cpu/simple_timer.sv
 
 VERYL_SRCS := $(filter %.veryl,$(SRCS))

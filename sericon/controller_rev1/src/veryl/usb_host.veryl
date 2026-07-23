@@ -41,6 +41,9 @@ module usb_host #(
   key_ascii: output bit<8>, // 新しく押されたキーのコード（CDC用、key_reqとセットで使う）
   key_req: output bit, // key_asciiを更新するたびトグルする（CDC用、ackなしの簡易版）
   skip_key_auth: input bit, // 1=キーボード認証をしない
+  challenge_char: output bit<8>, // キーボード認証文字
+  challenge_req:  output bit,    // challenge_char を更新するたびトグル
+  key_auth_state: output KeyAuthState, // キーボード認証状況
 ) {
   var dir_out : bit;
 
@@ -1149,14 +1152,16 @@ module usb_host #(
   }
 
   var dev_auth_state : DevAuthState;
-  var challenge_char : bit<8>;
+  //var challenge_char : bit<8>;
   var num_fail : bit<2>;
   var auth_tim : bit<10>;
+
   always_ff (clk, rst_n) {
     if_reset {
       lfsr_set = 1;
       dev_auth_state = DevAuthState::WaitInitialized;
       challenge_char = 0;
+      challenge_req = 0;
       num_fail = 0;
       auth_tim = 0;
     } else {
@@ -1184,6 +1189,7 @@ module usb_host #(
             };
           }
           challenge_char = MakeRandomChar(lfsr_out);
+          challenge_req = ~challenge_req;
         }
         DevAuthState::WaitChar0,DevAuthState::WaitChar1: {
           if ~dev_en {
@@ -1254,6 +1260,12 @@ module usb_host #(
       tick_toggle = ~tick_toggle;
     }
   }
+
+  assign key_auth_state = case dev_auth_state {
+    DevAuthState::Authorized: KeyAuthState::Authorized,
+    DevAuthState::BadDevice: KeyAuthState::BadDevice,
+    default: KeyAuthState::Challenging,
+  };
 
   assign status_led = case dev_auth_state {
     DevAuthState::WaitInitialized:

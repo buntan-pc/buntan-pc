@@ -44,4 +44,10 @@ package usb {
     Interface     = 4,
     Endpoint      = 5,
   }
+
+  enum KeyAuthState: bit<_> {
+    Challenging,
+    Authorized,
+    BadDevice,
+  }
 }
