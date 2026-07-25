@@ -1,0 +1,37 @@
+module flip_sync::<T: type> #(
+  param DEPTH: u32 = 2,
+) (
+  i_clk: input 'dst clock,
+  i_rst: input 'dst reset,
+  i_data: input 'src T,
+  i_req:  input 'src bit,
+  o_data: output 'dst T,
+  o_valid: output 'dst bit,
+) {
+  var req_sync : 'dst bit<DEPTH>;
+  var req_prev : 'dst bit;
+
+  unsafe (cdc) {
+    always_ff (i_clk, i_rst) {
+      if_reset {
+        req_sync = '0;
+        req_prev = 0;
+      } else {
+        req_prev = req_sync[msb];
+        req_sync = {req_sync[msb-1:0], i_req};
+      }
+    }
+
+    always_ff (i_clk, i_rst) {
+      if_reset {
+        o_data = '0;
+        o_valid = 0;
+      } else if req_prev != req_sync[msb] {
+        o_data = i_data;
+        o_valid = 1;
+      } else {
+        o_valid = 0;
+      }
+    }
+  }
+}

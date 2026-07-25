@@ -384,7 +384,8 @@ module top (
   always_ff (sys_clk, rst_n) {
     if_reset {
       usb_key_auth_state_changed = 0;
-      usb_key_auth_state_prev = usb::KeyAuthState::Challenging;
+      usb_key_auth_state_prev = usb::KeyAuthState::BadDevice;
+      // 最初に changed が真になるように、初期値を BadDevice にしておく
     } else {
       usb_key_auth_state_changed = usb_key_auth_state_prev != usb_key_auth_state_sync;
       usb_key_auth_state_prev = usb_key_auth_state_sync;
@@ -586,9 +587,6 @@ module top (
         }
       }
     } else if scrn_recv_state == ScrnRecvState::idle {
-      scrn_wr_pos[0] = SCRN_W_CHAR * SCRN_H_CHAR - 1;
-      scrn_wr_pos[1] = SCRN_W_CHAR * SCRN_H_CHAR - 1;
-
       if usb_challenge_char_wrmem {
         scrn_wen = 0;
         usb_challenge_char_wrmem = 0;
@@ -608,7 +606,10 @@ module top (
             scrn_wen = 1;
             usb_challenge_char_wrmem = 1;
           }
-          default: {
+          default: { // Challenging
+            let scrn_pos : u32 = SCRN_W_CHAR * SCRN_H_CHAR - 1;
+            scrn_wr_pos[0] = scrn_pos;
+            scrn_wr_pos[1] = scrn_pos;
           }
         }
       } else {
