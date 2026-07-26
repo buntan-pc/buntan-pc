@@ -604,18 +604,17 @@ module top (
         scrn_wen = 1;
         usb_challenge_char_wrmem = 1;
       } else if usb_key_auth_state_changed {
+        scrn_wen = 1;
+        usb_challenge_char_wrmem = 1;
         case usb_key_auth_state_sync {
           usb::KeyAuthState::Authorized: {
             scrn_wr_data = "*";
-            scrn_wen = 1;
-            usb_challenge_char_wrmem = 1;
           }
           usb::KeyAuthState::BadDevice: {
             scrn_wr_data = "!";
-            scrn_wen = 1;
-            usb_challenge_char_wrmem = 1;
           }
           default: { // Challenging
+            scrn_wr_data = "?";
           }
         }
       } else {
