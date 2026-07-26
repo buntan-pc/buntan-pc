@@ -5,7 +5,13 @@
  *                  (mtoyoda@acm.org)
  *        Last Modified: 2014/06/03
  *========================================
+ *
+ * Everyone is permitted to do anything on this program including copying,
+ * modifying, and improving, unless you try to pretend that you wrote it.
+ * i.e., the above copyright notice has to appear in all copies.
+ * THE AUTHOR DISCLAIMS ANY RESPONSIBILITY WITH REGARD TO THIS SOFTWARE.
  */
+/* sl version 5.03b: Port to BuntanPC           by uchan-nos      2026/07/26 */
 /* sl version 5.03 : Fix some more compiler warnings.                        */
 /*                                              by Ryan Jacobs    2015/01/19 */
 /* sl version 5.02 : Fix compiler warnings.                                  */

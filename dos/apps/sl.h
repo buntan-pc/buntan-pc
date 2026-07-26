@@ -5,6 +5,11 @@
  *		  (mtoyoda@acm.org)
  *	Last Modified: 2014/06/03
  *========================================
+ *
+ * Everyone is permitted to do anything on this program including copying,
+ * modifying, and improving, unless you try to pretend that you wrote it.
+ * i.e., the above copyright notice has to appear in all copies.
+ * THE AUTHOR DISCLAIMS ANY RESPONSIBILITY WITH REGARD TO THIS SOFTWARE.
  */
 
 #define D51HEIGHT	10
