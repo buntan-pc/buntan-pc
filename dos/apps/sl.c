@@ -46,8 +46,8 @@
 
 #include <curses.h>
 #include <signal.h>
-#include <unistd.h>
 #include "sl.h"
+#include "syscall.h"
 
 void add_smoke(int y, int x);
 void add_man(int y, int x);
@@ -86,8 +86,12 @@ void option(char *str)
     }
 }
 
-int main(int argc, char *argv[])
+int buntan_main(int *info)
 {
+    init_syscall(info);
+    int argc = info[2];
+    char **argv = info[3];
+
     int x, i;
 
     for (i = 1; i < argc; ++i) {
