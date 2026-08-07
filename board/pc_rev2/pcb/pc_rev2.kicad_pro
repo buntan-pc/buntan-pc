@@ -749,7 +749,7 @@
         "uuid": "504622d4-653f-4b3b-8099-0af1a54c930d"
       }
     ],
-    "used_designators": "H1-4,P1,R1-33,R37,J1-10,C1-13,#PWR1-40,#PWR45,#PWR48-49,#PWR52,LS1,U1-7,Q1-2,RV1-3",
+    "used_designators": "H1-4,P1,R1-37,J1-16,C1-14,#PWR1-55,LS1,U1-9,Q1-3,RV1-3,D1",
     "variants": []
   },
   "sheets": [
@@ -764,6 +764,14 @@
     [
       "7b66336c-3b34-40c8-983a-3c783378ed55",
       "ADC"
+    ],
+    [
+      "cd718c39-d0d8-4e9b-ab56-c9b57ef1cbe6",
+      "mcu"
+    ],
+    [
+      "336d4507-327b-4464-b755-b03d69767101",
+      "msmp"
     ]
   ],
   "text_variables": {},
