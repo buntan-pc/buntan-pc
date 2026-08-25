@@ -407,8 +407,8 @@
 			(on_board yes)
 			(in_pos_files yes)
 			(duplicate_pin_numbers_are_jumpers no)
-			(property "Reference" "U"
-				(at -6.35 20.32 0)
+			(property "Reference" "U7"
+				(at 22.86 20.32 0)
 				(show_name no)
 				(do_not_autoplace no)
 				(effects
@@ -418,7 +418,7 @@
 				)
 			)
 			(property "Value" "Tang_nano_20K"
-				(at 0 17.78 0)
+				(at 22.86 17.78 0)
 				(show_name no)
 				(do_not_autoplace no)
 				(effects
@@ -1043,7 +1043,7 @@
 						)
 					)
 				)
-				(pin power_out line
+				(pin power_in line
 					(at -10.16 -33.02 0)
 					(length 2.54)
 					(name "3V3"
@@ -1061,7 +1061,7 @@
 						)
 					)
 				)
-				(pin power_out line
+				(pin power_in line
 					(at -10.16 -35.56 0)
 					(length 2.54)
 					(name "GND"
@@ -1151,7 +1151,7 @@
 						)
 					)
 				)
-				(pin power_out line
+				(pin power_in line
 					(at 55.88 -25.4 180)
 					(length 2.54)
 					(name "3V3"
@@ -1169,7 +1169,7 @@
 						)
 					)
 				)
-				(pin power_out line
+				(pin power_in line
 					(at 55.88 -22.86 180)
 					(length 2.54)
 					(name "GND"
@@ -1403,7 +1403,7 @@
 						)
 					)
 				)
-				(pin power_out line
+				(pin power_in line
 					(at 55.88 10.16 180)
 					(length 2.54)
 					(name "GND"
@@ -1421,7 +1421,7 @@
 						)
 					)
 				)
-				(pin power_out line
+				(pin power_in line
 					(at 55.88 12.7 180)
 					(length 2.54)
 					(name "5V"
@@ -2838,10 +2838,6 @@
 		(uuid "ae326fab-491e-49c0-931b-7d422365d845")
 	)
 	(no_connect
-		(at 134.62 27.94)
-		(uuid "bc4f3235-fb23-4588-9983-a5752be03a6c")
-	)
-	(no_connect
 		(at 134.62 45.72)
 		(uuid "dacd32be-c2b5-4496-9bfc-763f90bd9e2f")
 	)
@@ -3848,7 +3844,7 @@
 	)
 	(hierarchical_label "adc_sel2"
 		(shape output)
-		(at 63.5 78.74 180)
+		(at 63.5 66.04 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -3881,7 +3877,7 @@
 	)
 	(hierarchical_label "adc_sel0"
 		(shape output)
-		(at 63.5 73.66 180)
+		(at 63.5 60.96 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -3914,7 +3910,7 @@
 	)
 	(hierarchical_label "spk_on"
 		(shape output)
-		(at 63.5 66.04 180)
+		(at 63.5 68.58 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -3922,6 +3918,17 @@
 			(justify right)
 		)
 		(uuid "3988a60a-4b30-4e00-a7cd-039d7300dda0")
+	)
+	(hierarchical_label "scl"
+		(shape output)
+		(at 134.62 27.94 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left)
+		)
+		(uuid "4773186c-3ad4-47ee-b0c9-c9f44412f254")
 	)
 	(hierarchical_label "adc_vref_d5"
 		(shape output)
@@ -3958,7 +3965,7 @@
 	)
 	(hierarchical_label "adc_sel1"
 		(shape output)
-		(at 63.5 76.2 180)
+		(at 63.5 63.5 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -4000,7 +4007,7 @@
 		)
 		(uuid "672ec105-0c3d-4c55-94ac-05a35311b63f")
 	)
-	(hierarchical_label "dbgio3"
+	(hierarchical_label "sda"
 		(shape output)
 		(at 134.62 149.86 0)
 		(effects
@@ -4110,7 +4117,7 @@
 		)
 		(uuid "8da62d0a-e111-4047-a5ba-f3e94da310eb")
 	)
-	(hierarchical_label "edid_clk"
+	(hierarchical_label "scl"
 		(shape output)
 		(at 134.62 147.32 0)
 		(effects
@@ -4244,7 +4251,7 @@
 	)
 	(hierarchical_label "uart2_rx"
 		(shape input)
-		(at 63.5 63.5 180)
+		(at 63.5 73.66 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -4431,7 +4438,7 @@
 	)
 	(hierarchical_label "uart_tx"
 		(shape output)
-		(at 63.5 68.58 180)
+		(at 63.5 76.2 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -4462,7 +4469,7 @@
 		)
 		(uuid "e949ae7e-c699-4e0b-a21e-7830467201c4")
 	)
-	(hierarchical_label "dbgio3"
+	(hierarchical_label "sda"
 		(shape output)
 		(at 134.62 78.74 0)
 		(effects
@@ -4497,7 +4504,7 @@
 	)
 	(hierarchical_label "uart2_tx"
 		(shape output)
-		(at 63.5 60.96 180)
+		(at 63.5 71.12 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -4519,7 +4526,7 @@
 	)
 	(hierarchical_label "uart_rx"
 		(shape input)
-		(at 63.5 71.12 180)
+		(at 63.5 78.74 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -4794,9 +4801,9 @@
 		(body_style 1)
 		(exclude_from_sim no)
 		(in_bom yes)
-		(on_board yes)
+		(on_board no)
 		(in_pos_files yes)
-		(dnp no)
+		(dnp yes)
 		(fields_autoplaced yes)
 		(uuid "5bc65ad6-f3c4-43c9-a671-3c8e5fbc76eb")
 		(property "Reference" "U7"

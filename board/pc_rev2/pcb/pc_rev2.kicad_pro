@@ -60,13 +60,13 @@
           "hatch_smoothing_level": 0,
           "hatch_smoothing_value": 0.1,
           "hatch_thickness": 1.0,
-          "min_clearance": 0.5,
+          "min_clearance": 0.2,
           "min_island_area": 10.0,
-          "min_thickness": 0.25,
+          "min_thickness": 0.2,
           "pad_connection": 1,
           "remove_islands": 0,
-          "thermal_relief_gap": 0.5,
-          "thermal_relief_spoke_width": 0.5
+          "thermal_relief_gap": 0.3,
+          "thermal_relief_spoke_width": 0.4
         }
       },
       "diff_pair_dimensions": [
@@ -76,28 +76,7 @@
           "width": 0.0
         }
       ],
-      "drc_exclusions": [
-        [
-          "silk_edge_clearance|145860000|35000000|0e4c526e-04f6-458d-b437-60c210501ab7|7aa26e4d-6d04-4416-93e9-425213300c19",
-          ""
-        ],
-        [
-          "silk_edge_clearance|153860000|35000000|0e4c526e-04f6-458d-b437-60c210501ab7|2a91ac74-2eac-4f77-bf32-933f74003453",
-          ""
-        ],
-        [
-          "silk_edge_clearance|245000000|57730000|0e4c526e-04f6-458d-b437-60c210501ab7|d5930944-765c-41b0-a576-6580d4a7abf8",
-          ""
-        ],
-        [
-          "silk_edge_clearance|245000000|66730000|0e4c526e-04f6-458d-b437-60c210501ab7|919c271a-7c09-4d26-8d45-9004d2e8325b",
-          ""
-        ],
-        [
-          "silk_edge_clearance|245050000|66730000|0e4c526e-04f6-458d-b437-60c210501ab7|609bf26b-5f3e-4425-855a-0b172d334438",
-          ""
-        ]
-      ],
+      "drc_exclusions": [],
       "meta": {
         "version": 2
       },
@@ -168,12 +147,12 @@
       },
       "rules": {
         "max_error": 0.005,
-        "min_clearance": 0.127,
+        "min_clearance": 0.1,
         "min_connection": 0.0,
-        "min_copper_edge_clearance": 0.3,
+        "min_copper_edge_clearance": 0.2,
         "min_groove_width": 0.0,
-        "min_hole_clearance": 0.33,
-        "min_hole_to_hole": 0.5,
+        "min_hole_clearance": 0.28,
+        "min_hole_to_hole": 0.45,
         "min_microvia_diameter": 0.2,
         "min_microvia_drill": 0.1,
         "min_resolved_spokes": 2,
@@ -181,8 +160,8 @@
         "min_text_height": 0.8,
         "min_text_thickness": 0.08,
         "min_through_hole_diameter": 0.3,
-        "min_track_width": 0.127,
-        "min_via_annular_width": 0.13,
+        "min_track_width": 0.1,
+        "min_via_annular_width": 0.1,
         "min_via_diameter": 0.5,
         "solder_mask_to_copper_clearance": 0.005,
         "use_height_for_length_calcs": true
@@ -237,6 +216,7 @@
         0.127,
         0.2,
         0.25,
+        0.35,
         0.5,
         0.75,
         1.0
@@ -322,7 +302,32 @@
     "equivalence_files": []
   },
   "erc": {
-    "erc_exclusions": [],
+    "erc_exclusions": [
+      [
+        "lib_symbol_mismatch|1066800|533400|0b21cf1c-0fa4-46c2-935b-35ecc7013ab8|00000000-0000-0000-0000-000000000000|||",
+        ""
+      ],
+      [
+        "lib_symbol_mismatch|1244600|1270000|6f35e11d-dba6-49f3-b34a-baccdb9390b0|00000000-0000-0000-0000-000000000000|||",
+        ""
+      ],
+      [
+        "lib_symbol_mismatch|1320800|533400|618dcc68-1e38-4274-8534-2943c83002aa|00000000-0000-0000-0000-000000000000|||",
+        ""
+      ],
+      [
+        "lib_symbol_mismatch|2057400|584200|f50ccba8-b13f-481e-8a13-17cf3130c86e|00000000-0000-0000-0000-000000000000|||",
+        ""
+      ],
+      [
+        "lib_symbol_mismatch|2489200|533400|9d904577-d677-4f31-9c73-4964c0a7aeec|00000000-0000-0000-0000-000000000000|||",
+        ""
+      ],
+      [
+        "lib_symbol_mismatch|762000|1143000|5bc65ad6-f3c4-43c9-a671-3c8e5fbc76eb|00000000-0000-0000-0000-000000000000|||",
+        ""
+      ]
+    ],
     "meta": {
       "version": 0
     },
@@ -734,6 +739,7 @@
     "page_layout_descr_file": "",
     "plot_directory": "",
     "reuse_designators": true,
+    "space_save_all_events": true,
     "spice_current_sheet_as_root": false,
     "spice_external_command": "spice \"%I\"",
     "spice_model_current_sheet_as_root": true,
@@ -749,7 +755,7 @@
         "uuid": "504622d4-653f-4b3b-8099-0af1a54c930d"
       }
     ],
-    "used_designators": "H1-4,P1,R1-37,J1-16,C1-14,#PWR1-58,LS1,U1-9,Q1-3,RV1-3,D1",
+    "used_designators": "D2,#PWR7,#PWR28,#PWR66-71,J17-21,R38,C17",
     "variants": []
   },
   "sheets": [
