@@ -4968,6 +4968,26 @@
 		)
 		(uuid "269a0829-a099-4578-be4a-9a6190a76abf")
 	)
+	(text_box "設計メモ\nC18はポップノイズ防止用。\n無し、10nF～100nFで実験。"
+		(exclude_from_sim no)
+		(at 87.63 137.16 0)
+		(size 24.13 7.9588)
+		(margins 0.9525 0.9525 0.9525 0.9525)
+		(stroke
+			(width 0)
+			(type solid)
+		)
+		(fill
+			(type none)
+		)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left top)
+		)
+		(uuid "91d3ec9f-6865-4e4a-9d23-f0968ae5eed6")
+	)
 	(text_box "設計メモ\n高域 -3dB カットオフ周波数 f_{CH}\nf_{CH} = 1/(2πC_{4}R_{6}) = 3.98kHz"
 		(exclude_from_sim no)
 		(at 92.71 34.29 0)
@@ -5095,6 +5115,12 @@
 		(uuid "55c1e657-0e25-494b-b7bb-effe644a4053")
 	)
 	(junction
+		(at 73.66 127)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "653770cb-5637-4910-b32c-5ec806293237")
+	)
+	(junction
 		(at 203.2 66.04)
 		(diameter 0)
 		(color 0 0 0 0)
@@ -5143,16 +5169,16 @@
 		(uuid "bc95f912-cf82-41da-b851-2da826fff706")
 	)
 	(junction
-		(at 73.66 127)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "c1f74009-e041-4912-af6f-c699309279de")
-	)
-	(junction
 		(at 203.2 50.8)
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "c6010a7e-5b8f-4f0a-ad9f-f5b579648636")
+	)
+	(junction
+		(at 83.82 127)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "c7d4e4af-3ec8-4d6c-8cb9-29b9d26c813a")
 	)
 	(junction
 		(at 124.46 67.31)
@@ -5246,6 +5272,16 @@
 	)
 	(wire
 		(pts
+			(xy 83.82 127) (xy 83.82 129.54)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "0f053d4c-6679-458d-95ca-a43a7896dd3d")
+	)
+	(wire
+		(pts
 			(xy 177.8 88.9) (xy 180.34 88.9)
 		)
 		(stroke
@@ -5326,7 +5362,7 @@
 	)
 	(wire
 		(pts
-			(xy 73.66 127) (xy 81.28 127)
+			(xy 73.66 127) (xy 83.82 127)
 		)
 		(stroke
 			(width 0)
@@ -5423,6 +5459,16 @@
 			(type default)
 		)
 		(uuid "35b33775-76a1-4fbc-8ce2-d163d813a434")
+	)
+	(wire
+		(pts
+			(xy 83.82 127) (xy 88.9 127)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "36b45376-bcb0-4681-a431-2e832e784b01")
 	)
 	(wire
 		(pts
@@ -5653,6 +5699,16 @@
 			(type default)
 		)
 		(uuid "566cfdcc-7bf5-4a24-9089-b84517ccefb8")
+	)
+	(wire
+		(pts
+			(xy 83.82 139.7) (xy 83.82 137.16)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "5e3cf4d0-6468-4b04-bb8f-3300cf092072")
 	)
 	(wire
 		(pts
@@ -5966,7 +6022,7 @@
 	)
 	(wire
 		(pts
-			(xy 88.9 127) (xy 114.3 127)
+			(xy 96.52 127) (xy 114.3 127)
 		)
 		(stroke
 			(width 0)
@@ -7682,6 +7738,120 @@
 		)
 	)
 	(symbol
+		(lib_id "Device:C")
+		(at 83.82 133.35 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "39d5fb05-c7e0-4eb1-966a-bdc3e5ca1c1e")
+		(property "Reference" "C18"
+			(at 87.63 132.08 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "10nF"
+			(at 87.63 134.62 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Capacitor_SMD:C_0603_1608Metric_Pad1.08x0.95mm_HandSolder"
+			(at 84.7852 137.16 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 83.82 133.35 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" ""
+			(at 83.82 133.35 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Manufacturer" ""
+			(at 83.82 133.35 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Manufacturer PN" ""
+			(at 83.82 133.35 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Purpose" "ポップノイズ防止用。無し、10nF～100nFで実験。"
+			(at 106.68 138.176 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "3d94c4b7-c699-49e0-9d97-3e4b01c6dfb1")
+		)
+		(pin "2"
+			(uuid "8f651734-cf16-425f-8a48-2936dce3e462")
+		)
+		(instances
+			(project "pc_rev2"
+				(path "/504622d4-653f-4b3b-8099-0af1a54c930d/3f9fb14a-f996-4e52-bf07-75c4ab308558"
+					(reference "C18")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_id "Device:R")
 		(at 73.66 57.15 0)
 		(unit 1)
@@ -9269,6 +9439,85 @@
 		)
 	)
 	(symbol
+		(lib_id "power:GND")
+		(at 83.82 139.7 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "75e321a1-bf4a-4eca-a1df-7636b617cf6e")
+		(property "Reference" "#PWR029"
+			(at 83.82 146.05 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "GND"
+			(at 83.82 144.78 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 83.82 139.7 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 83.82 139.7 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"GND\" , ground"
+			(at 83.82 139.7 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "491f8972-c106-40e3-9ce8-022a884949f0")
+		)
+		(instances
+			(project "pc_rev2"
+				(path "/504622d4-653f-4b3b-8099-0af1a54c930d/3f9fb14a-f996-4e52-bf07-75c4ab308558"
+					(reference "#PWR029")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_id "Transistor_BJT:Q_Dual_NPN_PNP_E1B1C2E2B2C1")
 		(at 152.4 134.62 0)
 		(mirror x)
@@ -10145,25 +10394,28 @@
 		(on_board yes)
 		(in_pos_files yes)
 		(dnp no)
+		(fields_autoplaced yes)
 		(uuid "b53dfc57-721e-4638-9c06-776a1e093755")
 		(property "Reference" "R37"
-			(at 78.74 133.35 90)
+			(at 76.2 132.08 0)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
+				(justify left)
 			)
 		)
 		(property "Value" "100k"
-			(at 76.2 133.35 90)
+			(at 76.2 134.62 0)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
+				(justify left)
 			)
 		)
 		(property "Footprint" "Resistor_SMD:R_0603_1608Metric_Pad0.98x0.95mm_HandSolder"
@@ -11113,7 +11365,7 @@
 	)
 	(symbol
 		(lib_id "Device:C")
-		(at 85.09 127 90)
+		(at 92.71 127 90)
 		(unit 1)
 		(body_style 1)
 		(exclude_from_sim no)
@@ -11124,7 +11376,7 @@
 		(fields_autoplaced yes)
 		(uuid "de4b3257-f63f-4593-a3da-5b72ecc8072f")
 		(property "Reference" "C8"
-			(at 85.09 119.38 90)
+			(at 92.71 119.38 90)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
@@ -11134,7 +11386,7 @@
 			)
 		)
 		(property "Value" "100nF"
-			(at 85.09 121.92 90)
+			(at 92.71 121.92 90)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
@@ -11144,7 +11396,7 @@
 			)
 		)
 		(property "Footprint" "Capacitor_SMD:C_0603_1608Metric_Pad1.08x0.95mm_HandSolder"
-			(at 88.9 126.0348 0)
+			(at 96.52 126.0348 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -11155,7 +11407,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 85.09 127 0)
+			(at 92.71 127 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -11166,7 +11418,7 @@
 			)
 		)
 		(property "Description" ""
-			(at 85.09 127 0)
+			(at 92.71 127 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
