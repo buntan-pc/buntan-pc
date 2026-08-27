@@ -3921,7 +3921,7 @@
 	)
 	(hierarchical_label "scl"
 		(shape output)
-		(at 134.62 27.94 0)
+		(at 134.62 25.4 0)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -3987,7 +3987,7 @@
 	)
 	(hierarchical_label "rgbled"
 		(shape output)
-		(at 134.62 25.4 0)
+		(at 134.62 27.94 0)
 		(effects
 			(font
 				(size 1.27 1.27)
