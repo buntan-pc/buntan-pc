@@ -1,14 +1,16 @@
 GW_SH := ./gw_sh.exe
 #GW_SH := ./gw_sh_1.9.8.03.exe
 
-TARGET := impl/pnr/pc_rev1.fs
-SRC_LIST := src/pc_rev1.f
+PROJ_BASE_NAME := pc_rev2
+TARGET := impl/pnr/$(PROJ_BASE_NAME).fs
+SRC_LIST := src/$(PROJ_BASE_NAME).f
 
+CPU_SRC_DIR := ../../../cpu
 SRCS := src/port.cst src/timing.sdc src/main.sv \
 	src/gowin_osc/gowin_osc.v \
 	src/gowin_rpll/gowin_rpll_20mhz.v \
 	src/gowin_rpll/gowin_rpll_10mhz.v \
-	$(addprefix ../../cpu/, \
+	$(addprefix $(CPU_SRC_DIR)/, \
 	sim.sv cpu.sv mem.sv pmem_gowin.sv alu.sv stack.sv signals.sv cdtimer.sv \
 	signalizer.sv decoder.sv mcu.sv uart.sv uart_mux.sv adc.sv \
 	simple_timer.sv spi.sv kbc.sv i2c.sv pmem_init.sv)
@@ -27,8 +29,8 @@ $(TARGET): $(SRCS) $(SRC_LIST) Makefile
 
 .PHONY: FORCE
 
-../../cpu/pmem_init.sv: FORCE
-	make -C ../../cpu pmem_init.sv
+$(CPU_SRC_DIR)/pmem_init.sv: FORCE
+	make -C $(CPU_SRC_DIR) pmem_init.sv
 
 # $(file >$@) で SRC_LIST を空にしてから、
 # SRCS の各要素を 1 行ずつ書き出す。
