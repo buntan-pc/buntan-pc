@@ -2,3 +2,6 @@
 *.o
 .*.d
 /dos/apps/*.elf
+/cpu/*.exe
+/*/*.pdf
+__pycache__
