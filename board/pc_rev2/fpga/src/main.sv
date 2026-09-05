@@ -10,22 +10,23 @@ module main(
   output [5:0] onboard_led,
   input  uart_rx, uart2_rx, uart3_rx, uart3b_rx,
   output uart_tx, uart2_tx, uart3_tx, uart3b_tx,
-  inout  [7:0] key_col_n,
-  output [7:0] key_row,
+  output spk_on,      // DAC をスピーカーへ接続するかどうかを制御
   input  adc_cmp,     // ADC のコンパレータ出力
-  output adc_sh_ctl,  // ADC のサンプル&ホールドスイッチ制御
-  output adc_dac_pwm, // ADC の DAC PWM 信号
+  output adc_sh_on,   // ADC のサンプル&ホールドスイッチ制御
+  output [2:0] adc_sel,  // ADC のチャンネル選択
+  output [7:0] adc_vref, // ADC の DAC 入力
   output tf_cs, tf_mosi, tf_sclk,
   input  tf_miso,
   inout  scl, sda,    // I2C Clock & Data
   output [7:0] gpio,
-  input  stop_n_raw,
-  output dbgio
+  input  sw_n_raw,
+  output rgbled,
+  output [2:0] fastio
 );
 
 // logic 定義
 logic rst_n;
-logic stop_n;
+logic sw_n;
 
 // ********
 // 継続代入
@@ -38,7 +39,7 @@ assign onboard_led = ~io_led[5:0];
 
 always @(posedge sys_clk) begin
   rst_n <= rst_n_raw;
-  stop_n <= stop_n_raw;
+  sw_n <= sw_n_raw;
 end
 
 logic dmem_wen, dmem_byt;
@@ -52,18 +53,24 @@ logic [17:0] cpu_uart_recv_data;
 logic [`ADDR_WIDTH-1:0] img_pmem_size;
 
 logic [7:0] io_led, io_gpio;
+logic [2:0] io_fastio;
+logic io_rgbled;
 logic clk125;
 logic clk_cpu;
 
 // 継続代入
-assign dmem_rdata_io = io_mux(dmem_addr_d, io_led, io_gpio, ~stop_n);
+assign dmem_rdata_io = io_mux(dmem_addr_d, io_led, io_gpio, io_fastio, io_rgbled, ~sw_n);
 
 assign gpio = io_gpio;
+assign fastio = io_fastio;
+assign rgbled = io_rgbled;
 
 always @(posedge sys_clk, negedge rst_n) begin
   if (!rst_n) begin
     io_led <= 0;
     io_gpio <= 0;
+    io_fastio <= 0;
+    io_rgbled <= 0;
   end
   else if (dmem_wen && dmem_addr == `ADDR_WIDTH'h080)
     if (dmem_byt)
@@ -121,13 +128,10 @@ assign uart3_tx = uart3_tx_common;
 assign uart3b_tx = uart3_tx_common;
 
 // 自作 CPU を接続する
-mcu#(
-  //.CLOCK_HZ(20_250_000)
-  //.CLOCK_HZ(10_125_000)
+mcu_rev2#(
   .CLOCK_HZ(27_000_000)
 ) mcu(
   .rst(~rst_n),
-  //.clk(sys_clk),
   .clk(clk_cpu),
   .uart_rx(uart_rx),
   .uart2_rx(uart2_rx),
@@ -143,9 +147,11 @@ mcu#(
   .uart_recv_data(cpu_uart_recv_data),
   .img_pmem_size(img_pmem_size),
   .clk125(clk125),
-  .adc_cmp(~adc_cmp),
-  .adc_sh_ctl(adc_sh_ctl),
-  .adc_dac_pwm(adc_dac_pwm),
+  .spk_on(spk_on),
+  .adc_cmp(adc_cmp),
+  .adc_sh_on(adc_sh_on),
+  .adc_sel(adc_sel),
+  .adc_vref(adc_vref),
   .uf_xadr(uf_xadr),
   .uf_yadr(uf_yadr),
   .uf_xe(uf_xe),
@@ -160,22 +166,21 @@ mcu#(
   .spi_sclk(tf_sclk),
   .spi_mosi(tf_mosi),
   .spi_miso(tf_miso),
-  .key_col_n(key_col_n),
-  .key_row(key_row),
   .i2c_scl(scl),
-  .i2c_sda(sda),
-  .dbgio(dbgio)
+  .i2c_sda(sda)
 );
 
 function [15:0] io_mux(
   input [`ADDR_WIDTH-1:0] addr,
   [7:0] io_led, io_gpio,
-  input io_stop
+  [2:0] io_fastio,
+  input io_rgbled,
+  input io_sw
 );
 begin
   casex (addr)
-    `ADDR_WIDTH'b1000_000x: return {8'd0, io_led};
-    `ADDR_WIDTH'b1000_001x: return {{7'd0, io_stop}, io_gpio};
+    `ADDR_WIDTH'b1000_000x: return {7'd0, io_rgbled, io_led};
+    `ADDR_WIDTH'b1000_001x: return {{io_sw, 3'd0, 1'd0, io_fastio}, io_gpio};
     default:                return 16'd0;
   endcase
 end
