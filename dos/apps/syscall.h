@@ -51,3 +51,7 @@ int sys_int2dec(int val, char *s, int n) {
 int sys_getc() {
   return syscall(9, 0);
 }
+
+int sys_getc_nonblock() {
+  return syscall(10, 0);
+}

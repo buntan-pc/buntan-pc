@@ -44,18 +44,20 @@ void uart_del_char() {
   uart_puts("\x1B[X");
 }
 
-int getc() {
+int getc(int wait) {
+  int has_char = 0;
   while (1) {
-    if ((kbc_status & 0xff) != 0) {
-      int c = kbc_queue;
-      if (c >= 0x80) { // release
-        continue;
-      }
-      return c;
-    }
     if ((uart3_flag & 0x01) != 0) {
+      has_char = 1;
       break;
     }
+    if (!wait) {
+      break;
+    }
+  }
+
+  if (!has_char) {
+    return -1;
   }
 
   char c = uart_getc();
@@ -1184,7 +1186,7 @@ int buntan_main() {
   cap_mib = sd_get_capacity_mib(csd);
   block_len = sd_get_read_bl_len(csd);
 
-  print_sdinfo(sdinfo, cap_mib);
+  print_sdinfo();
 
   if (block_len != 9) {
     if (sd_set_block_len_512() < 0) {
@@ -1270,7 +1272,7 @@ int buntan_main() {
   puts("> ");
 
   while (1) {
-    int key = getc();
+    int key = getc(1);
 
     if (key == '\n') { // Enter
       putc('\n');
@@ -1326,7 +1328,7 @@ int syscall(int funcnum, int *args) {
       int len = args[1] - 1;
       int i = 0;
       while (1) {
-        int c = getc();
+        int c = getc(1);
         putc(c);
         if (c == '\n') {
           s[i] = '\0';
@@ -1483,7 +1485,10 @@ int syscall(int funcnum, int *args) {
     ret = int2dec(args[0], args[1], args[2]);
     break;
   case 9:
-    ret = getc();
+    ret = getc(1);
+    break;
+  case 10:
+    ret = getc(0);
     break;
   }
   __builtin_set_gp(0x2000);

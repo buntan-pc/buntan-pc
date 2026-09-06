@@ -10,37 +10,26 @@
 
 void delay_little() {
   int i = 0;
-  while (i < 100) {
+  while (i < 10) {
     i++;
   }
 }
 
 int buntan_main(int *info) {
   init_syscall(info);
-  buntan_printf("CO2-IF Debugger\n");
+  buntan_printf("CO2-IF Debugger ('q' to quit)\n");
 
-  gpio = 0x55;
-  fastio = 1;
-  delay_little();
+  int i = 0;
+  while (1) {
+    fastio = (i & 1) | ((i >> 1) & 2) | ((i >> 2) & 4);
+    delay_little();
+    i++;
 
-  gpio = 0xAA;
-  fastio = 2;
-  delay_little();
-
-  gpio = 0x33;
-  fastio = 3;
-  delay_little();
-
-  gpio = 0xCC;
-  fastio = 4;
-  delay_little();
-
-  gpio = 0x81;
-  fastio = 5;
-  gpio = 0xC3;
-  fastio = 6;
-  gpio = 0xE7;
-  fastio = 7;
+    int c = sys_getc_nonblock();
+    if (c == 'q' || c == 'Q') {
+      break;
+    }
+  }
 
   buntan_printf("Quitting...\n");
   return 0;
