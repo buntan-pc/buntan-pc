@@ -1,7 +1,7 @@
 CC = ../../ucc/cc
 ASM = ../../uas/as
 CC_LINUX = gcc
-SRCS = $(wildcard *.c)
+SRCS = $(filter-out buntan_emu.c,$(wildcard *.c))
 EXES = $(SRCS:.c=.exe)
 
 all: $(EXES) Makefile
