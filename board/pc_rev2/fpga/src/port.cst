@@ -102,6 +102,9 @@ IO_PORT "sw_n_raw"  PULL_MODE=NONE IO_TYPE=LVCMOS18;
 IO_LOC "rgbled" 86;
 IO_PORT "rgbled" IO_TYPE=LVCMOS18 PULL_MODE=NONE;
 
+// gpio は Tang Nano 9K の場合に HDMI 端子と兼ねていて反応が遅い。
+// fastio はそのような遅延がないことが保証されている IO。
+// ちなみに Tang Nano 9K の gpio は fastio より2.3us 程度反応が遅れる。
 IO_LOC  "fastio[0]" 77;
 IO_LOC  "fastio[1]" 76;
 IO_LOC  "fastio[2]" 31;

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 /*
- * Copyright (c) 2024 Kota UCHIDA
+ * Copyright (c) 2026 Kota UCHIDA
  */
 `include "../../../cpu/common.sv"
 
@@ -72,16 +72,24 @@ always @(posedge sys_clk, negedge rst_n) begin
     io_fastio <= 0;
     io_rgbled <= 0;
   end
-  else if (dmem_wen && dmem_addr == `ADDR_WIDTH'h080)
+  else if (dmem_wen && dmem_addr == `ADDR_WIDTH'h080) begin
     if (dmem_byt)
       io_led <= dmem_wdata[7:0];
     else
       io_led <= dmem_wdata[7:0];
-  else if (dmem_wen && dmem_addr == `ADDR_WIDTH'h082)
-    if (dmem_byt)
+  end
+  else if (dmem_wen && dmem_addr == `ADDR_WIDTH'h082) begin
+    if (dmem_byt) begin
       io_gpio <= dmem_wdata[7:0];
-    else
+    end
+    else begin
       io_gpio <= dmem_wdata[7:0];
+      io_fastio <= dmem_wdata[10:8];
+    end
+  end
+  else if (dmem_wen && dmem_addr == `ADDR_WIDTH'h083) begin
+    io_fastio <= dmem_wdata[10:8];
+  end
 end
 
 always @(posedge sys_clk, negedge rst_n) begin

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 /*
- * Copyright (c) 2024 Kota UCHIDA
+ * Copyright (c) 2026 Kota UCHIDA
  */
 unsigned int timer_cnt  __attribute__((at(0x02)));
 unsigned int uart_data  __attribute__((at(0x06)));
@@ -26,4 +26,4 @@ unsigned int uart3_flag __attribute__((at(0x32)));
 char         led_port   __attribute__((at(0x80)));
 char         lcd_port   __attribute__((at(0x81)));
 char         gpio       __attribute__((at(0x82)));
-char         stop_btn   __attribute__((at(0x83)));
+char         fastio     __attribute__((at(0x83))); // for BuntanPC Rev.2
