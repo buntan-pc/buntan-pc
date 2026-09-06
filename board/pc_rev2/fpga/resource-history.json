@@ -26,5 +26,19 @@
       "total": 6693,
       "used": 1182
     }
+  },
+  "dac02f67f66a0993eeba29be89cf90d79ee387bb": {
+    "CLS": {
+      "total": 4320,
+      "used": 1598
+    },
+    "Logic": {
+      "total": 8640,
+      "used": 2500
+    },
+    "Register": {
+      "total": 6693,
+      "used": 1182
+    }
   }
 }

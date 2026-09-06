@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/sh -e
 
 script_dir=$(dirname $0)
 dos_dir=$script_dir/../dos
@@ -6,6 +6,8 @@ dos_dir=$script_dir/../dos
 src=$dos_dir/dos.s
 dmem=dos.dmem.hex
 pmem=dos.pmem.hex
+
+make -C $dos_dir dos.s
 
 if [ ! -e $dos_dir/$dmem ] || [ $src -nt $dos_dir/$dmem ]
 then

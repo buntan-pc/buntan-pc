@@ -713,7 +713,7 @@ int toupper(int c) {
  * @param arg        proc_entry の引数に渡す値
  */
 int foreach_dir_entry(char *block_buf, unsigned int *entry_sec,
-                      int (*proc_entry)(), void *arg) {
+                      int (*proc_entry)(char *, char *), void *arg) {
   int find_loop;
   for (find_loop = 0; find_loop < BPB_RootEntCnt >> 4; ++find_loop) {
     if (entry_sec) {
@@ -872,7 +872,7 @@ int build_argv(char *cmd, char **argv, int n) {
   return argc;
 }
 
-void run_app(int (*app_main)(), char *block_buf, int argc, char **argv) {
+void run_app(int (*app_main)(int *), char *block_buf, int argc, char **argv) {
   char buf[5];
   int appinfo[4] = { // アプリに渡す構成情報
     (int)app_main, // 0: .text の開始アドレス
@@ -903,7 +903,7 @@ unsigned int uart1_recv_word() {
 }
 
 // UART からプログラムを受信して app_main と dmem が指すメモリに配置する
-void recv_program(int (*app_main)(), unsigned int *dmem) {
+void recv_program(int (*app_main)(int *), unsigned int *dmem) {
   char buf[4];
 
   // 受信バッファを空にする
@@ -1051,13 +1051,12 @@ int hexdigit_to_int(int hexdigit) {
   }
 }
 
-int load_hex_by_filename(unsigned int pmem_addr, char *block_buf, char *filename) {
+int load_block_by_filename(char *block_buf, char *filename) {
   char fn83[11];
   filename_to_fn83(filename, fn83);
 
   int *file_entry = foreach_dir_entry(block_buf, 0, find_file, fn83);
   if (file_entry == 0) {
-    puts("No such file\n");
     return -1;
   }
 
@@ -1071,12 +1070,24 @@ int load_hex_by_filename(unsigned int pmem_addr, char *block_buf, char *filename
   unsigned int sec = clus_to_sec(clus);
 
   if (sd_read_block(block_buf, sec) < 0) {
+    return -2;
+  }
+
+  return siz_lo;
+}
+
+int load_hex_by_filename(unsigned int pmem_addr, char *block_buf, char *filename) {
+  int load_bytes = load_block_by_filename(block_buf, filename);
+  if (load_bytes == -1) {
+    puts("No such file\n");
+    return -1;
+  } else if (load_bytes == -2) {
     puts("failed to read file\n");
     return -1;
   }
 
   char *src = block_buf;
-  char *end = block_buf + siz_lo;
+  char *end = block_buf + load_bytes;
   while (src < end) {
     char *p = src;
     while (src < end & *src != '\n') {
@@ -1103,7 +1114,7 @@ int load_hex_by_filename(unsigned int pmem_addr, char *block_buf, char *filename
   return 0;
 }
 
-void proc_cmd(char *cmd, char *block_buf, int (*app_main)(), char *app_dmem) {
+void proc_cmd(char *cmd, char *block_buf, int (*app_main)(int *), char *app_dmem) {
   if (strncmp(cmd, "ls", 3) == 0) {
     foreach_dir_entry(block_buf, 0, print_file_name, 0);
   } else if (strncmp(cmd, "sdinfo", 7) == 0) {
@@ -1156,11 +1167,11 @@ int buntan_main() {
   unsigned int block_len;
   char buf[5];
   unsigned int csd[9]; // 末尾は 16 ビットの CRC
-  int (*app_main)() = 0x2000;
+  int (*app_main)(int *) = 0x2000;
   unsigned char *app_dmem = 0x2000;
   char block_buf[512];
 
-  puts("BuntanPC DOS build 20260526");
+  puts("BuntanPC DOS build 20260906");
   putc('\n');
 
   sdinfo = sd_init();
@@ -1236,6 +1247,25 @@ int buntan_main() {
   RootEntSector = PartitionSector + BPB_ResvdSecCnt + BPB_NumFATs * BPB_FATSz16;
   char cmd[64];
   int cmd_i = 0;
+
+  // AUTOEXEC.SCR を探して、あれば実行する
+  char autoexec_block_buf[512];
+  int autoexec_bytes = load_block_by_filename(autoexec_block_buf, "AUTOEXEC.SCR");
+  if (autoexec_bytes >= 0) {
+    char *src = autoexec_block_buf;
+    char *end = autoexec_block_buf + autoexec_bytes;
+    while (src < end) {
+      char *p = src;
+      while (src < end & *src != '\n') {
+        ++src;
+      }
+      unsigned int len = src - p;
+      if (*src == '\n') {
+        *src++ = 0;
+        proc_cmd(p, block_buf, app_main, app_dmem);
+      }
+    }
+  }
 
   puts("> ");
 
