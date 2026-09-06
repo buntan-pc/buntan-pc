@@ -18,6 +18,7 @@ SRCS := src/port.cst src/timing.sdc src/main.sv \
 	simple_timer.sv spi.sv kbc.sv i2c.sv pmem_init.sv)
 
 all: $(TARGET)
+	@../../../sericon/controller_rev1/check-timing.py
 	@./resource_usage.py $(RESOURCE_REPORT) $(RESOURCE_HISTORY)
 
 $(TARGET): $(SRCS) $(SRC_LIST) syn-pnr.tcl Makefile
