@@ -1,0 +1,16 @@
+{
+  "HEAD": {
+    "CLS": {
+      "total": 4320,
+      "used": 1602
+    },
+    "Logic": {
+      "total": 8640,
+      "used": 2525
+    },
+    "Register": {
+      "total": 6693,
+      "used": 1182
+    }
+  }
+}

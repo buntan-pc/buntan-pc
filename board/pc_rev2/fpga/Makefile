@@ -4,6 +4,8 @@ GW_SH := ./gw_sh.exe
 PROJ_BASE_NAME := pc_rev2
 TARGET := impl/pnr/$(PROJ_BASE_NAME).fs
 SRC_LIST := src/$(PROJ_BASE_NAME).f
+RESOURCE_REPORT := impl/pnr/$(PROJ_BASE_NAME).rpt.html
+RESOURCE_HISTORY := resource-history.json
 
 CPU_SRC_DIR := ../../../cpu
 SRCS := src/port.cst src/timing.sdc src/main.sv \
@@ -16,8 +18,9 @@ SRCS := src/port.cst src/timing.sdc src/main.sv \
 	simple_timer.sv spi.sv kbc.sv i2c.sv pmem_init.sv)
 
 all: $(TARGET)
+	@./resource_usage.py $(RESOURCE_REPORT) $(RESOURCE_HISTORY)
 
-$(TARGET): $(SRCS) $(SRC_LIST) Makefile
+$(TARGET): $(SRCS) $(SRC_LIST) syn-pnr.tcl Makefile
 	@$(GW_SH) < syn-pnr.tcl 2>&1 | { \
 		err=0; \
 		while IFS= read -r line; do \
@@ -27,7 +30,7 @@ $(TARGET): $(SRCS) $(SRC_LIST) Makefile
 		[ $$err -eq 0 ] || exit 1; \
 	}
 
-.PHONY: FORCE
+.PHONY: all FORCE
 
 $(CPU_SRC_DIR)/pmem_init.sv: FORCE
 	make -C $(CPU_SRC_DIR) pmem_init.sv
