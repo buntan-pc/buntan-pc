@@ -45,19 +45,13 @@ void uart_del_char() {
 }
 
 int getc(int wait) {
-  int has_char = 0;
   while (1) {
     if ((uart3_flag & 0x01) != 0) {
-      has_char = 1;
       break;
     }
     if (!wait) {
-      break;
+      return -1;
     }
-  }
-
-  if (!has_char) {
-    return -1;
   }
 
   char c = uart_getc();
@@ -1164,6 +1158,58 @@ unsigned int find_free_cluster(unsigned int *block_buf) {
   return 0;
 }
 
+int uart2_getc() {
+  while ((uart2_flag & 0x01) == 0);
+  return uart2_data;
+}
+
+void uart2_putc(char c) {
+  while ((uart2_flag & 0x04) == 0);
+  uart2_data = c;
+}
+
+char read_co2_cmd[9] = {0xFF, 0x01, 0x86, 0x00, 0x00, 0x00, 0x00, 0x00, 0x79};
+int read_co2_concentration() {
+  int i = 0;
+  char frame[9];
+
+  // send command
+  for (; i < 9; i++) {
+    uart2_putc(read_co2_cmd[i]);
+  }
+
+  // receive response
+  i = 0;
+  timer_cnt = 1000; // timeout = 1sec
+  while (i < 9) {
+    if (uart2_flag & 0x01) {
+      frame[i] = uart2_data;
+      i++;
+    } else if (timer_cnt == 0) {
+      return -(i + 10);
+    }
+  }
+
+  // decode response
+  if (frame[0] != 0xFF) {
+    return -1;
+  } else if (frame[1] != 0x86) {
+    return -2;
+  }
+
+  int checksum = 0;
+  for (i = 1; i <= 7; i++) {
+    checksum += frame[i];
+  }
+  checksum = (-checksum) & 0xFF;
+
+  if (frame[8] != checksum) {
+    return -3;
+  }
+
+  return (frame[2] << 8) | frame[3];
+}
+
 int buntan_main() {
   int i;
   unsigned int block_len;
@@ -1272,9 +1318,12 @@ int buntan_main() {
   puts("> ");
 
   while (1) {
-    int key = getc(1);
+    int key = getc(0); // 0 = non-blocking mode
 
-    if (key == '\n') { // Enter
+    if (key < 0) {
+      int co2 = read_co2_concentration();
+      if (co2 < 0) {
+    } else if (key == '\n') { // Enter
       putc('\n');
       if (cmd_i > 0) {
         cmd[cmd_i] = '\0';
