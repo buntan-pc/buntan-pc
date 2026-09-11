@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 /*
- * Copyright (c) 2024 Kota UCHIDA
+ * Copyright (c) 2026 Kota UCHIDA
  */
 #include "mmio.h"
 #include "delay.h"
@@ -208,6 +208,38 @@ int int2dec(int val, char *s, int n) {
     s[i] = ' ';
   }
   return i;
+}
+
+int buntan_printf(char *fmt, ...) {
+  int len = 0;
+  int c;
+  char s[6];
+  va_list ap;
+  va_start(ap, fmt);
+
+  while ((c = *fmt++) != 0) {
+    if (c != '%' || (c = *fmt++) == '%') {
+      putc(c);
+      ++len;
+      continue;
+    }
+    if (c == 'c') {
+      s[0] = va_arg(ap, int);
+      putsn(s, 1);
+      ++len;
+    } else if (c == 'd') {
+      int nzero = int2dec(va_arg(ap, int), s, 5);
+      int digit = 5 - nzero;
+      putsn(s + nzero, digit);
+      len += digit;
+    } else if (c == 'X') {
+      int nzero = int2hex(va_arg(ap, int), s, 4);
+      int digit = 4 - nzero;
+      putsn(s + nzero, digit);
+      len += digit;
+    }
+  }
+  return len;
 }
 
 void send_sd_cmd(char cmd, int arg_high, int arg_low, char crc) {
@@ -1210,6 +1242,24 @@ int read_co2_concentration() {
   return (frame[2] << 8) | frame[3];
 }
 
+unsigned int read_term_response(char *buf, unsigned int buf_size) {
+  int i = 0;
+  while (i < buf_size) {
+    int j = 0;
+    for (; j < 10000; j++) {
+      int c = getc(0); // wait=0 non-blocking mode
+      if (c >= 0) {
+        buf[i++] = c;
+        break;
+      }
+    }
+    if (j == 10000) { // タイムアウト
+      return i;
+    }
+  }
+  return i;
+}
+
 int buntan_main() {
   int i;
   unsigned int block_len;
@@ -1219,7 +1269,24 @@ int buntan_main() {
   unsigned char *app_dmem = 0x2000;
   char block_buf[512];
 
-  puts("BuntanPC DOS build 20260906");
+  // 最初の1行をステータスバーとして使う
+  // そのため、スクロール範囲を2行目以降に設定
+  puts("\x1b[2r"); // スクロール領域を 2 行目以降に限定
+
+  puts("BuntanPC DOS build 20260911");
+  putc('\n');
+
+  puts("\x1b[18t"); // スクリーンサイズを問い合わせる
+  block_len = read_term_response(block_buf, 512);
+  puts("response:");
+  for (i = 0; i < block_len; i++) {
+    int c = block_buf[i];
+    if (c <= 0x20) {
+      buntan_printf("[%X]", c);
+    } else {
+      putc(c);
+    }
+  }
   putc('\n');
 
   sdinfo = sd_init();
@@ -1322,7 +1389,7 @@ int buntan_main() {
 
     if (key < 0) {
       int co2 = read_co2_concentration();
-      if (co2 < 0) {
+      //if (co2 < 0) {
     } else if (key == '\n') { // Enter
       putc('\n');
       if (cmd_i > 0) {

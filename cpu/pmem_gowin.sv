@@ -23,7 +23,7 @@ assign data_out = pmem_out[pmem_out_sel][17:0];
 
 always @(posedge clk, posedge rst) begin
   if (rst) begin
-    pmem_buf <= 18'd0;
+    pmem_buf <= 2'd0;
   end
   else begin
     if (wenh) begin
@@ -122,7 +122,7 @@ for (i = 0; i < 16; i = i + 1) begin: genpmem
     .WRE((addr[13:10] == i[3:0]) & wenl),
     .BLKSEL(3'd0),
     .AD({addr[9:0], 4'd0}),
-    .DI({18'd0, pmem_buf, data_in[15:0]})
+    .DI({18'd0, wenh ? data_in[17:16] : pmem_buf, data_in[15:0]})
   );
 end
 endgenerate
