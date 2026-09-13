@@ -1,3 +1,13 @@
+/*
+ * 送信側から受信側への一方向同期機構。
+ *
+ * 送信側('src)：
+ * i_data に送信データをセットすると同時に i_req を反転させる。
+ *
+ * 受信側('dst)：
+ * o_data にデータが到着すると o_valid が 1 クロック期間だけ 1 になる。
+ * o_valid が 1 のときに o_data を読む。
+*/
 module flip_sync::<T: type> #(
   param DEPTH: u32 = 2,
 ) (

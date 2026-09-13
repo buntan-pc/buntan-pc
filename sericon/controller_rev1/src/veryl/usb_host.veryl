@@ -940,7 +940,7 @@ module usb_host #(
             crc16[14] = crc16[15];
             crc16[15] = fb16;
 
-            if bit_cnt == command_cache.data.payload_len - 1 {
+            if bit_cnt == command_cache.data.payload_len[7:0] - 1 {
               packet_state = if use_crc5
                               ? PacketState::CRC5
                               : PacketState::CRC16;

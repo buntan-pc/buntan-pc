@@ -84,6 +84,8 @@ module top (
     );
   }
 
+
+  // ディスプレイ用クロック生成
   var dvi_rst_n : 'dvi reset_async_low;
   var fclk : 'dvif clock;
   var pclk : 'dvi clock;
@@ -166,6 +168,85 @@ module top (
     OB: clk_n,
   );
 
+  // USB キーボード認証
+  var usb_challenge_char : 'usb bit<8>;
+  var usb_challenge_req : 'usb bit;
+  var usb_challenge_char_sync : bit<8>;
+  var usb_challenge_char_valid : bit;
+  inst usb_challenge_sync : flip_sync::<u8> (
+    i_clk: sys_clk,
+    i_rst: rst_n,
+    i_data: usb_challenge_char,
+    i_req:  usb_challenge_req,
+    o_data: usb_challenge_char_sync,
+    o_valid: usb_challenge_char_valid,
+  );
+
+  var usb_key_auth_state : 'usb usb::KeyAuthState;
+  var usb_key_auth_state_sync_bit : bit<2>;
+  inst usb_auth_state_sync : $std::synchronizer_basic #(
+    WIDTH: 2,
+    STAGES: 2,
+  ) (
+    i_clk: sys_clk,
+    i_rst: rst_n,
+    i_d: usb_key_auth_state,
+    o_d: usb_key_auth_state_sync_bit,
+  );
+
+  const KEY_AUTH_SCRN_LINE: u16 = SCRN_H_CHAR - 1;
+  const KEY_AUTH_SCRN_OFFSET: u16 = SCRN_W_CHAR - 1;
+
+  let usb_key_auth_state_sync : usb::KeyAuthState = usb_key_auth_state_sync_bit as usb::KeyAuthState;
+
+  /*
+  var usb_key_auth_state_prev : usb::KeyAuthState;
+  var usb_key_auth_state_changed : bit;
+  always_ff (sys_clk, rst_n) {
+    if_reset {
+      usb_key_auth_state_changed = 0;
+      usb_key_auth_state_prev = usb::KeyAuthState::BadDevice;
+      // 最初に changed が真になるように、初期値を BadDevice にしておく
+    } else {
+      usb_key_auth_state_changed = usb_key_auth_state_prev != usb_key_auth_state_sync;
+      usb_key_auth_state_prev = usb_key_auth_state_sync;
+    }
+  }
+  */
+
+  var usb_key_auth_state_sync_dvi_bit : 'dvi bit<2>;
+  inst usb_key_auth_state_dvi_synchronizer: $std::synchronizer_basic #(
+    WIDTH: 2,
+    STAGES: 2,
+  ) (
+    i_clk: pclk,
+    i_rst: dvi_rst_n,
+    i_d: usb_key_auth_state_sync,
+    o_d: usb_key_auth_state_sync_dvi_bit,
+  );
+  let usb_key_auth_state_sync_dvi : 'dvi usb::KeyAuthState = usb_key_auth_state_sync_dvi_bit as usb::KeyAuthState;
+
+  var usb_challenge_char_buf : u8;
+  always_ff (sys_clk, rst_n) {
+    if_reset {
+      usb_challenge_char_buf = 0;
+    } else if usb_challenge_char_valid {
+      usb_challenge_char_buf = usb_challenge_char_sync;
+    }
+  }
+
+  var usb_challenge_char_buf_dvi : 'dvi u8;
+  inst usb_challenge_char_buf_dvi_synchronizer: $std::synchronizer_basic #(
+    WIDTH: 8,
+    STAGES: 2,
+  ) (
+    i_clk: pclk,
+    i_rst: dvi_rst_n,
+    i_d: usb_challenge_char_buf,
+    o_d: usb_challenge_char_buf_dvi,
+  );
+
+  // ディスプレイ制御
   enum DVIState: bit<2> {
     sync,
     back_porch,
@@ -262,75 +343,29 @@ module top (
       ? scrn_wr_pos_line_dvi + 1 + scrn_line
       : scrn_line - (SCRN_H_CHAR - (scrn_wr_pos_line_dvi + 1));
 
-  var scrn_offset: 'dvi bit<SCRN_OFFSET_WIDTH>;
-  assign scrn_offset =
+  // 行内での横方向のオフセット
+  let scrn_offset: 'dvi bit<SCRN_OFFSET_WIDTH> =
     if state_h == DVIState::back_porch ? 0 : (act_pixel_h + 3) >> $clog2(FONT_W);
 
-  var scrn_buf: 'dvi bit<9>;
+  var scrn_data: 'dvi bit<9>; // メモリからの読み出しデータ信号
   var ld_scrn_buf: 'dvi logic;
   assign ld_scrn_buf = font_xpos == FONT_W - 2;
 
-  var font_addr: 'dvi bit<$clog2(128 * FONT_H)>;
-  assign font_addr = scrn_buf << $clog2(FONT_H) | font_ypos;
-
-  // USB キーボード認証
-  var usb_challenge_char : 'usb bit<8>;
-  var usb_challenge_req : 'usb bit;
-  var usb_challenge_char_sync : bit<8>;
-  var usb_challenge_char_valid : bit;
-  inst usb_challenge_sync : flip_sync::<u8> (
-    i_clk: sys_clk,
-    i_rst: rst_n,
-    i_data: usb_challenge_char,
-    i_req:  usb_challenge_req,
-    o_data: usb_challenge_char_sync,
-    o_valid: usb_challenge_char_valid,
-  );
-
-  var usb_key_auth_state : 'usb usb::KeyAuthState;
-  var usb_key_auth_state_sync_bit : bit<2>;
-  inst usb_auth_state_sync : $std::synchronizer_basic #(
-    WIDTH: 2,
-    STAGES: 2,
-  ) (
-    i_clk: sys_clk,
-    i_rst: rst_n,
-    i_d: usb_key_auth_state,
-    o_d: usb_key_auth_state_sync_bit,
-  );
-
-  const KEY_AUTH_SCRN_LINE: u16 = SCRN_H_CHAR - 1;
-  const KEY_AUTH_SCRN_OFFSET: u16 = SCRN_W_CHAR - 1;
-
-  let usb_key_auth_state_sync : usb::KeyAuthState = usb_key_auth_state_sync_bit as usb::KeyAuthState;
-
-  var usb_key_auth_state_prev : usb::KeyAuthState;
-  var usb_key_auth_state_changed : bit;
-  always_ff (sys_clk, rst_n) {
-    if_reset {
-      usb_key_auth_state_changed = 0;
-      usb_key_auth_state_prev = usb::KeyAuthState::BadDevice;
-      // 最初に changed が真になるように、初期値を BadDevice にしておく
-    } else {
-      usb_key_auth_state_changed = usb_key_auth_state_prev != usb_key_auth_state_sync;
-      usb_key_auth_state_prev = usb_key_auth_state_sync;
-    }
-  }
-
-  var usb_challenge_char_buf : bit<8>;
-  var usb_challenge_char_wrmem : bit;
-  var usb_challenge_char_valid_buf : bit; // valid = 1 になってから wrmem が 1 なるまで 1 を保持する
-  always_ff (sys_clk, rst_n) {
-    if_reset {
-      usb_challenge_char_buf = 0;
-      usb_challenge_char_valid_buf = 0;
-    } else if usb_challenge_char_valid {
-      usb_challenge_char_buf = usb_challenge_char_sync;
-      usb_challenge_char_valid_buf = 1;
-    } else if usb_challenge_char_wrmem {
-      usb_challenge_char_valid_buf = 0;
-    }
-  }
+  // 次のロード信号で表示する文字
+  let next_char: 'dvi u8 = switch {
+    // 画面右下に USB 認証用文字をオーバーレイ表示
+    scrn_line == SCRN_H_CHAR - 1 && scrn_offset == SCRN_W_CHAR - 2:
+      case usb_key_auth_state_sync_dvi {
+        usb::KeyAuthState::Authorized:
+          "*",
+        usb::KeyAuthState::BadDevice:
+          "!",
+        default: // Challenging
+          if usb_challenge_char_buf_dvi == '0 ? "?" : usb_challenge_char_buf_dvi,
+      },
+    // 通常時の表示文字
+    default: scrn_data,
+  };
 
   // スクリーンメモリ
   var scrn_wen: bit;
@@ -344,20 +379,15 @@ module top (
   var use_extscrn: bit; // 1 = 代替バッファ
   var use_extscrn_dvi: 'dvi bit;
 
-  var scrn_data: 'dvi bit<9>;
   var scrn_data_main: 'dvi bit<9>;
   var scrn_data_ext: 'dvi bit<9>;
 
   assign scrn_data = if use_extscrn_dvi ? scrn_data_ext : scrn_data_main;
 
-  let scrn_wr_line_main: bit<SCRN_LINE_WIDTH> =
-    if usb_challenge_char_wrmem ? KEY_AUTH_SCRN_LINE : scrn_wr_pos_line[0];
-  let scrn_wr_offset_main: bit<SCRN_OFFSET_WIDTH> =
-    if usb_challenge_char_wrmem ? KEY_AUTH_SCRN_OFFSET : scrn_wr_pos_offset[0];
-  let scrn_wr_line_ext: bit<SCRN_LINE_WIDTH> =
-    if usb_challenge_char_wrmem ? KEY_AUTH_SCRN_LINE : scrn_wr_pos_line[1];
-  let scrn_wr_offset_ext: bit<SCRN_OFFSET_WIDTH> =
-    if usb_challenge_char_wrmem ? KEY_AUTH_SCRN_OFFSET : scrn_wr_pos_offset[1];
+  let scrn_wr_line_main = scrn_wr_pos_line[0];
+  let scrn_wr_offset_main = scrn_wr_pos_offset[0];
+  let scrn_wr_line_ext = scrn_wr_pos_line[1];
+  let scrn_wr_offset_ext = scrn_wr_pos_offset[1];
 
   inst scrn_main: ScreenMemory#(
     LINE_WIDTH: SCRN_LINE_WIDTH,
@@ -394,13 +424,17 @@ module top (
     dout_dvi:   scrn_data_ext,
   );
 
+  var scrn_buf: 'dvi bit<9>;  // 現在表示中の文字
   always_ff (pclk, dvi_rst_n) {
     if_reset {
       scrn_buf = 0;
     } else if ld_scrn_buf {
-      scrn_buf = scrn_data;
+      scrn_buf = next_char;
     }
   }
+
+  let font_addr: 'dvi bit<$clog2(128 * FONT_H)> =
+    scrn_buf << $clog2(FONT_H) | font_ypos;
 
   always_ff (pclk) {
     font_buf = font_mem[font_addr];
@@ -497,7 +531,6 @@ module top (
       scrn_wr_pos_offset[1] = 0;
       scrn_clear_cnt = 0;
       use_extscrn = 0;
-      usb_challenge_char_wrmem = 0;
     } else if es_recog {
       case es_kind {
         escseq::Kind::NONE: case uart_rx_data {
@@ -646,31 +679,6 @@ module top (
           scrn_recv_state = ScrnRecvState::idle;
           // TODO implement
         }
-      }
-    } else if scrn_recv_state == ScrnRecvState::idle {
-      if usb_challenge_char_wrmem {
-        scrn_wen = 0;
-        usb_challenge_char_wrmem = 0;
-      } else if usb_challenge_char_valid_buf {
-        scrn_wr_data = usb_challenge_char_buf;
-        scrn_wen = 1;
-        usb_challenge_char_wrmem = 1;
-      } else if usb_key_auth_state_changed {
-        scrn_wen = 1;
-        usb_challenge_char_wrmem = 1;
-        case usb_key_auth_state_sync {
-          usb::KeyAuthState::Authorized: {
-            scrn_wr_data = "*";
-          }
-          usb::KeyAuthState::BadDevice: {
-            scrn_wr_data = "!";
-          }
-          default: { // Challenging
-            scrn_wr_data = "?";
-          }
-        }
-      } else {
-        scrn_wen = 0;
       }
     } else if scrn_recv_state == ScrnRecvState::clear {
       scrn_wr_data = 0;
