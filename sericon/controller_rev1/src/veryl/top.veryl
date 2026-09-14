@@ -373,18 +373,25 @@ module top (
 
   var use_extscrn: bit; // 1 = 代替バッファ
   var use_extscrn_dvi: 'dvi bit;
+  var statusline_is_active: bit; // 1 = ステータスラインを使う
+  var statusline_is_active_dvi: 'dvi bit;
 
   var scrn_data_main: 'dvi bit<9>;
+  var scrn_data_status: 'dvi bit<9>;
   var scrn_data_ext: 'dvi bit<9>;
 
-  assign scrn_data = if use_extscrn_dvi ? scrn_data_ext : scrn_data_main;
+  assign scrn_data = switch {
+    use_extscrn_dvi: scrn_data_ext,
+    statusline_is_active_dvi & scrn_line == 0: scrn_data_status,
+    default: scrn_data_main,
+  };
 
   let scrn_wr_line_main = scrn_wr_pos_line[0];
   let scrn_wr_offset_main = scrn_wr_pos_offset[0];
   let scrn_wr_line_ext = scrn_wr_pos_line[1];
   let scrn_wr_offset_ext = scrn_wr_pos_offset[1];
 
-  //let scrn_wr_target_status = scrn_wr_pos_line[use_extscrn] == 0;
+  let scrn_wr_target_status: bit = scrn_wr_pos_line[0] == 0;
   var scrn_scroll: bit[2];
 
   inst scrn_main: ScreenMemory#(
@@ -393,7 +400,7 @@ module top (
   ) (
     clk:    sys_clk,
     rst:    rst_n,
-    wen:    ~use_extscrn & scrn_wen,
+    wen:    ~use_extscrn & scrn_wen & ~scrn_wr_target_status,
     line:   scrn_wr_line_main,
     offset: scrn_wr_offset_main,
     din:    {1'b0, scrn_wr_data},
@@ -425,25 +432,25 @@ module top (
   );
 
   // ステータスライン用メモリ
-  /*
-  inst scrn_stat: ScreenMemory#(
-    LINE_WIDTH:   0,
-    OFFSET_WIDTH: SCRN_OFFSET_WIDTH,
+  // scrn_wr_line_main == 0 への書き込みをステータスラインへの書き込みとする
+  inst scrn_status: ScreenMemory#(
+    NUM_LINES: 1,
+    LINE_CAPACITY: SCRN_W_CHAR,
   ) (
     clk:    sys_clk,
     rst:    rst_n,
-    wen:    ~use_extscrn & scrn_wen,
+    wen:    ~use_extscrn & scrn_wen & scrn_wr_target_status,
     line:   scrn_wr_line_main,
     offset: scrn_wr_offset_main,
     din:    {1'b0, scrn_wr_data},
+    scroll: '0,
 
     clk_dvi:    pclk,
     rst_dvi:    dvi_rst_n,
-    line_dvi:   scrn_mem_line,
+    line_dvi:   scrn_line,
     offset_dvi: scrn_offset,
-    dout_dvi:   scrn_data_main,
+    dout_dvi:   scrn_data_status,
   );
-  */
 
   var scrn_buf: 'dvi bit<9>;  // 現在表示中の文字
   always_ff (pclk, dvi_rst_n) {
@@ -465,8 +472,10 @@ module top (
     always_ff (pclk, dvi_rst_n) {
       if_reset {
         use_extscrn_dvi = 0;
+        statusline_is_active_dvi = 0;
       } else if state_v == DVIState::sync {
         use_extscrn_dvi = use_extscrn;
+        statusline_is_active_dvi = statusline_is_active;
       }
     }
   }
@@ -545,6 +554,7 @@ module top (
       scrn_wr_pos_offset[1] = 0;
       scrn_clear_cnt = 0;
       use_extscrn = 0;
+      statusline_is_active = 0;
       scrn_scroll[0] = 0;
       scrn_scroll[1] = 0;
     } else if es_recog {
@@ -692,7 +702,7 @@ module top (
         escseq::Kind::DECSTBM: {
           scrn_wen = 0;
           scrn_recv_state = ScrnRecvState::idle;
-          // TODO implement
+          statusline_is_active = 1;
         }
       }
     } else { // !es_recog

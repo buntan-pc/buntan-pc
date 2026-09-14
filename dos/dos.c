@@ -1279,7 +1279,7 @@ int buntan_main() {
   // そのため、スクロール範囲を2行目以降に設定
   puts("\x1b[2r"); // スクロール領域を 2 行目以降に限定
 
-  puts("\x1b[999;1H"); // カーソルを最下行に設定
+  puts("\x1b[999H"); // カーソルを最下行に設定
   puts("BuntanPC DOS build 20260911");
   putc('\n');
 
@@ -1387,13 +1387,13 @@ int buntan_main() {
         puts("\x1b[1H"); // 左上（ステータスバー先頭）
         int co2 = read_co2_concentration();
         if (co2 < 0) {
-          buntan_printf("co2 = %d ERR\n", -co2);
+          buntan_printf("co2 = %d ERR   ", -co2);
         } else {
-          buntan_printf("co2 = %d ppm\n", co2);
+          buntan_printf("co2 = %d ppm   ", co2);
         }
         puts("\x1b" "8"); // カーソル復帰
 
-        timer_cnt = 5000; // CO2 センサ読み取り間隔
+        timer_cnt = 500; // CO2 センサ読み取り間隔
       }
     } else if (key == '\n') { // Enter
       putc('\n');
