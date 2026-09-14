@@ -4,27 +4,64 @@
  */
 
 module ScreenMemory #(
-  param LINE_WIDTH: u8 = 6,
-  param OFFSET_WIDTH: u8 = 7,
+  param NUM_LINES: u8 = 37,
+  param LINE_CAPACITY: u8 = 128,
 ) (
   clk:    input  clock,
   rst:    input  reset_async_low,
   wen:    input  bit,
-  line:   input  bit<LINE_WIDTH>,
-  offset: input  bit<OFFSET_WIDTH>,
+  line:   input  bit<$clog2(NUM_LINES)>,
+  offset: input  bit<$clog2(LINE_CAPACITY)>,
   din:    input  bit<9>,
   dout:   output bit<9>,
+  scroll: input  bit, // 1 行スクロール
 
   clk_dvi:    input  'dvi clock,
   rst_dvi:    input  'dvi reset_async_low,
-  line_dvi:   input  'dvi bit<LINE_WIDTH>,
-  offset_dvi: input  'dvi bit<OFFSET_WIDTH>,
+  line_dvi:   input  'dvi bit<$clog2(NUM_LINES)>,
+  offset_dvi: input  'dvi bit<$clog2(LINE_CAPACITY)>,
   dout_dvi:   output 'dvi bit<9>,
 ) {
+  const LINE_WIDTH: u32 = $clog2(NUM_LINES);
+  const OFFSET_WIDTH: u32 = $clog2(LINE_CAPACITY);
   const MEM_LEN: u32 = 1 << (LINE_WIDTH + OFFSET_WIDTH);
   var mem: bit<9>[MEM_LEN];
-  let addr: bit<LINE_WIDTH + OFFSET_WIDTH> = {line, offset};
-  let addr_dvi: 'dvi bit<LINE_WIDTH + OFFSET_WIDTH> = {line_dvi, offset_dvi};
+
+  var bottom_line: bit<LINE_WIDTH>;
+  let mem_line: bit<LINE_WIDTH> = bottom_line +
+    (if line <: NUM_LINES - 1 - bottom_line
+      ? line + 1
+      : line - (NUM_LINES - 1));
+  let addr: bit<LINE_WIDTH + OFFSET_WIDTH> = {mem_line, offset};
+
+  var bottom_line_dvi: 'dvi bit<LINE_WIDTH>;
+  inst bottom_line_dvi_syncronizer: $std::synchronizer_basic#(
+    WIDTH: LINE_WIDTH,
+    STAGES: 2,
+  ) (
+    i_clk: clk_dvi,
+    i_rst: rst_dvi,
+    i_d: bottom_line,
+    o_d: bottom_line_dvi,
+  );
+
+  let mem_line_dvi: 'dvi bit<LINE_WIDTH> = bottom_line_dvi +
+    (if line_dvi <: NUM_LINES - 1 - bottom_line_dvi
+      ? line_dvi + 1
+      : line_dvi - (NUM_LINES - 1));
+  let addr_dvi: 'dvi bit<LINE_WIDTH + OFFSET_WIDTH> = {mem_line_dvi, offset_dvi};
+
+  always_ff (clk, rst) {
+    if_reset {
+      bottom_line = 0;
+    } else if scroll {
+      if bottom_line <: NUM_LINES - 1 {
+        bottom_line += 1;
+      } else {
+        bottom_line = 0;
+      }
+    }
+  }
 
   always_ff (clk, rst) {
     if_reset {
@@ -44,5 +81,93 @@ module ScreenMemory #(
         dout_dvi = mem[addr_dvi];
       }
     }
+  }
+}
+
+#[test(screen_memory)]
+module screen_memory {
+  const NUM_LINES: u32 = 37;
+  const LINE_WIDTH: u32 = $clog2(NUM_LINES);
+  inst clk: $tb::clock_gen #(period: 10);
+  inst rst: $tb::reset_gen(clk);
+  inst clk_dvi: $tb::clock_gen #(period: 6);
+  inst rst_dvi: $tb::reset_gen(clk: clk_dvi);
+
+  var wen: bit;
+  var scroll: bit;
+  var line: bit<LINE_WIDTH>;
+  var din: bit<9>;
+  var dout: bit<9>;
+  var line_dvi: bit<LINE_WIDTH>;
+  var dout_dvi: bit<9>;
+
+  inst dut: ScreenMemory #(NUM_LINES: NUM_LINES) (
+    clk,
+    rst,
+    wen,
+    line,
+    offset: 0,
+    din,
+    dout,
+    scroll,
+    clk_dvi,
+    rst_dvi,
+    line_dvi,
+    offset_dvi: 0,
+    dout_dvi,
+  );
+
+  // 画面内に残る行が、累計スクロール行数だけ上に移動したことを確認する。
+  function assert_rows_shifted_up(distance: input u32) {
+    clk_dvi.next(4);
+    for row in 0..NUM_LINES - distance {
+      let expected: bit<9> = (row + distance + 1) as 9;
+      line = row as LINE_WIDTH;
+      clk.next();
+      $assert(dout == expected, "CPU row did not move up after scrolling");
+
+      line_dvi = line;
+      clk_dvi.next();
+      $assert(dout_dvi == expected, "DVI row did not move up after scrolling");
+    }
+  }
+
+  initial {
+    wen = 0;
+    scroll = 0;
+    line = 0;
+    line_dvi = 0;
+    din = 0;
+    rst.assert();
+    rst_dvi.assert();
+
+    // 各行の先頭セルに、行を識別するための異なる値を書き込む。
+    wen = 1;
+    for row in 0..NUM_LINES {
+      line = row as LINE_WIDTH;
+      din = (row + 1) as 9;
+      clk.next();
+    }
+    wen = 0;
+
+    // scrollを1クロック立てると、行が1行上に移動する。
+    scroll = 1;
+    clk.next();
+    scroll = 0;
+    assert_rows_shifted_up(1);
+
+    // scrollを3クロック保持すると、さらに3行上に移動する。
+    scroll = 1;
+    clk.next(3);
+    scroll = 0;
+    assert_rows_shifted_up(4);
+
+    // 累計NUM_LINES行だけスクロールされると元に戻る。
+    scroll = 1;
+    clk.next(NUM_LINES - 4);
+    scroll = 0;
+    assert_rows_shifted_up(0);
+
+    $finish();
   }
 }

@@ -39,9 +39,12 @@ src/controller.f: $(VERYL_SRCS) Makefile
 src/hankaku.hex: src/hankaku.txt Makefile
 	./makefont.py -o $@ $<
 
-.PHONY: sram flash
+.PHONY: sram flash test
 sram: $(TARGET) Makefile
 	./gwprog.py sram $(GW_DEV) '$(shell wslpath -a -w $(TARGET))'
 
 flash: $(TARGET) Makefile
 	./gwprog.py flash $(GW_DEV) '$(shell wslpath -a -w $(TARGET))'
+
+test: $(TARGET) Makefile
+	make -C src test

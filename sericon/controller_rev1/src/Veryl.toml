@@ -6,3 +6,6 @@ authors = ["Kota UCHIDA <uchan@uchan.net>"]
 [build]
 sources = ["veryl"]
 target = {type = "directory", path = "target"}
+
+[format]
+indent_width = 2
