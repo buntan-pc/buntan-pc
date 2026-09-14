@@ -95,6 +95,8 @@ def main():
     p.add_argument('--exe', help='exe file (insted of pmem&dmem hex)')
     p.add_argument('--nodelim', action='store_true',
                    help='do not send 55AA prior to sending program')
+    p.add_argument('--baudrate', type=int, default=115200,
+                   help='specify communication speed')
     p.add_argument('hex', nargs='*',
                    help='list of hex values to send')
 
@@ -105,7 +107,7 @@ def main():
         print("You may need 'sudo modprobe ftdi_sio' or 'sudo modprobe vhci_hcd'")
         sys.exit(1)
 
-    ser = serial.Serial(args.dev, 115200, timeout=args.timeout,
+    ser = serial.Serial(args.dev, args.baudrate, timeout=args.timeout,
                         bytesize=serial.EIGHTBITS, parity=serial.PARITY_NONE,
                         stopbits=serial.STOPBITS_ONE)
 

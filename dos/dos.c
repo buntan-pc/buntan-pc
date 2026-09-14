@@ -1384,7 +1384,7 @@ int buntan_main() {
     if (key < 0) {
       if (timer_cnt == 0) {
         puts("\x1b" "7"); // カーソル保存
-        puts("\x1b[1;1H"); // 左上（ステータスバー先頭）
+        puts("\x1b[1H"); // 左上（ステータスバー先頭）
         int co2 = read_co2_concentration();
         if (co2 < 0) {
           buntan_printf("co2 = %d ERR\n", -co2);

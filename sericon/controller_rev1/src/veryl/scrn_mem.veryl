@@ -6,24 +6,24 @@
 module ScreenMemory #(
   param NUM_LINES: u8 = 37,
   param LINE_CAPACITY: u8 = 128,
+  const LINE_WIDTH: u32 = $clog2(NUM_LINES),
+  const OFFSET_WIDTH: u32 = $clog2(LINE_CAPACITY),
 ) (
   clk:    input  clock,
   rst:    input  reset_async_low,
   wen:    input  bit,
-  line:   input  bit<$clog2(NUM_LINES)>,
-  offset: input  bit<$clog2(LINE_CAPACITY)>,
+  line:   input  bit<LINE_WIDTH>,
+  offset: input  bit<OFFSET_WIDTH>,
   din:    input  bit<9>,
   dout:   output bit<9>,
   scroll: input  bit, // 1 行スクロール
 
   clk_dvi:    input  'dvi clock,
   rst_dvi:    input  'dvi reset_async_low,
-  line_dvi:   input  'dvi bit<$clog2(NUM_LINES)>,
-  offset_dvi: input  'dvi bit<$clog2(LINE_CAPACITY)>,
+  line_dvi:   input  'dvi bit<LINE_WIDTH>,
+  offset_dvi: input  'dvi bit<OFFSET_WIDTH>,
   dout_dvi:   output 'dvi bit<9>,
 ) {
-  const LINE_WIDTH: u32 = $clog2(NUM_LINES);
-  const OFFSET_WIDTH: u32 = $clog2(LINE_CAPACITY);
   const MEM_LEN: u32 = 1 << (LINE_WIDTH + OFFSET_WIDTH);
   var mem: bit<9>[MEM_LEN];
 
@@ -167,6 +167,17 @@ module screen_memory {
     clk.next(NUM_LINES - 4);
     scroll = 0;
     assert_rows_shifted_up(0);
+
+    // 途中の行への書き込みができる。
+    wen = 1;
+    line = 0;
+    din = 9'h41;
+    clk.next();
+    wen = 0;
+    clk_dvi.next();
+    line_dvi = 0;
+    clk_dvi.next();
+    $assert(dout_dvi == 9'h41, "Failed to read 0x41 from line 0");
 
     $finish();
   }
