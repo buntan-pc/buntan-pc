@@ -161,15 +161,20 @@ static struct Token *NextToken(char *src) {
   }
 
   if (*p == '"') {
-    ++p;
-    while (*p != '"') {
-      if (*p == '\\') {
-        p += 2;
-      } else {
-        ++p;
+    // 文字列リテラルの連続（"foo" "bar"）をまとめて 1 つのトークンとして扱う。
+    while (*p == '"') {
+      ++p;
+      while (*p != '"') {
+        if (*p == '\\') {
+          p += 2;
+        } else {
+          ++p;
+        }
       }
+      ++p;
+      p += strspn(p, " \t\n");
     }
-    return NewToken(kTokenString, src, p + 1 - src);
+    return NewToken(kTokenString, src, p - src);
   }
 
   if (strchr("+-|^&", p[0]) != NULL && p[1] == '=') {
@@ -296,14 +301,20 @@ int DecodeStringLiteral(char *buf, int size, struct Token *tok) {
     return -1;
   }
 
+  int i = 0;
   int bufi = 0;
-  for (int i = 1; i < tok->len - 1 && bufi < size; bufi++) {
-    if (tok->raw[i] == '\\') {
-      buf[bufi] = DecodeEscape(tok->raw, &i);
-    } else {
-      buf[bufi] = tok->raw[i];
-      i++;
+  while (tok->raw[i] == '"' && i < tok->len && bufi < size) {
+    ++i;
+    while (tok->raw[i] != '"') {
+      if (tok->raw[i] == '\\') {
+        buf[bufi++] = DecodeEscape(tok->raw, &i);
+      } else {
+        buf[bufi++] = tok->raw[i];
+        i++;
+      }
     }
+    ++i;
+    i += strspn(tok->raw + i, " \t\n");
   }
   return bufi;
 }

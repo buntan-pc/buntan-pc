@@ -1205,6 +1205,11 @@ int read_co2_concentration() {
   int i = 0;
   char frame[9];
 
+  // flush read buffer
+  while (uart2_flag & 0x01) {
+    uart2_data;
+  }
+
   // send command
   for (; i < 9; i++) {
     uart2_putc(read_co2_cmd[i]);
@@ -1212,11 +1217,12 @@ int read_co2_concentration() {
 
   // receive response
   i = 0;
-  timer_cnt = 1000; // timeout = 1sec
+  timer_cnt = 10; // timeout [ms]
   while (i < 9) {
     if (uart2_flag & 0x01) {
       frame[i] = uart2_data;
       i++;
+      timer_cnt = 10; // reset timeout
     } else if (timer_cnt == 0) {
       return -(i + 10);
     }
@@ -1273,20 +1279,8 @@ int buntan_main() {
   // そのため、スクロール範囲を2行目以降に設定
   puts("\x1b[2r"); // スクロール領域を 2 行目以降に限定
 
+  puts("\x1b[999;1H"); // カーソルを最下行に設定
   puts("BuntanPC DOS build 20260911");
-  putc('\n');
-
-  puts("\x1b[18t"); // スクリーンサイズを問い合わせる
-  block_len = read_term_response(block_buf, 512);
-  puts("response:");
-  for (i = 0; i < block_len; i++) {
-    int c = block_buf[i];
-    if (c <= 0x20) {
-      buntan_printf("[%X]", c);
-    } else {
-      putc(c);
-    }
-  }
   putc('\n');
 
   sdinfo = sd_init();
@@ -1388,8 +1382,19 @@ int buntan_main() {
     int key = getc(0); // 0 = non-blocking mode
 
     if (key < 0) {
-      int co2 = read_co2_concentration();
-      //if (co2 < 0) {
+      if (timer_cnt == 0) {
+        puts("\x1b" "7"); // カーソル保存
+        puts("\x1b[1;1H"); // 左上（ステータスバー先頭）
+        int co2 = read_co2_concentration();
+        if (co2 < 0) {
+          buntan_printf("co2 = %d ERR\n", -co2);
+        } else {
+          buntan_printf("co2 = %d ppm\n", co2);
+        }
+        puts("\x1b" "8"); // カーソル復帰
+
+        timer_cnt = 5000; // CO2 センサ読み取り間隔
+      }
     } else if (key == '\n') { // Enter
       putc('\n');
       if (cmd_i > 0) {

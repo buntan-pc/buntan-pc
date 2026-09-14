@@ -814,7 +814,7 @@ unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass val
       exit(1);
     }
     {
-      struct BaseOff base_off = {"fp", BACKPATCH_FRAME_SIZE};
+      struct BaseOff base_off = {"fp", BASEOFF_FRAME_SIZE};
       InsnBaseOff(ctx, "push", base_off);
     }
     break;
