@@ -25,8 +25,9 @@ module top (
   const FONT_H: u8 = 16;
   const SCRN_W_PIX: u16 = 1024;
   const SCRN_H_PIX: u16 = 600;
+  const STATUSLINE_H_PIX: u16 = 4;
   const SCRN_W_CHAR: u16 = SCRN_W_PIX / FONT_W;
-  const SCRN_H_CHAR: u16 = SCRN_H_PIX / FONT_H;
+  const SCRN_H_CHAR: u16 = (SCRN_H_PIX - STATUSLINE_H_PIX) / FONT_H;
   const SCRN_LINE_WIDTH: u8 = $clog2(SCRN_H_CHAR);
   const SCRN_OFFSET_WIDTH: u8 = $clog2(SCRN_W_CHAR);
 
@@ -304,6 +305,15 @@ module top (
   assign act_pixel_h = pixel_h - DP.h.syn - DP.h.bp;
   assign act_pixel_v = pixel_v - DP.v.syn - DP.v.bp;
 
+  var statusline_is_active: bit; // 1 = ステータスラインを使う
+  var statusline_is_active_dvi: 'dvi bit;
+
+  let pixel_v_shift: 'dvi bit<PIXEL_WIDTH> = case statusline_is_active_dvi {
+    0:       STATUSLINE_H_PIX,
+    default: if act_pixel_v <: FONT_H ? 0 : STATUSLINE_H_PIX,
+  };
+  let act_pixel_v_shifted: 'dvi bit<PIXEL_WIDTH> = act_pixel_v - pixel_v_shift;
+
   #[allow(initial_assign)]
   var font_mem: 'dvi bit<FONT_W>[128 * FONT_H];
   var font_buf: 'dvi bit<FONT_W>;
@@ -329,14 +339,14 @@ module top (
   var font_xpos: 'dvi bit<$clog2(FONT_W)>;
   var font_ypos: 'dvi bit<$clog2(FONT_H)>;
   assign font_xpos = act_pixel_h[$clog2(FONT_W)-1:0];
-  assign font_ypos = act_pixel_v[$clog2(FONT_H)-1:0];
+  assign font_ypos = act_pixel_v_shifted[$clog2(FONT_H)-1:0];
 
   /*
    * scrn_line = 0            : 画面の最上段 = 最も古い履歴 OR ステータスバー
    * scrn_line = SCRN_H_CHAR-2: 画面の下から2行目 = 最も新しい履歴
    * scrn_line = SCRN_H_CHAR-1: 画面の最下段 = 入力中の行
    */
-  let scrn_line: 'dvi bit<SCRN_LINE_WIDTH> = act_pixel_v >> $clog2(FONT_H);
+  let scrn_line: 'dvi bit<SCRN_LINE_WIDTH> = act_pixel_v_shifted >> $clog2(FONT_H);
 
   // 行内での横方向のオフセット
   let scrn_offset: 'dvi bit<SCRN_OFFSET_WIDTH> =
@@ -373,8 +383,6 @@ module top (
 
   var use_extscrn: bit; // 1 = 代替バッファ
   var use_extscrn_dvi: 'dvi bit;
-  var statusline_is_active: bit; // 1 = ステータスラインを使う
-  var statusline_is_active_dvi: 'dvi bit;
 
   var scrn_data_main: 'dvi bit<9>;
   var scrn_data_status: 'dvi bit<9>;
@@ -742,11 +750,32 @@ module top (
     $readmemh("../hankaku.hex", font_mem);
   }
 
+  let font_pixel_color: 'dvi bit<3, 8> =
+    if font_buf[FONT_W - 1 - font_xpos] ? 24'h66FF00 : '0;
   var pixel_color: 'dvi bit<3, 8>; // B, G, R
-  assign pixel_color = switch {
-    act_pixel_v >= FONT_H * SCRN_H_CHAR: '0,
-    font_buf[FONT_W - 1 - font_xpos]:    24'h66FF00,
-    default:                             '0,
+  assign pixel_color = case statusline_is_active_dvi {
+    0: switch { // ステータスラインは無効
+      act_pixel_v <: STATUSLINE_H_PIX:
+        '0,
+      act_pixel_v >= FONT_H * SCRN_H_CHAR + STATUSLINE_H_PIX:
+        '0,
+      default:
+        font_pixel_color,
+    },
+    default: switch {
+      act_pixel_v <: FONT_H:
+        font_pixel_color,
+      act_pixel_v <: FONT_H + 1:
+        '0,
+      act_pixel_v <: FONT_H + 2:
+        24'h66FF00,
+      act_pixel_v <: FONT_H + STATUSLINE_H_PIX:
+        '0,
+      act_pixel_v >= FONT_H * SCRN_H_CHAR + STATUSLINE_H_PIX:
+        '0,
+      default:
+        font_pixel_color,
+    }
   };
 
   var dvi_out_data: 'dvi bit<10>[3];
