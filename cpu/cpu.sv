@@ -180,6 +180,7 @@ addr      説明
 006h-007h UART 入出力（下位 1 バイトのみ有効）
 008h-009h UART 設定
 00Ah-00Bh ADC 変換結果
+00Ch-00Dh ADC 設定（0-7: DAC 値, 8: en_adc, 9: spk_on）
 010h-011h FLASH608K: XADR
 012h-013h FLASH608K: YADR
 014h-015h FLASH608K: 5:NVSTR 4:PROG 3:ERASE 2:SE 1:YE 0:XE

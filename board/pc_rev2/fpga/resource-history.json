@@ -30,15 +30,15 @@
   "HEAD": {
     "CLS": {
       "total": 4320,
-      "used": 1627
+      "used": 1628
     },
     "Logic": {
       "total": 8640,
-      "used": 2577
+      "used": 2567
     },
     "Register": {
       "total": 6693,
-      "used": 1175
+      "used": 1185
     }
   },
   "c380721240e5c9b889819bce1d4f59bd6a7ef4f3": {
@@ -81,6 +81,20 @@
     "Register": {
       "total": 6693,
       "used": 1182
+    }
+  },
+  "e488fa90abdedd23fc10bedfd65b64bfb46013cb": {
+    "CLS": {
+      "total": 4320,
+      "used": 1627
+    },
+    "Logic": {
+      "total": 8640,
+      "used": 2577
+    },
+    "Register": {
+      "total": 6693,
+      "used": 1175
     }
   }
 }

@@ -17,7 +17,7 @@ module mcu_rev2#(
   output [17:0] uart_recv_data,
   output [`ADDR_WIDTH-1:0] img_pmem_size,
   input  clk125,
-  output spk_on,      // DAC をスピーカーへ接続するかどうかを制御
+  output logic spk_on,// DAC をスピーカーへ接続するかどうかを制御
   input  adc_cmp,     // ADC のコンパレータ出力
   output adc_sh_on,   // ADC のサンプル&ホールドスイッチ制御
   output [2:0] adc_sel,  // ADC のチャンネル選択
@@ -259,6 +259,8 @@ end
 
 // MCU 内蔵周辺機能：ADC
 logic [7:0] adc_result;
+logic [7:0] vref_for_adc, vref_for_spk;
+logic en_adc; // ADC 有効化（無効状態では DAC がスピーカー用になる）
 
 adc_rev2#(.CLOCK_HZ(CLOCK_HZ)) adc(
   .rst(rst),
@@ -267,10 +269,23 @@ adc_rev2#(.CLOCK_HZ(CLOCK_HZ)) adc(
   .adc_cmp(adc_cmp),
   .adc_sh_on(adc_sh_on),
   .adc_sel(adc_sel),
-  .adc_vref(adc_vref),
+  .adc_vref(vref_for_adc),
   .adc_result(adc_result)
 );
-assign spk_on = 1'b0;
+
+assign adc_vref = en_adc ? vref_for_adc : vref_for_spk;
+
+always @(posedge clk, posedge rst) begin
+  if (rst) begin
+    en_adc <= 1'b1;
+    spk_on <= 1'b0;
+  end
+  else if (cpu_dmem_wen && cpu_dmem_addr === `ADDR_WIDTH'h00C) begin
+    vref_for_spk <= cpu_dmem_wdata[7:0];
+    en_adc <= cpu_dmem_wdata[8];
+    spk_on <= cpu_dmem_wdata[9];
+  end
+end
 
 // MCU 内蔵周辺機能：ユーザーフラッシュ
 always @(posedge clk, posedge cpu_rst) begin
