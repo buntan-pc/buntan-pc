@@ -6,6 +6,7 @@ unsigned int timer_cnt  __attribute__((at(0x02)));
 unsigned int uart_data  __attribute__((at(0x06)));
 unsigned int uart_flag  __attribute__((at(0x08)));
 int          adc_result __attribute__((at(0x0A)));
+unsigned int adc_config __attribute__((at(0x0C)));
 unsigned int uf_xadr    __attribute__((at(0x10)));
 unsigned int uf_yadr    __attribute__((at(0x12)));
 unsigned int uf_flags   __attribute__((at(0x14)));
