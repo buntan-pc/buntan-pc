@@ -45,7 +45,7 @@ void print_board_init() {
   sys_put_string("*?o" + turn, 1);
   sys_put_string("\n", 1);
 
-  print_board_content;
+  print_board_content();
 }
 
 void print_board(unsigned int *board) {
@@ -422,12 +422,13 @@ int proc_ai() {
 //  1: パスした
 int proc_human() {
   while (1) {
-    print_board(board);
-
     int c = sys_getc();
     if (c <= 0) {
       return -1;
     }
+
+    // ステータスラインを消去
+    sys_put_string("\x1B[14;1H\x1B[K", -1);
 
     if (!has_valid_moves(board, turn)) {
       // パス
@@ -438,25 +439,29 @@ int proc_human() {
       return 1;
     }
 
-    // カーソルから右側を消去（ステータスラインを消去）
-    sys_put_string("\x1B[K", -1);
-
-    if (cx > 0 && (c == 'h' || c == 0x1F)) {
-      --cx;
-    } else if (cy < 7 && (c == 'j' || c == 0x1D)) {
-      ++cy;
-    } else if (cy > 0 && (c == 'k' || c == 0x1C)) {
-      --cy;
-    } else if (cx < 7 && (c == 'l' || c == 0x1E)) {
-      ++cx;
+    if ((0x1C <= c && c <= 0x1F) || c == 'h' || c == 'j' || c == 'k' || c == 'l') {
+      buntan_printf("\x1B[%d;%dH\x1B[X", 6 + cy, (cx << 1) + 3);
+      if (cx > 0 && (c == 'h' || c == 0x1F)) {
+        --cx;
+      } else if (cy < 7 && (c == 'j' || c == 0x1D)) {
+        ++cy;
+      } else if (cy > 0 && (c == 'k' || c == 0x1C)) {
+        --cy;
+      } else if (cx < 7 && (c == 'l' || c == 0x1E)) {
+        ++cx;
+      }
+      buntan_printf("\x1B[%d;%dH>", 6 + cy, (cx << 1) + 3);
     } else if (c == 'b') {
       print_board(board_prev);
       sys_put_string("press any key to continue", -1);
       sys_getc();
       sys_put_string("\x1B[1G\x1B[K", -1); // カーソルを左端に移動し、現在行を消去
+      print_board(board);
     } else if (c == 'v') {
+      sys_put_string("\x1B[14;1H", -1); // ステータスラインの行頭に移動
       print_kifu(kifu, kifu_len);
     } else if (c == ' ') {
+      sys_put_string("\x1B[14;1H", -1); // ステータスラインの行頭に移動
       if (get_stone(board, cx, cy) != 1) {
         sys_put_string("cannot put a stone\n", -1);
       } else {
@@ -504,6 +509,7 @@ int buntan_main(int *info) {
   cy = 2;
 
   sys_put_string("\x1b[?1049h", -1); // 代替バッファへ切り替え
+  sys_put_string("\x1b[?25l", -1); // カーソル非表示
   print_board_init();
 
   int nb = 0;
@@ -548,6 +554,7 @@ int buntan_main(int *info) {
     turn = 2 - turn;
   }
 
+  sys_put_string("\x1b[?25h", -1); // カーソル表示
   sys_put_string("\x1b[?1049l", -1); // メインバッファへ戻す
 
   print_board_content();

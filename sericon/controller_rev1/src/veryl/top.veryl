@@ -622,16 +622,18 @@ module top (
           scrn_recv_state = ScrnRecvState::idle;
         }
         escseq::Kind::CUF: {
+          let amount: u16 = if es_csinum_len == 0 ? 1 : es_csinum[0];
           scrn_wen = 0;
-          if scrn_wr_pos_offset[use_extscrn] <: SCRN_W_CHAR - 1 {
-            scrn_wr_pos_offset[use_extscrn] += 1;
+          if scrn_wr_pos_offset[use_extscrn] <: SCRN_W_CHAR - amount {
+            scrn_wr_pos_offset[use_extscrn] += amount;
           }
           scrn_recv_state = ScrnRecvState::idle;
         }
         escseq::Kind::CUB: {
+          let amount: u16 = if es_csinum_len == 0 ? 1 : es_csinum[0];
           scrn_wen = 0;
-          if scrn_wr_pos_offset[use_extscrn] >: 0 {
-            scrn_wr_pos_offset[use_extscrn] -= 1;
+          if scrn_wr_pos_offset[use_extscrn] >= amount {
+            scrn_wr_pos_offset[use_extscrn] -= amount;
           }
           scrn_recv_state = ScrnRecvState::idle;
         }
