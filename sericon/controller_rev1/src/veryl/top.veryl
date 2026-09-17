@@ -483,7 +483,7 @@ module top (
         statusline_is_active_dvi = 0;
       } else if state_v == DVIState::sync {
         use_extscrn_dvi = use_extscrn;
-        statusline_is_active_dvi = statusline_is_active;
+        statusline_is_active_dvi = statusline_is_active & !use_extscrn;
       }
     }
   }
@@ -577,12 +577,23 @@ module top (
             scrn_recv_state = ScrnRecvState::idle;
           }
           8'h0A: { // LF
-            scrn_scroll[use_extscrn] = 1;
-            scrn_wr_pos_offset[use_extscrn] = '1;
-            scrn_wr_data = 0;
-            scrn_wen = 1;
-            scrn_clear_cnt = 127;
-            scrn_recv_state = ScrnRecvState::clear;
+            case use_extscrn {
+              0: {
+                scrn_scroll[0] = 1;
+                scrn_wr_pos_offset[0] = SCRN_W_CHAR - 1;
+                scrn_wr_data = 0;
+                scrn_wen = 1;
+                scrn_clear_cnt = SCRN_W_CHAR - 1;
+                scrn_recv_state = ScrnRecvState::clear;
+              }
+              1: {
+                // 代替バッファでは、改行は次の行の左端にカーソルを移動させるだけ
+                scrn_wr_pos_line[1] += 1;
+                scrn_wr_pos_offset[1] = 0;
+                scrn_wen = 0;
+                scrn_recv_state = ScrnRecvState::idle;
+              }
+            }
           }
           8'h0D: { // CR
             scrn_wen = 0;
@@ -707,6 +718,19 @@ module top (
             }
           }
         }
+        escseq::Kind::DECRST: {
+          scrn_wen = 0;
+          scrn_recv_state = ScrnRecvState::idle;
+
+          case es_csinum[0] {
+            1049: { // XT_EXTSCRN
+              use_extscrn = 0;
+            }
+            default: {
+              // pass
+            }
+          }
+        }
         escseq::Kind::DECSTBM: {
           scrn_wen = 0;
           scrn_recv_state = ScrnRecvState::idle;
@@ -754,15 +778,7 @@ module top (
     if font_buf[FONT_W - 1 - font_xpos] ? 24'h66FF00 : '0;
   var pixel_color: 'dvi bit<3, 8>; // B, G, R
   assign pixel_color = case statusline_is_active_dvi {
-    0: switch { // ステータスラインは無効
-      act_pixel_v <: STATUSLINE_H_PIX:
-        '0,
-      act_pixel_v >= FONT_H * SCRN_H_CHAR + STATUSLINE_H_PIX:
-        '0,
-      default:
-        font_pixel_color,
-    },
-    default: switch {
+    1: switch { // ステータスラインを表示
       act_pixel_v <: FONT_H:
         font_pixel_color,
       act_pixel_v <: FONT_H + 1:
@@ -775,7 +791,15 @@ module top (
         '0,
       default:
         font_pixel_color,
-    }
+    },
+    default: switch { // ステータスラインは無効
+      act_pixel_v <: STATUSLINE_H_PIX:
+        '0,
+      act_pixel_v >= FONT_H * SCRN_H_CHAR + STATUSLINE_H_PIX:
+        '0,
+      default:
+        font_pixel_color,
+    },
   };
 
   var dvi_out_data: 'dvi bit<10>[3];

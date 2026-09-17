@@ -20,6 +20,7 @@ package escseq {
     DECSC,
     DECRC,
     DECSET,
+    DECRST,
     DECSTBM,
   }
 }
@@ -117,6 +118,7 @@ module ESRecognizer #(
               8'h4B /* K */: escseq::Kind::EL,
               8'h58 /* X */: escseq::Kind::ECH,
               8'h68 /* h */: escseq::Kind::DECSET,
+              8'h6C /* l */: escseq::Kind::DECRST,
               8'h72 /* r */: escseq::Kind::DECSTBM,
               default:       escseq::Kind::NONE,
             };
