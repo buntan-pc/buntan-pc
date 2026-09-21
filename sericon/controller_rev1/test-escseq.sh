@@ -45,3 +45,26 @@ $sendhex 1B 5B 3F 31 30 34 39 6C
 
 # LF std buffer
 $sendhex 0A 73 74 64 20 62 75 66 66 65 72
+
+sleep 1
+
+# OSC 10 ; rgb:FF/00/00 BEL
+$sendhex 1B 5D 31 30 3B 72 67 62 3A 46 46 2F 30 30 2F 30 30 07
+
+sleep 1
+
+# OSC 10 ; rgb:00/00/00 BEL
+$sendhex 1B 5D 31 30 3B 72 67 62 3A 30 30 2F 30 30 2F 30 30 07
+
+# OSC 11 ; rgb:FF/FF/FF BEL
+$sendhex 1B 5D 31 31 3B 72 67 62 3A 46 46 2F 46 46 2F 46 46 07
+
+sleep 1
+
+# OSC 10 ; reset BEL
+$sendhex 1B 5D 31 30 3B 72 65 73 65 74 07
+
+sleep 1
+
+# OSC 11 ; reset BEL
+$sendhex 1B 5D 31 31 3B 72 65 73 65 74 07

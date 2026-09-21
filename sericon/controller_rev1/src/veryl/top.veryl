@@ -538,8 +538,8 @@ module top (
 
   var es_recog: bit;
   var es_kind:  escseq::Kind;
-  var es_csinum: u16[2];
-  var es_csinum_len: u8;
+  var es_numbuf: u16[4];
+  var es_numbuf_len: u8;
   inst es_recognizer: ESRecognizer(
     i_clk:    sys_clk,
     i_rst_n:  rst_n,
@@ -547,8 +547,8 @@ module top (
     i_char_v: uart_rx_full,
     o_recog:  es_recog,
     o_kind:   es_kind,
-    o_csinum: es_csinum,
-    o_csinum_len: es_csinum_len,
+    o_numbuf: es_numbuf,
+    o_numbuf_len: es_numbuf_len,
   );
 
   always_ff (sys_clk, rst_n) {
@@ -622,7 +622,7 @@ module top (
           scrn_recv_state = ScrnRecvState::idle;
         }
         escseq::Kind::CUF: {
-          let amount: u16 = if es_csinum_len == 0 ? 1 : es_csinum[0];
+          let amount: u16 = if es_numbuf_len == 0 ? 1 : es_numbuf[0];
           scrn_wen = 0;
           if scrn_wr_pos_offset[use_extscrn] <: SCRN_W_CHAR - amount {
             scrn_wr_pos_offset[use_extscrn] += amount;
@@ -630,7 +630,7 @@ module top (
           scrn_recv_state = ScrnRecvState::idle;
         }
         escseq::Kind::CUB: {
-          let amount: u16 = if es_csinum_len == 0 ? 1 : es_csinum[0];
+          let amount: u16 = if es_numbuf_len == 0 ? 1 : es_numbuf[0];
           scrn_wen = 0;
           if scrn_wr_pos_offset[use_extscrn] >= amount {
             scrn_wr_pos_offset[use_extscrn] -= amount;
@@ -639,29 +639,29 @@ module top (
         }
         escseq::Kind::CNL: {
           scrn_wen = 0;
-          scrn_wr_pos_line[use_extscrn] += if es_csinum_len == 0 ? 1 : es_csinum[0];
+          scrn_wr_pos_line[use_extscrn] += if es_numbuf_len == 0 ? 1 : es_numbuf[0];
           scrn_wr_pos_offset[use_extscrn] = 0;
           scrn_recv_state = ScrnRecvState::idle;
         }
         escseq::Kind::CPL: {
           scrn_wen = 0;
-          scrn_wr_pos_line[use_extscrn] -= if es_csinum_len == 0 ? 1 : es_csinum[0];
+          scrn_wr_pos_line[use_extscrn] -= if es_numbuf_len == 0 ? 1 : es_numbuf[0];
           scrn_wr_pos_offset[use_extscrn] = 0;
           scrn_recv_state = ScrnRecvState::idle;
         }
         escseq::Kind::CHA: {
           scrn_wen = 0;
-          scrn_wr_pos_offset[use_extscrn] = es_csinum[0] - 1;
+          scrn_wr_pos_offset[use_extscrn] = es_numbuf[0] - 1;
           scrn_recv_state = ScrnRecvState::idle;
         }
         escseq::Kind::CUP: {
           let line: bit<SCRN_LINE_WIDTH> =
-            (if es_csinum[0] <= SCRN_H_CHAR ? es_csinum[0] : SCRN_H_CHAR) - 1;
+            (if es_numbuf[0] <= SCRN_H_CHAR ? es_numbuf[0] : SCRN_H_CHAR) - 1;
           let offset: bit<SCRN_OFFSET_WIDTH> =
-            (if es_csinum[1] <= SCRN_W_CHAR ? es_csinum[1] : SCRN_W_CHAR) - 1;
+            (if es_numbuf[1] <= SCRN_W_CHAR ? es_numbuf[1] : SCRN_W_CHAR) - 1;
 
           scrn_wen = 0;
-          case es_csinum_len {
+          case es_numbuf_len {
             1: {
               scrn_wr_pos_line[use_extscrn] = line;
               scrn_wr_pos_offset[use_extscrn] = '0;
@@ -682,7 +682,7 @@ module top (
           scrn_wen = 1;
           scrn_recv_state = ScrnRecvState::clear;
 
-          if es_csinum_len == 0 || es_csinum[0] == 0 {
+          if es_numbuf_len == 0 || es_numbuf[0] == 0 {
             // カーソルから右を消去
             scrn_clear_cnt = 127 - scrn_wr_pos_offset[use_extscrn];
             scrn_wr_pos_offset[use_extscrn] = '1;
@@ -711,7 +711,7 @@ module top (
           scrn_wen = 0;
           scrn_recv_state = ScrnRecvState::idle;
 
-          case es_csinum[0] {
+          case es_numbuf[0] {
             1049: { // XT_EXTSCRN
               use_extscrn = 1;
             }
@@ -724,7 +724,7 @@ module top (
           scrn_wen = 0;
           scrn_recv_state = ScrnRecvState::idle;
 
-          case es_csinum[0] {
+          case es_numbuf[0] {
             1049: { // XT_EXTSCRN
               use_extscrn = 0;
             }
@@ -776,33 +776,65 @@ module top (
     $readmemh("../hankaku.hex", font_mem);
   }
 
-  let font_pixel_color: 'dvi bit<3, 8> =
-    if font_buf[FONT_W - 1 - font_xpos] ? 24'h66FF00 : '0;
-  var pixel_color: 'dvi bit<3, 8>; // B, G, R
-  assign pixel_color = case statusline_is_active_dvi {
+  var color_fg: bit<3, 8>; // [0]=B, [1]=G, [2]=R
+  var color_bg: bit<3, 8>;
+  var color_fg_dvi: 'dvi bit<3, 8>;
+  var color_bg_dvi: 'dvi bit<3, 8>;
+  inst color_synchronizer: $std::synchronizer_basic #(
+    WIDTH: 48,
+    STAGES: 2,
+  ) (
+    i_clk: pclk,
+    i_rst: dvi_rst_n,
+    i_d: {color_fg, color_bg},
+    o_d: {color_fg_dvi, color_bg_dvi},
+  );
+
+  let font_pixel_color: 'dvi bit<3, 8> = // B, G, R
+    if font_buf[FONT_W - 1 - font_xpos] ? color_fg_dvi : color_bg_dvi;
+  let pixel_color: 'dvi bit<3, 8> = case statusline_is_active_dvi {
     1: switch { // ステータスラインを表示
       act_pixel_v <: FONT_H:
         font_pixel_color,
       act_pixel_v <: FONT_H + 1:
-        '0,
+        color_bg_dvi,
       act_pixel_v <: FONT_H + 2:
-        24'h66FF00,
+        color_fg_dvi,
       act_pixel_v <: FONT_H + STATUSLINE_H_PIX:
-        '0,
+        color_bg_dvi,
       act_pixel_v >= FONT_H * SCRN_H_CHAR + STATUSLINE_H_PIX:
-        '0,
+        color_bg_dvi,
       default:
         font_pixel_color,
     },
     default: switch { // ステータスラインは無効
       act_pixel_v <: STATUSLINE_H_PIX:
-        '0,
+        color_bg_dvi,
       act_pixel_v >= FONT_H * SCRN_H_CHAR + STATUSLINE_H_PIX:
-        '0,
+        color_bg_dvi,
       default:
         font_pixel_color,
     },
   };
+
+  always_ff (sys_clk, rst_n) {
+    if_reset {
+      color_fg = 24'h66FF00;
+      color_bg = '0;
+    } else if es_recog {
+      let col: bit<3, 8> = {es_numbuf[1][7:0], es_numbuf[2][7:0], es_numbuf[3][7:0]};
+      case es_kind {
+        escseq::Kind::OSC10: color_fg = case es_numbuf[1] {
+          16'hFF00: 24'h66FF00, // reset
+          default:  col,
+        };
+        escseq::Kind::OSC11: color_bg = case es_numbuf[1] {
+          16'hFF00: '0, // reset
+          default:  col,
+        };
+      }
+    }
+  }
 
   var dvi_out_data: 'dvi bit<10>[3];
   inst dvi_out: DviOut (
