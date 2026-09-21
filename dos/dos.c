@@ -678,6 +678,18 @@ int load_exe(unsigned int pmem_addr, unsigned int dmem_addr, unsigned int exe_lb
   return 0;
 }
 
+int strcmp(char *a, char *b) {
+  while (1) {
+    int v = *a - *b;
+    if (v != 0 | *a == 0) {
+      return v;
+    }
+    ++a;
+    ++b;
+  }
+  return 0;
+}
+
 int strncmp(char *a, char *b, int n) {
   int i;
   for (i = 0; i < n; i++) {
@@ -1142,6 +1154,25 @@ int load_hex_by_filename(unsigned int pmem_addr, char *block_buf, char *filename
   return 0;
 }
 
+int set_color_theme(char *theme_id) {
+  if (strcmp(theme_id, "0") == 0 || strcmp(theme_id, "default") == 0) {
+    puts("\x1B]10;reset\a");
+    puts("\x1B]11;reset\a");
+  } else if (strcmp(theme_id, "1") == 0 || strcmp(theme_id, "light") == 0) {
+    puts("\x1B]10;rgb:00/00/00\a");
+    puts("\x1B]11;rgb:FF/FF/FF\a");
+  } else if (strcmp(theme_id, "2") == 0 || strcmp(theme_id, "dark") == 0) {
+    puts("\x1B]10;rgb:FF/FF/FF\a");
+    puts("\x1B]11;rgb:00/00/00\a");
+  } else if (strcmp(theme_id, "3") == 0 || strcmp(theme_id, "funny") == 0) {
+    puts("\x1B]10;rgb:FF/FF/00\a");
+    puts("\x1B]11;rgb:CC/00/CC\a");
+  } else if (strcmp(theme_id, "4") == 0 || strcmp(theme_id, "blue") == 0) {
+    puts("\x1B]10;rgb:00/FF/FF\a");
+    puts("\x1B]11;rgb:00/00/66\a");
+  }
+}
+
 void proc_cmd(char *cmd, char *block_buf, int (*app_main)(int *), char *app_dmem) {
   if (strncmp(cmd, "ls", 3) == 0) {
     foreach_dir_entry(block_buf, 0, print_file_name, 0);
@@ -1161,6 +1192,8 @@ void proc_cmd(char *cmd, char *block_buf, int (*app_main)(int *), char *app_dmem
     rm_file(cmd + 3, block_buf);
   } else if (strncmp(cmd, "hex ", 4) == 0) {
     load_hex_by_filename(app_main, block_buf, cmd + 4);
+  } else if (strncmp(cmd, "theme ", 6) == 0) {
+    set_color_theme(cmd + 6);
   } else {
     char *argv[8];
     int argc = build_argv(cmd, argv, 8);
