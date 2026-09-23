@@ -512,7 +512,6 @@ module usb_host #(
 
   var data01 : bit;
   var repeat_data : bit;
-  var recv_payload_pos : u16;
 
   always_ff (clk, rst_n) {
     if_reset {
@@ -642,6 +641,9 @@ module usb_host #(
   var key_pressed : bit;
   var pressed_key_code : bit<8>;
   var key_req_internal : bit;
+  var recv_payload_pos : u16;
+  var recv_payload_pos_wo_crc : u16;
+  var recv_payload_completed : bit;
 
   always_ff (clk, rst_n) {
     if_reset {
@@ -655,6 +657,8 @@ module usb_host #(
       data01 = 0;
       repeat_data = 0;
       recv_payload_pos = 0;
+      recv_payload_pos_wo_crc = 0;
+      recv_payload_completed = 0;
       config_total_len = 0;
       config_value = 0;
 
@@ -1068,7 +1072,14 @@ module usb_host #(
               recv_payload_pos += 1;
             }
           }
-        PacketState::EOP:
+        PacketState::EOP: {
+          if bit_cnt == 0 {
+            // CRC16 の分を減らす
+            let pos_wo_crc: u16 = recv_payload_pos - 16;
+            recv_payload_completed = pos_wo_crc >= command_cache.data.payload_len;
+            recv_payload_pos_wo_crc = pos_wo_crc;
+          }
+
           if valid_in {
             case bit_cnt {
               0,1: {
@@ -1088,12 +1099,11 @@ module usb_host #(
               default: {
                 bit_cnt = 4;
                 if recv_packet.pid[2:0] == PID::DATA0[2:0] {
-                  // CRC16 の分を減らして考える
-                  let new_pos : u16 = recv_payload_pos - 16;
-                  if new_pos >= command_cache.data.payload_len {
+                  if recv_payload_completed {
                     recv_payload_pos = 0;
                   } else {
-                    recv_payload_pos = new_pos;
+                    // CRC16 の直前から受信再開
+                    recv_payload_pos = recv_payload_pos_wo_crc;
                     repeat_data = 1;
                   }
 
@@ -1105,6 +1115,7 @@ module usb_host #(
               }
             }
           }
+        }
         PacketState::Error: {
         }
       }
