@@ -799,43 +799,28 @@ module top (
   let cursor_v: 'dvi bit<PIXEL_WIDTH> = FONT_H * cursor_line_dvi + STATUSLINE_H_PIX;
   let cursor_h: 'dvi bit<PIXEL_WIDTH> = FONT_W * cursor_offset_dvi;
 
-  let pixel_color: 'dvi bit<3, 8> = case statusline_is_active_dvi {
-    1: switch { // ステータスラインを表示
-      act_pixel_v <: FONT_H:
-        font_pixel_color,
-      act_pixel_v <: FONT_H + 1:
-        color_bg_dvi,
-      act_pixel_v <: FONT_H + 2:
-        color_fg_dvi,
-      act_pixel_v <: FONT_H + STATUSLINE_H_PIX:
-        color_bg_dvi,
-      act_pixel_v <: cursor_v:
-        font_pixel_color,
-      act_pixel_v <: cursor_v + FONT_H:
-        if use_extscrn_dvi == 0 &&
-          cursor_h <= act_pixel_h && act_pixel_h <: cursor_h + FONT_W
-          ? color_fg_dvi
-          : font_pixel_color,
-      act_pixel_v <: FONT_H * SCRN_H_CHAR + STATUSLINE_H_PIX:
-        font_pixel_color,
-      default:
-        color_bg_dvi,
-    },
-    default: switch { // ステータスラインは無効
-      act_pixel_v <: STATUSLINE_H_PIX:
-        color_bg_dvi,
-      act_pixel_v <: cursor_v:
-        font_pixel_color,
-      act_pixel_v <: cursor_v + FONT_H:
-        if use_extscrn_dvi == 0 &&
-          cursor_h <= act_pixel_h && act_pixel_h <: cursor_h + FONT_W
-          ? color_fg_dvi
-          : font_pixel_color,
-      act_pixel_v <: FONT_H * SCRN_H_CHAR + STATUSLINE_H_PIX:
-        font_pixel_color,
-      default:
-        color_bg_dvi,
-    },
+  let pixel_color: 'dvi bit<3, 8> = switch {
+    act_pixel_v <: STATUSLINE_H_PIX:
+      if statusline_is_active_dvi ? font_pixel_color : color_bg_dvi,
+    act_pixel_v <: FONT_H:
+      font_pixel_color,
+    act_pixel_v <: FONT_H + 1:
+      if statusline_is_active_dvi ? color_bg_dvi : font_pixel_color,
+    act_pixel_v <: FONT_H + 2:
+      if statusline_is_active_dvi ? color_fg_dvi : font_pixel_color,
+    act_pixel_v <: FONT_H + STATUSLINE_H_PIX:
+      if statusline_is_active_dvi ? color_bg_dvi : font_pixel_color,
+    act_pixel_v <: cursor_v:
+      font_pixel_color,
+    act_pixel_v <: cursor_v + FONT_H:
+      if use_extscrn_dvi == 0 &&
+        cursor_h <= act_pixel_h && act_pixel_h <: cursor_h + FONT_W
+        ? color_fg_dvi
+        : font_pixel_color,
+    act_pixel_v <: FONT_H * SCRN_H_CHAR + STATUSLINE_H_PIX:
+      font_pixel_color,
+    default:
+      color_bg_dvi,
   };
 
   always_ff (sys_clk, rst_n) {
