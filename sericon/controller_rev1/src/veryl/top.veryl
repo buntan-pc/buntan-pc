@@ -87,6 +87,8 @@ module top (
 
 
   // ディスプレイ用クロック生成
+  const FCLK_HZ: u32 = 204_680_000; // 204.68MHz
+  const PCLK_HZ: u32 = FCLK_HZ / 5;
   var dvi_rst_n : 'dvi reset_async_low;
   var fclk : 'dvif clock;
   var pclk : 'dvi clock;
@@ -799,6 +801,41 @@ module top (
   let cursor_v: 'dvi bit<PIXEL_WIDTH> = FONT_H * cursor_line_dvi + STATUSLINE_H_PIX;
   let cursor_h: 'dvi bit<PIXEL_WIDTH> = FONT_W * cursor_offset_dvi;
 
+  // カーソル点滅
+  var ms_tick_dvi : 'dvi bit; // 1ms 周期で 1 クロック幅だけ 1 になるイネーブル信号
+  inst ms_ticker_dvi: simple_ticker#(
+    CLOCK_HZ: PCLK_HZ,
+    TICK_PERIOD: PCLK_HZ / 1000,
+  ) (
+    clk: pclk,
+    rst_n: dvi_rst_n,
+    tick: ms_tick_dvi,
+  );
+
+  var cursor_tick_dvi: 'dvi bit; // 0.5 秒周期で 1 クロック幅だけ 1 になるイネーブル信号
+  inst cursor_ticker_dvi: $std::counter#(
+    WIDTH: 9,
+    MAX_COUNT: 500,
+  ) (
+    i_clk: pclk,
+    i_rst: dvi_rst_n,
+    i_clear: 0,
+    i_set: 0,
+    i_set_value: '0,
+    i_up: ms_tick_dvi,
+    i_down: 0,
+    o_wrap_around: cursor_tick_dvi,
+  );
+
+  var cursor_visible: 'dvi bit; // カーソルの点灯状態
+  always_ff (pclk, dvi_rst_n) {
+    if_reset {
+      cursor_visible = 0;
+    } else if cursor_tick_dvi {
+      cursor_visible = ~cursor_visible;
+    }
+  }
+
   let pixel_color: 'dvi bit<3, 8> = switch {
     act_pixel_v <: STATUSLINE_H_PIX:
       if statusline_is_active_dvi ? font_pixel_color : color_bg_dvi,
@@ -813,7 +850,7 @@ module top (
     act_pixel_v <: cursor_v:
       font_pixel_color,
     act_pixel_v <: cursor_v + FONT_H:
-      if use_extscrn_dvi == 0 &&
+      if use_extscrn_dvi == 0 && cursor_visible &&
         cursor_h <= act_pixel_h && act_pixel_h <: cursor_h + FONT_W
         ? color_fg_dvi
         : font_pixel_color,

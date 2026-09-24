@@ -1,0 +1,28 @@
+// SPDX-License-Identifier: MIT
+/*
+ * Copyright (c) 2026 Kota UCHIDA
+ */
+
+module simple_ticker #(
+  param CLOCK_HZ: u32 = 27_000_000,
+  param TICK_PERIOD: u32 = CLOCK_HZ / 1000, // default 1ms
+) (
+  clk: input clock,
+  rst_n: input reset_async_low,
+  tick: output bit, // タイムアウト時に 1 クロック幅だけ 1 になる信号
+) {
+  var tick_gen : bit<$clog2(TICK_PERIOD)>; // 1ms 周期を作り出すタイマ
+
+  always_ff (clk, rst_n) {
+    if_reset {
+      tick_gen = 0;
+      tick = 0;
+    } else if tick_gen == TICK_PERIOD - 1 {
+      tick_gen = 0;
+      tick = 1;
+    } else {
+      tick_gen += 1;
+      tick = 0;
+    }
+  }
+}

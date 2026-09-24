@@ -47,22 +47,15 @@ module usb_host #(
 ) {
   var dir_out : bit;
 
-  const MS_TICK_PERIOD: u32 = CLOCK_HZ / 1000;
-  var ms_tick_gen : bit<$clog2(MS_TICK_PERIOD)>; // 1ms 周期を作り出すタイマ
   var ms_tick : bit; // 1ms 周期で 1 クロック幅だけ 1 になるイネーブル信号
-
-  always_ff (clk, rst_n) {
-    if_reset {
-      ms_tick_gen = 0;
-      ms_tick = 0;
-    } else if ms_tick_gen == MS_TICK_PERIOD - 1 {
-      ms_tick_gen = 0;
-      ms_tick = 1;
-    } else {
-      ms_tick_gen += 1;
-      ms_tick = 0;
-    }
-  }
+  inst ms_ticker: simple_ticker#(
+    CLOCK_HZ: CLOCK_HZ,
+    TICK_PERIOD: CLOCK_HZ / 1000,
+  ) (
+    clk: clk,
+    rst_n: rst_n,
+    tick: ms_tick,
+  );
 
   var bit_tick : bit;
   var dev_speed : DevSpeed;
