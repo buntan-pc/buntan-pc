@@ -806,6 +806,7 @@ module usb_host #(
         CID::DetectKey: {
           let mod_keys : bit<8> = key_report_cur[0 +: 8];
           let shift : bit = mod_keys[1] | mod_keys[5];
+          let ctrl  : bit = mod_keys[0] | mod_keys[4];
 
           case bit_cnt {
             0..64: {
@@ -832,15 +833,33 @@ module usb_host #(
               bit_cnt += 1;
             }
             64: {
-              bit_cnt = 255;
-              if pressed_key_code != 0 {
-                if shift {
-                  key_ascii = usage_id_to_ascii_map_shifted[pressed_key_code];
-                } else {
-                  key_ascii = usage_id_to_ascii_map[pressed_key_code];
-                }
-                key_req_internal = ~key_req_internal;
+              if pressed_key_code == 0 {
+                bit_cnt = 255;
+              } else {
+                bit_cnt += 1;
               }
+            }
+            65: {
+              bit_cnt += 1;
+              if shift {
+                key_ascii = usage_id_to_ascii_map_shifted[pressed_key_code];
+              } else {
+                key_ascii = usage_id_to_ascii_map[pressed_key_code];
+              }
+            }
+            66: {
+              bit_cnt += 1;
+              if ctrl {
+                key_ascii = case pressed_key_code {
+                  8'h1B /* X */: 8'h18, // CAN (Cancel)
+                  8'h16 /* S */: 8'h13, // DC3
+                  default: '0,
+                };
+              }
+            }
+            67: {
+              bit_cnt = 255;
+              key_req_internal = ~key_req_internal;
             }
           }
         }
