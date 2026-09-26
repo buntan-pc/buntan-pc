@@ -1066,7 +1066,7 @@ module usb_host #(
             }
           }
         PacketState::EOP: {
-          if bit_cnt == 0 {
+          if bit_cnt <: 4 {
             // CRC16 の分を減らす
             let pos_wo_crc: u16 = recv_payload_pos - 16;
             recv_payload_completed = pos_wo_crc >= command_cache.data.payload_len;
