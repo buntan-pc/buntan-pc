@@ -1,0 +1,185 @@
+// SPDX-License-Identifier: MIT
+/*
+ * Copyright (c) 2026 Kota UCHIDA
+ */
+
+/*
+ * キーが押下を検出する
+ *
+ * キーボードのレポート（8 バイト）のキーコード部分（6 バイト）を走査して、
+ * 前回押されてなくて今回新たに押されたキーを検出する。
+ */
+module detect_key_press(
+  clk: input clock,
+  rst_n: input reset_async_low,
+  key_report: input bit<64>, // 受信したレポート（8 バイト）
+  key_report_v: input bit, // key_report が有効なときに 1
+  start: input bit, // 1 でキー検出を開始する
+  done: output bit,  // キー検出が終了したら 1
+  key_ascii: output bit<8>,
+  key_ascii_req: output bit, // key_ascii が確定したらビット反転
+) {
+  let usage_id_to_ascii_map : bit<8>[256] = '{
+    8'0, 8'0, 8'0, 8'0, "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", // 00 - 0F
+    "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z", "1", "2", // 10 - 1F
+    "3",   "4",   "5",   "6",   "7",   "8",   "9",   "0",   // 20 - 27
+    "\n",  8'h1B, 8'h08, 8'h09, " ",   "-",   "=",   "[",   // 28 - 2F
+    "]",   8'h5C, "\n",  ";",   "'",   "`",   ",",   ".",   // 30 - 37
+    "/",   8'0,   8'0,   8'0,   8'0,   8'0,   8'0,   8'0,   // 38 - 3F
+    8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, // 40 - 4E
+    8'h1E, // 4F → RS
+    8'h1F, // 50 ← US
+    8'h1D, // 51 ↓ GS
+    8'h1C, // 52 ↑ FS
+    8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, // 53 - 5F
+    8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, // 60 - 6F
+    8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, // 70 - 7F
+    8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'h5C, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, // 80 - 8F
+    8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, // 90 - 9F
+    8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, // A0 - AF
+    8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, // B0 - BF
+    8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, // C0 - CF
+    8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, // D0 - DF
+    8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, // E0 - EF
+    8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, // F0 - FF
+  };
+
+  let usage_id_to_ascii_map_shifted : bit<8>[256] = '{
+    8'0, 8'0, 8'0, 8'0, "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", // 00 - 0F
+    "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", "!", "@", // 10 - 1F
+    "#",   "$",   "%",   "^",   "&",   "*",   "(",   ")",   // 20 - 27
+    "\n",  8'h1B, 8'h08, 8'h09, " ",   "_",   "+",   "{",   // 28 - 2F
+    "}",   "|",   "\n",  ":",   "\"",  "~",   "<",   ">",   // 30 - 37
+    "?",   8'0,   8'0,   8'0,   8'0,   8'0,   8'0,   8'0,   // 38 - 3F
+    8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, // 40 - 4E
+    8'h1E, // 4F → RS
+    8'h1F, // 50 ← US
+    8'h1D, // 51 ↓ GS
+    8'h1C, // 52 ↑ FS
+    8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, // 53 - 5F
+    8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, // 60 - 6F
+    8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, // 70 - 7F
+    8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, "|", 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, // 80 - 8F
+    8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, // 90 - 9F
+    8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, // A0 - AF
+    8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, // B0 - BF
+    8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, // C0 - CF
+    8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, // D0 - DF
+    8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, // E0 - EF
+    8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, 8'0, // F0 - FF
+  };
+
+  var key_report_cur : bit<64>; // 最後に受信したレポート
+  var key_report_prev : bit<64>; // 1 個前のレポート
+
+  always_ff (clk, rst_n) {
+    if_reset {
+      key_report_cur = '0;
+      key_report_prev = '0;
+    } else if key_report_v {
+      key_report_prev = key_report_cur;
+      key_report_cur = key_report;
+    }
+  }
+
+  // キー検出機構の状態
+  enum State {
+    Init,
+    LoadCur,
+    CheckCur,
+    LoadPrev,
+    CheckPrev,
+    Compare,
+    Detect,
+    CtrlKey,
+    Done, // キー検出終了
+  }
+
+  var state : State;
+  var key_cur_ind : bit<3>;  // 今回受信したレポートにおけるインデックス
+  var key_prev_ind : bit<3>; // 前回受信したレポートにおけるインデックス
+  var key_cur : u8;  // 押下されたかどうかを判定するキーコード
+  var key_prev : u8; // 前回受信したレポートから抜き出した 1 バイト
+
+  always_ff (clk, rst_n) {
+    if_reset {
+      state = State::Init;
+      key_cur_ind = 0;
+      key_prev_ind = 0;
+      key_cur = 0;
+      key_prev = 0;
+      key_ascii_req = 0;
+    } else {
+      done = 0;
+
+      case state {
+        State::Init: {
+          key_cur_ind = 2;
+          if start {
+            state = State::LoadCur;
+          }
+        }
+
+        State::LoadCur: {
+          key_cur = key_report_cur[8*key_cur_ind +: 8];
+          key_cur_ind += 1;
+          key_prev_ind = 1;
+          state = State::CheckCur;
+        }
+
+        State::CheckCur: {
+          state = switch {
+            key_cur_ind == 1 || key_cur == 0: State::Done,
+            default:                          State::LoadPrev,
+          };
+        }
+
+        State::LoadPrev: {
+          key_prev = key_report_prev[8*key_prev_ind +: 8];
+          key_prev_ind += 1;
+          state = State::CheckPrev;
+        }
+
+        State::CheckPrev: {
+          state = switch {
+            // prev リストを走査しきったので、押下判定とする
+            key_prev_ind == 1 || key_prev == 0: State::Detect,
+
+            default:                            State::Compare,
+          };
+        }
+
+        State::Compare: {
+          if key_cur == key_prev {
+            // 継続的な押下状態なら、押下を検出しない
+            state = State::LoadCur;
+          } else {
+            // prev リストの次のキーを試す
+            state = State::LoadPrev;
+          }
+        }
+
+        State::Detect: {
+          let ctrl  : bit = key_report_cur[0] | key_report_cur[4];
+          let shift : bit = key_report_cur[1] | key_report_cur[5];
+          key_ascii = switch {
+            ctrl: case key_cur {
+              8'h1B /* X */: 8'h18, // CAN (Cancel)
+              8'h16 /* S */: 8'h13, // DC3
+              default: '0,
+            },
+            shift: usage_id_to_ascii_map_shifted[key_cur],
+            default: usage_id_to_ascii_map[key_cur],
+          };
+          key_ascii_req = ~key_ascii_req;
+          state = State::LoadCur;
+        }
+
+        State::Done: {
+          done = 1;
+          state = State::Init;
+        }
+      }
+    }
+  }
+}
