@@ -123,7 +123,7 @@ module detect_key_press(
         State::LoadCur: {
           key_cur = key_report_cur[8*key_cur_ind +: 8];
           key_cur_ind += 1;
-          key_prev_ind = 1;
+          key_prev_ind = 2;
           state = State::CheckCur;
         }
 
