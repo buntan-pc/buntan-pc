@@ -1299,6 +1299,21 @@ unsigned int read_term_response(char *buf, unsigned int buf_size) {
   return i;
 }
 
+//play_beep(10, 1000); // 33kHz
+//play_beep(20, 1000); // 17.5kHz
+//play_beep(30, 1000); // 12kHz
+//play_beep(100, 150); // 3.7kHz
+//play_beep(1000,  1000); // 374Hz
+void play_beep(int high_factor, int duration_ms) {
+  timer_cnt = duration_ms;
+  while (timer_cnt > 0) {
+    gpio |= 0x40; // bit 6 = beep speaker
+    for (int i = 0; i < high_factor; i++);
+    gpio &= 0xBF;
+    for (int i = 0; i < high_factor; i++);
+  }
+}
+
 int buntan_main() {
   int i;
   unsigned int block_len;
@@ -1307,6 +1322,9 @@ int buntan_main() {
   int (*app_main)(int *) = 0x2000;
   unsigned char *app_dmem = 0x2000;
   char block_buf[512];
+
+  play_beep(75,  150);
+  play_beep(750, 150);
 
   // 最初の1行をステータスバーとして使う
   // そのため、スクロール範囲を2行目以降に設定
