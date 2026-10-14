@@ -11,7 +11,6 @@ module adc_rev2#(
   input  clk125,      // 125MHz のクロック
   input  adc_cmp,     // ADC のコンパレータ出力
   output adc_sh_on,   // ADC のサンプル&ホールドスイッチ制御
-  output [2:0] adc_sel,  // ADC のチャンネル選択
   output [7:0] adc_vref, // ADC の DAC 入力
   output logic [7:0] adc_result // ADC の変換結果
 );
@@ -36,7 +35,6 @@ assign tick_next =
     : (tick >= TICK_CONVERT_BIT - 1 ? 0 : tick + 1);
 assign tick_edge_zero = tick_next == 0;
 assign adc_sh_on = adc_phase == SAMPLE;
-assign adc_sel = 3'd1;
 assign adc_vref = adc_sar;
 
 always @(posedge rst, posedge clk125) begin

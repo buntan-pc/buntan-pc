@@ -20,7 +20,7 @@ module mcu_rev2#(
   output logic spk_on,// DAC をスピーカーへ接続するかどうかを制御
   input  adc_cmp,     // ADC のコンパレータ出力
   output adc_sh_on,   // ADC のサンプル&ホールドスイッチ制御
-  output [2:0] adc_sel,  // ADC のチャンネル選択
+  output logic [2:0] adc_sel, // ADC のチャンネル選択
   output [7:0] adc_vref, // ADC の DAC 入力
   output logic [8:0] uf_xadr,
   output logic [5:0] uf_yadr,
@@ -233,7 +233,7 @@ end
 logic [7:0] uart3_rx_byte, uart3_tx_byte;
 logic uart3_rd, uart3_rx_full, uart3_wr, uart3_tx_ready, uart3_ie;
 
-uart#(.CLOCK_HZ(CLOCK_HZ), .BAUD(9600), .TIM_WIDTH(12)) uart3(
+uart#(.CLOCK_HZ(CLOCK_HZ), .BAUD(9600), .TIM_WIDTH(12), .RQ_DEPTH(4)) uart3(
   .rst(rst),
   .clk(clk),
   .rx(uart3_rx),
@@ -268,7 +268,6 @@ adc_rev2#(.CLOCK_HZ(CLOCK_HZ)) adc(
   .clk125(clk125),
   .adc_cmp(adc_cmp),
   .adc_sh_on(adc_sh_on),
-  .adc_sel(adc_sel),
   .adc_vref(vref_for_adc),
   .adc_result(adc_result)
 );
@@ -279,11 +278,13 @@ always @(posedge clk, posedge rst) begin
   if (rst) begin
     en_adc <= 1'b1;
     spk_on <= 1'b0;
+    adc_sel <= 3'b0;
   end
   else if (cpu_dmem_wen && cpu_dmem_addr === `ADDR_WIDTH'h00C) begin
     vref_for_spk <= cpu_dmem_wdata[7:0];
     en_adc <= cpu_dmem_wdata[8];
     spk_on <= cpu_dmem_wdata[9];
+    adc_sel <= cpu_dmem_wdata[12:10];
   end
 end
 

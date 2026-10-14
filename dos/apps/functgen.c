@@ -9,23 +9,25 @@
 #include "syscall.h"
 #include "printf.h"
 
+unsigned int phase; // 0–0xFFFF で波形 1 周
+
 void delay_little(unsigned int n) {
   for (unsigned int i = 0; i < n; i++);
 }
 
-int linear(unsigned int i) {
-  return i;
+int saw() {
+  return phase >> 8;
 }
 
-int square(unsigned int i) {
-  return 255 * (i >= 64);
+int square() {
+  return 255 * (phase >> 15);
 }
 
-int triangle(unsigned int i) {
-  if (i < 64) {
-    return i << 2;
+int triangle() {
+  if (phase >= 0x7FFF) {
+    return (0xFFFF - phase) >> 7;
   } else {
-    return (127 - i) << 2;
+    return phase >> 7;
   }
 }
 
@@ -48,8 +50,8 @@ char sine_table[128] = {
    79,  85,  90,  97, 103, 109, 115, 121
 };
 
-int sine(unsigned int i) {
-  return sine_table[i];
+int sine() {
+  return sine_table[phase >> 9];
 }
 
 int strcmp(char *a, char *b) {
@@ -63,6 +65,36 @@ int strcmp(char *a, char *b) {
   return c - *b;
 }
 
+int atoi(char *s) {
+  int v = 0;
+  int c;
+  while ((c = *s++)) {
+    if (c < '0' || '9' < c) {
+      break;
+    }
+    v = 10 * v + c - '0';
+  }
+  return v;
+}
+
+unsigned int period_to_step(unsigned int period) {
+  // 0x10000 / period を筆算による除算で求める
+  unsigned int q = 0; // 商
+  unsigned int r = 1; // 余り（初期値1は0x10000の先頭1を意味する）
+
+  for (int i = 0; i < 16; ++i) {
+    r = r << 1;
+    q = q << 1;
+
+    if (r >= period) {
+      r -= period;
+      q |= 1;
+    }
+  }
+
+  return q;
+}
+
 int buntan_main(int *info) {
   int adc;
   unsigned int conf;
@@ -72,7 +104,7 @@ int buntan_main(int *info) {
   int f_addr = &square;
   if (argc >= 2) {
     if (strcmp(argv[1], "saw") == 0) { // sawtooth
-      f_addr = &linear;
+      f_addr = &saw;
     } else if (strcmp(argv[1], "tri") == 0) { // triangle
       f_addr = &triangle;
     } else if (strcmp(argv[1], "sq") == 0) { // square
@@ -81,28 +113,48 @@ int buntan_main(int *info) {
       f_addr = &sine;
     }
   }
-  int (*f)(unsigned int) = f_addr + info[0];
+  int (*f)() = f_addr + info[0];
 
   int vol = 31;
   if (argc >= 3) {
-    int c;
-    int new_vol = 0;
-    for (int i = 0; (c = argv[2][i]) != '\0' && '0' <= c && c <= '9'; i++) {
-      new_vol += 10 * new_vol + c - '0';
-    }
+    int new_vol = atoi(argv[2]);
     if (new_vol != 0) {
       vol = new_vol;
     }
   }
 
-  unsigned int i = 0;
+  int variable_period = 0;
+  unsigned int period = 127;
+  if (argc >= 4) {
+    if (strcmp(argv[3], "cds") == 0) {
+      variable_period = 1;
+    } else {
+      period = atoi(argv[3]);
+    }
+  }
 
+  unsigned int step = 256;
+  if (period != 0) {
+    step = period_to_step(period);
+  }
+
+  unsigned int prev_phase = 0;
   while (sys_getc_nonblock() != 'q') {
-    int val = f(i) & 0x00FF;
+    int val = f() & 0x00FF;
     val = (vol * val) >> 8;
     adc_config = 0x0200 | val; // spk_on = 1
 
-    i = (i + 1) & 0x007F;
+    prev_phase = phase;
+    phase += step;
+
+    if (variable_period && phase < prev_phase) {
+      // 波形が1周した
+      adc_config = 0x0000 | val; // adc_sel = 0, spk_on = 0, en_adc = 0
+      adc_config = 0x0100 | val; // adc_sel = 0, spk_on = 0, en_adc = 1
+      delay_little(5);
+      step = adc_result * 40;
+      adc_config = val; // adc_sel = 0, spk_on = 0, en_adc = 0
+    }
   }
 
   return 0;
