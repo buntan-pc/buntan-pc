@@ -83,8 +83,19 @@ int buntan_main(int *info) {
   }
   int (*f)(unsigned int) = f_addr + info[0];
 
+  int vol = 31;
+  if (argc >= 3) {
+    int c;
+    int new_vol = 0;
+    for (int i = 0; (c = argv[2][i]) != '\0' && '0' <= c && c <= '9'; i++) {
+      new_vol += 10 * new_vol + c - '0';
+    }
+    if (new_vol != 0) {
+      vol = new_vol;
+    }
+  }
+
   unsigned int i = 0;
-  int vol = 127;
 
   while (sys_getc_nonblock() != 'q') {
     int val = f(i) & 0x00FF;
