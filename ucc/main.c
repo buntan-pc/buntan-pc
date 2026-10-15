@@ -321,6 +321,42 @@ struct BaseOff GetBaseOffset(struct GenContext *ctx, struct Symbol *sym) {
 
 unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass value_class, int req_onstack);
 
+void GenVarIList(struct GenContext *ctx, struct BaseOff base_off,
+                 struct Type *var_type, struct Node *init) {
+  assert(var_type->kind == kTypeArray);
+  assert(init->kind == kNodeIList);
+  init = init->rhs;
+
+  int inc = SizeofType(var_type->base);
+
+  const char *insn_st = "st";
+  if (inc == 1) {
+    insn_st = "st1";
+  }
+
+  int i = 0;
+  for (; init; ++i) {
+    if (var_type->base->kind == kTypeArray) {
+      assert(init->kind == kNodeIList);
+      GenVarIList(ctx, base_off, var_type->base, init);
+    } else {
+      Generate(ctx, init, VC_CONTENT, 1);
+      InsnBaseOff(ctx, insn_st, base_off);
+    }
+    base_off.offset += inc;
+    init = init->next;
+  }
+  for (; i < var_type->len; ++i) {
+    if (var_type->base->kind == kTypeArray) {
+      GenVarIList(ctx, base_off, var_type->base, NULL);
+    } else {
+      InsnInt(ctx, "push", 0);
+      InsnBaseOff(ctx, insn_st, base_off);
+    }
+    base_off.offset += inc;
+  }
+}
+
 void GenVarInit(struct GenContext *ctx, struct Symbol *var) {
   struct Node *init = var->def->rhs;
   if (init == NULL) {
@@ -329,31 +365,16 @@ void GenVarInit(struct GenContext *ctx, struct Symbol *var) {
 
   struct BaseOff base_off = GetBaseOffset(ctx, var);
 
-  const char *insn_st = "st";
-  if ((var->type->kind == kTypeArray && SizeofType(var->type->base) == 1) ||
-      (SizeofType(var->type) == 1)) {
-    insn_st = "st1";
-  }
+  if (init->kind == kNodeIList) {
+    GenVarIList(ctx, base_off, var->type, init);
+  } else {
+    const char *insn_st = "st";
+    if (SizeofType(var->type) == 1) {
+      insn_st = "st1";
+    }
 
-  if (init->kind != kNodeIList) {
     Generate(ctx, init, VC_CONTENT, 1);
     InsnBaseOff(ctx, insn_st, base_off);
-  } else {
-    assert(var->type->kind == kTypeArray);
-    struct Node *init_val = init->rhs;
-    int inc = SizeofType(var->type->base);
-    int i = 0;
-    for (; init_val; ++i) {
-      Generate(ctx, init_val, VC_CONTENT, 1);
-      InsnBaseOff(ctx, insn_st, base_off);
-      base_off.offset += inc;
-      init_val = init_val->next;
-    }
-    for (; i < var->type->len; ++i) {
-      InsnInt(ctx, "push", 0);
-      InsnBaseOff(ctx, insn_st, base_off);
-      base_off.offset += inc;
-    }
   }
 }
 
@@ -602,12 +623,15 @@ unsigned Generate(struct GenContext *ctx, struct Node *node, enum ValueClass val
       } else {
         Generate(ctx, node->rhs, VC_CONTENT, 1);
       }
-      int byt = SizeofType(node->rhs->type->base) == 1;
-      if (value_class == VC_CONTENT) {
-        EmitOptimalLdSt(ctx, 0, byt, 0);
-      } else if (value_class == VC_NO_NEED) {
-        node->type = NewType(kTypeVoid);
-        EmitOptimalLdSt(ctx, 0, byt, 1);
+
+      if (node->type->kind != kTypeArray) {
+        int byt = SizeofType(node->rhs->type->base) == 1;
+        if (value_class == VC_CONTENT) {
+          EmitOptimalLdSt(ctx, 0, byt, 0);
+        } else if (value_class == VC_NO_NEED) {
+          node->type = NewType(kTypeVoid);
+          EmitOptimalLdSt(ctx, 0, byt, 1);
+        }
       }
     }
     break;

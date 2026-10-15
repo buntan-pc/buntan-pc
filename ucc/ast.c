@@ -167,13 +167,18 @@ struct Node *FunctionDefinition(struct ParseContext *ctx,
   return func_def;
 }
 
-struct Node *VariableInitializer(struct ParseContext *ctx, struct Symbol *sym) {
+struct Node *VariableInitializer(struct ParseContext *ctx, struct Type *type) {
   struct Token *br = Consume('{');
   if (!br) {
+    if (type->kind == kTypeArray) {
+      fprintf(stderr, "initializer must be a list for an array\n");
+      Locate(cur_token->raw);
+      exit(1);
+    }
     return Expression(ctx);
   }
 
-  if (sym->type->kind != kTypeArray) {
+  if (type->kind != kTypeArray) {
     fprintf(stderr, "initializer list is allowed only for arrays\n");
     Locate(br->raw);
     exit(1);
@@ -185,14 +190,14 @@ struct Node *VariableInitializer(struct ParseContext *ctx, struct Symbol *sym) {
   while (!Consume('}')) {
     struct Token *n_start = cur_token;
     if (Consume(',')) {
-      fprintf(stderr, "expression required\n");
+      fprintf(stderr, "a value required\n");
       Locate(n_start->raw);
       exit(1);
     }
-    n->next = Expression(ctx);
+    n->next = VariableInitializer(ctx, type->base);
     n = n->next;
-    if (++i > sym->type->len) {
-      fprintf(stderr, "too many initializer\n");
+    if (++i > type->len) {
+      fprintf(stderr, "too many values\n");
       Locate(n_start->raw);
       exit(1);
     }
@@ -215,6 +220,14 @@ struct Node *VariableDefinition(struct ParseContext *ctx,
     t->len = len->value.as_int;
     t->base = tspec->type;
     tspec->type = t;
+    while (Consume('[')) {
+      struct Token *len = Expect(kTokenInteger);
+      Expect(']');
+      struct Type *t = NewType(kTypeArray);
+      t->len = len->value.as_int;
+      t->base = tspec->type->base;
+      tspec->type->base = t;
+    }
   }
 
   enum SymbolKind sym_kind = ctx->scope->parent ? kSymLVar : kSymGVar;
@@ -275,7 +288,7 @@ struct Node *VariableDefinition(struct ParseContext *ctx,
   }
 
   if (Consume('=')) {
-    def->rhs = VariableInitializer(ctx, sym);
+    def->rhs = VariableInitializer(ctx, sym->type);
   }
   Expect(';');
 
