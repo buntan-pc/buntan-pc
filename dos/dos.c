@@ -1314,6 +1314,61 @@ void play_beep(int high_factor, int duration_ms) {
   }
 }
 
+char cmd_history[4][64];
+int cmd_history_latest_i; // cmd_history の最新行（現在入力中のコマンド）
+int cmd_history_i;      // 履歴をたどる操作中の現在行
+
+// latest 行を取得
+char *cmd_history_latest() {
+  return cmd_history[cmd_history_latest_i];
+}
+
+// latest を確定させて履歴に追加。新たな latest を返す
+char *cmd_history_commit() {
+  if (cmd_history_latest_i != cmd_history_i) {
+    // 履歴をコミットする
+    char *history = cmd_history[cmd_history_i];
+    char *latest = cmd_history_latest();
+    for (int i = 0; i < 64; i++) {
+      *latest++ = *history++;
+    }
+  }
+
+  // 最新行ポインタを更新
+  if (++cmd_history_latest_i >= 4) {
+    cmd_history_latest_i = 0;
+  }
+  cmd_history_i = cmd_history_latest_i;
+
+  return cmd_history_latest();
+}
+
+// 履歴を一つ過去に移動
+char *cmd_history_prev() {
+  int new_i = cmd_history_i - 1;
+  if (new_i < 0) {
+    new_i = 3;
+  }
+  if (cmd_history_latest_i == new_i) {
+    // リングバッファを1周しないようにする
+    new_i = cmd_history_i;
+  }
+  return cmd_history[cmd_history_i = new_i];
+}
+
+// 履歴を一つ未来に移動
+char *cmd_history_next() {
+  if (cmd_history_latest_i == cmd_history_i) {
+    // リングバッファを1周しないようにする
+    return cmd_history_latest();
+  }
+  int new_i = cmd_history_i + 1;
+  if (new_i >= 4) {
+    new_i = 0;
+  }
+  return cmd_history[cmd_history_i = new_i];
+}
+
 int buntan_main() {
   int i;
   unsigned int block_len;
@@ -1331,7 +1386,7 @@ int buntan_main() {
   puts("\x1b[2r"); // スクロール領域を 2 行目以降に限定
 
   puts("\x1b[999H"); // カーソルを最下行に設定
-  puts("BuntanPC DOS build 20260911");
+  puts("BuntanPC DOS build 20261015");
   putc('\n');
 
   sdinfo = sd_init();
@@ -1405,8 +1460,9 @@ int buntan_main() {
   }
 
   RootEntSector = PartitionSector + BPB_ResvdSecCnt + BPB_NumFATs * BPB_FATSz16;
-  char cmd[64];
+  char *cmd = cmd_history_latest();
   int cmd_i = 0;
+  int walking_cmd_history = 0;
 
   // AUTOEXEC.SCR を探して、あれば実行する
   char autoexec_block_buf[512];
@@ -1448,10 +1504,15 @@ int buntan_main() {
       }
     } else if (key == '\n') { // Enter
       putc('\n');
-      if (cmd_i > 0) {
+      if (walking_cmd_history) {
+        // 過去履歴をそのまま実行
+        proc_cmd(cmd, block_buf, app_main, app_dmem);
+      } else if (cmd_i > 0) {
         cmd[cmd_i] = '\0';
         proc_cmd(cmd, block_buf, app_main, app_dmem);
       }
+      walking_cmd_history = 0;
+      cmd = cmd_history_commit();
       cmd_i = 0;
       puts("> ");
     } else if (key == '\b') {
@@ -1459,6 +1520,20 @@ int buntan_main() {
         cmd_i--;
         putc('\b');
         del_char();
+      }
+    } else if (key == 0x1C) { // Up
+      cmd = cmd_history_prev();
+      walking_cmd_history = 1;
+      puts("\x1b[3G\x1b[K"); // プロンプトから右側を削除
+      puts(cmd);
+    } else if (key == 0x1D) { // Down
+      if (walking_cmd_history) {
+        cmd = cmd_history_next();
+        puts("\x1b[3G\x1b[K"); // プロンプトから右側を削除
+        puts(cmd);
+        if (cmd == cmd_history_latest()) {
+          walking_cmd_history = 0;
+        }
       }
     } else if (0x20 <= key & key < 0x80 & cmd_i < 63) {
       cmd[cmd_i++] = key;

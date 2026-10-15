@@ -1,5 +1,9 @@
 #!/usr/bin/python3
-"""impl/pnr のタイミングレポートを要約して表示する。
+"""カレントディレクトリの impl/pnr のタイミングレポートを要約して表示する。
+
+*_tr_content.html を自動検出し、同名の .timing_paths とともに読む。
+複数ある場合は更新日時が最新のものを採用する（同日時ならファイル名の昇順）。
+--pnr-dir で検索先のディレクトリを変更できる。
 
 デフォルトでは違反があっても表示するだけで exit 0 する。
 --strict を付けると違反があるとき exit 1 する（将来ビルドを止めたくなったら
@@ -18,7 +22,7 @@ RESET = '\033[0m'
 
 
 def read_violated_counts(tr_content: Path) -> dict[str, int | None]:
-    """controller_tr_content.html から違反エンドポイント数を読む（全パス対象の集計）"""
+    """*_tr_content.html から違反エンドポイント数を読む（全パス対象の集計）"""
     text = tr_content.read_text(encoding='utf-8', errors='replace')
     plain = html.unescape(re.sub(r'<[^>]+>', '|', text))
     counts = {}
@@ -29,7 +33,7 @@ def read_violated_counts(tr_content: Path) -> dict[str, int | None]:
 
 
 def read_worst_paths(timing_paths: Path) -> dict[str, list[tuple[float, str, str]]]:
-    """controller.timing_paths からパス種別ごとの (slack, from, to) を読む（ワースト25本のみ）"""
+    """*.timing_paths からパス種別ごとの (slack, from, to) を読む（ワースト25本のみ）"""
     paths: dict[str, list[tuple[float, str, str]]] = {}
     for block in timing_paths.read_text().split('====='):
         lines = [l.strip() for l in block.strip().splitlines() if l.strip()]
@@ -55,14 +59,23 @@ def read_worst_paths(timing_paths: Path) -> dict[str, list[tuple[float, str, str
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--strict', action='store_true', help='違反があるとき exit 1 する')
-    ap.add_argument('--pnr-dir', default=Path(__file__).resolve().parent / 'impl' / 'pnr', type=Path)
+    ap.add_argument('--pnr-dir', default=Path('impl/pnr'), type=Path,
+                    help='レポートの検索先（デフォルト: カレントディレクトリの impl/pnr）')
     ap.add_argument('--max-list', default=5, type=int, help='表示する違反パスの最大本数')
     args = ap.parse_args()
 
-    tr_content = args.pnr_dir / 'controller_tr_content.html'
-    timing_paths = args.pnr_dir / 'controller.timing_paths'
-    if not tr_content.exists() or not timing_paths.exists():
+    reports = sorted(p for p in args.pnr_dir.glob('*_tr_content.html') if p.is_file())
+    if not reports:
         print(f'check-timing: レポートが見つかりません ({args.pnr_dir})', file=sys.stderr)
+        return 0 if not args.strict else 1
+    tr_content = max(reports, key=lambda p: p.stat().st_mtime_ns)
+    if len(reports) > 1:
+        print(f'check-timing: 更新日時が最新のレポートを採用します ({tr_content})',
+              file=sys.stderr)
+    project_name = tr_content.name.removesuffix('_tr_content.html')
+    timing_paths = args.pnr_dir / f'{project_name}.timing_paths'
+    if not timing_paths.is_file():
+        print(f'check-timing: レポートが見つかりません ({timing_paths})', file=sys.stderr)
         return 0 if not args.strict else 1
 
     counts = read_violated_counts(tr_content)
