@@ -744,6 +744,20 @@ int toupper(int c) {
   }
 }
 
+int strlen(char *s) {
+  int n = 0;
+  while (*s++) {
+    n++;
+  }
+  return n;
+}
+
+void memcpy_int(int *dst, int *src, int n) {
+  while (n--) {
+    *dst++ = *src++;
+  }
+}
+
 /*
  * ルートディレクトリエントリを走査する。
  *
@@ -1173,7 +1187,9 @@ int set_color_theme(char *theme_id) {
   }
 }
 
-void proc_cmd(char *cmd, char *block_buf, int (*app_main)(int *), char *app_dmem) {
+void proc_cmd(char *cmd_orig, char *block_buf, int (*app_main)(int *), char *app_dmem) {
+  char cmd[64];
+  memcpy_int(cmd, cmd_orig, 32);
   if (strncmp(cmd, "ls", 3) == 0) {
     foreach_dir_entry(block_buf, 0, print_file_name, 0);
   } else if (strncmp(cmd, "sdinfo", 7) == 0) {
@@ -1329,9 +1345,7 @@ char *cmd_history_commit() {
     // 履歴をコミットする
     char *history = cmd_history[cmd_history_i];
     char *latest = cmd_history_latest();
-    for (int i = 0; i < 64; i++) {
-      *latest++ = *history++;
-    }
+    memcpy_int(latest, history, 32);
   }
 
   // 最新行ポインタを更新
@@ -1369,6 +1383,10 @@ char *cmd_history_next() {
     new_i = 0;
   }
   return cmd_history[cmd_history_i = new_i];
+}
+
+void cmd_history_leave() {
+  cmd_history_i = cmd_history_latest_i;
 }
 
 int buntan_main() {
@@ -1506,18 +1524,20 @@ int buntan_main() {
       }
     } else if (key == '\n') { // Enter
       putc('\n');
-      if (walking_cmd_history) {
-        // 過去履歴をそのまま実行
-        proc_cmd(cmd, block_buf, app_main, app_dmem);
-      } else if (cmd_i > 0) {
-        cmd[cmd_i] = '\0';
-        proc_cmd(cmd, block_buf, app_main, app_dmem);
-      }
+      cmd[cmd_i] = '\0';
+      proc_cmd(cmd, block_buf, app_main, app_dmem);
       walking_cmd_history = 0;
       cmd = cmd_history_commit();
       cmd_i = 0;
       puts("> ");
     } else if (key == '\b') {
+      if (walking_cmd_history) {
+        walking_cmd_history = 0;
+        cmd_history_leave();
+        char *latest = cmd_history_latest();
+        memcpy_int(latest, cmd, 32);
+        cmd = latest;
+      }
       if (cmd_i > 0) {
         cmd_i--;
         putc('\b');
@@ -1525,12 +1545,14 @@ int buntan_main() {
       }
     } else if (key == 0x1C) { // Up
       cmd = cmd_history_prev();
+      cmd_i = strlen(cmd);
       walking_cmd_history = 1;
       puts("\x1b[3G\x1b[K"); // プロンプトから右側を削除
       puts(cmd);
     } else if (key == 0x1D) { // Down
       if (walking_cmd_history) {
         cmd = cmd_history_next();
+        cmd_i = strlen(cmd);
         puts("\x1b[3G\x1b[K"); // プロンプトから右側を削除
         puts(cmd);
         if (cmd == cmd_history_latest()) {
@@ -1538,6 +1560,14 @@ int buntan_main() {
         }
       }
     } else if (0x20 <= key & key < 0x80 & cmd_i < 63) {
+      if (walking_cmd_history) {
+        walking_cmd_history = 0;
+        cmd_history_leave();
+        char *latest = cmd_history_latest();
+        memcpy_int(latest, cmd, 32);
+        cmd = latest;
+      }
+
       cmd[cmd_i++] = key;
       putc(key);
     }
