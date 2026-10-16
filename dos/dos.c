@@ -1339,8 +1339,10 @@ char *cmd_history_commit() {
     cmd_history_latest_i = 0;
   }
   cmd_history_i = cmd_history_latest_i;
+  char *latest = cmd_history_latest();
+  *latest = '\0';
 
-  return cmd_history_latest();
+  return latest;
 }
 
 // 履歴を一つ過去に移動
