@@ -30,6 +30,7 @@ logic rxtim_rst, txtim_rst;
 logic [DATA_BITS-1:0] rx_queue [RQ_DEPTH];
 logic [$clog2(RQ_DEPTH+1)-1:0] rx_queue_len;
 // カウンタは 0–RQ_DEPTH を表現できなければならないので clog2(RQ_DEPTH+1) とする。
+logic rx_complete;
 
 // 受信状態
 typedef enum logic [1:0] {
@@ -65,6 +66,7 @@ assign txtim_rst = rst || tx_state == WAIT;
 assign tx_ready = ~wr && tx_state == WAIT;
 assign rx_data = rx_queue[0];
 assign rx_full = rx_queue_len != 0;
+assign rx_complete = rx_state == STOP && rxtim_half;
 
 always @(posedge clk) begin
   rx_filter <= {rx, rx_filter[3:1]};
@@ -128,20 +130,43 @@ end
 
 always @(posedge rst, posedge clk) begin
   if (rst) begin
+    for (int i = 0; i < RQ_DEPTH; i++) begin
+      rx_queue[i] <= 0;
+    end
+  end
+  else begin
+    if (rd) begin
+      for (int i = 0; i < RQ_DEPTH - 1; i++)
+        rx_queue[i] <= rx_queue[i + 1];
+    end
+    if (rx_complete) begin
+      if (rd && rx_queue_len != 0)
+        rx_queue[rx_queue_len - 1] <= rx_shift;
+      else // !rd || rx_queue_len == 0
+        rx_queue[rx_queue_len] <= rx_shift;
+    end
+  end
+end
+
+always @(posedge rst, posedge clk) begin
+  if (rst) begin
     rx_queue_len <= 0;
   end
-  else if (rx_state == STOP && rxtim_half) begin
-    if (rx_queue_len != RQ_DEPTH) begin
-      rx_queue[rx_queue_len] <= rx_shift;
-      rx_queue_len <= rx_queue_len + 1;
+  else begin
+    if (!rd && rx_complete) begin
+      if (rx_queue_len != RQ_DEPTH)
+        rx_queue_len <= rx_queue_len + 1;
     end
-  end
-  else if (rd) begin
-    for (int i = 0; i < RQ_DEPTH - 1; i++) begin
-      rx_queue[i] <= rx_queue[i + 1];
+    else if (rd && !rx_complete) begin
+      if (rx_queue_len != 0)
+        rx_queue_len <= rx_queue_len - 1;
     end
-    if (rx_queue_len != 0) begin
-      rx_queue_len <= rx_queue_len - 1;
+    else if (rd && rx_complete) begin
+      // キューが空のときは、何も読み出されず、キューに 1 文字貯まる
+      // キューにデータがあるときは、読み出しと追加が同時に起こるため、
+      // rx_queue_len は変わらない
+      if (rx_queue_len == 0)
+        rx_queue_len <= 1;
     end
   end
 end
