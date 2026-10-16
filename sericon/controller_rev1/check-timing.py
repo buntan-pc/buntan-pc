@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 """カレントディレクトリの impl/pnr のタイミングレポートを要約して表示する。
 
-*_tr_content.html を自動検出し、同名の .timing_paths とともに読む。
+*_tr_content.html を自動検出し、同名の .timing_paths と HTML の Recovery Paths Table を読む。
 複数ある場合は更新日時が最新のものを採用する（同日時ならファイル名の昇順）。
 --pnr-dir で検索先のディレクトリを変更できる。
 
@@ -22,7 +22,7 @@ RESET = '\033[0m'
 
 
 def read_violated_counts(tr_content: Path) -> dict[str, int | None]:
-    """*_tr_content.html から違反エンドポイント数を読む（全パス対象の集計）"""
+    """*_tr_content.html の STA 概要にある Setup/Hold 違反数を読む。"""
     text = tr_content.read_text(encoding='utf-8', errors='replace')
     plain = html.unescape(re.sub(r'<[^>]+>', '|', text))
     counts = {}
@@ -30,6 +30,30 @@ def read_violated_counts(tr_content: Path) -> dict[str, int | None]:
         m = re.search(kind + r' Violated Endpoints[\s|]+(\d+)', plain)
         counts[kind] = int(m.group(1)) if m else None
     return counts
+
+
+def read_html_paths(tr_content: Path, kind: str) -> list[tuple[float, str, str]]:
+    """*_tr_content.html の指定スラック表から (slack, from, to) を読む。"""
+    anchor = f'{kind}_Slack_Table'
+    text = tr_content.read_text(encoding='utf-8', errors='replace')
+    section = re.search(
+        rf'<h3><a name="{re.escape(anchor)}">.*?</table>', text, re.DOTALL
+    )
+    if not section:
+        return []
+
+    paths = []
+    for row in re.finditer(r'<tr\b[^>]*>(.*?)</tr>', section.group(), re.DOTALL):
+        cells = [html.unescape(re.sub(r'<[^>]+>', '', cell)).strip()
+                 for cell in re.findall(r'<td\b[^>]*>(.*?)</td>', row.group(1), re.DOTALL)]
+        if len(cells) < 4:
+            continue
+        try:
+            slack = float(cells[1])
+        except ValueError:
+            continue
+        paths.append((slack, cells[2], cells[3]))
+    return paths
 
 
 def read_worst_paths(timing_paths: Path) -> dict[str, list[tuple[float, str, str]]]:
@@ -87,15 +111,21 @@ def main() -> int:
 
     print(f'=== タイミング要約 ({args.pnr_dir}) ===')
     violated = False
-    for kind, ptype in (('Setup', 'SETUP'), ('Hold', 'HOLD')):
+    for kind, ptype in (('Setup', 'SETUP'), ('Hold', 'HOLD'), ('Recovery', 'RECOVERY')):
         plist = paths.get(ptype, [])
+        if kind == 'Recovery':
+            plist = read_html_paths(tr_content, 'Recovery')
         worst = min((p[0] for p in plist), default=None)
-        n_violated = counts.get(kind)
-        ok = (n_violated == 0) if n_violated is not None else (worst is None or worst >= 0)
+        n_violated = sum(p[0] < 0 for p in plist)
+        ok = worst is None or worst >= 0
         mark = paint('OK', GREEN) if ok else paint('** VIOLATED **', RED + BOLD)
         worst_s = f'{worst:+.3f} ns' if worst is not None else 'N/A'
-        count_s = f'{n_violated}' if n_violated is not None else '?'
-        print(f'{kind:5}: worst slack {worst_s}, 違反エンドポイント数 {count_s}  {mark}')
+        count_s = f'{n_violated}/{len(plist)} (表示された経路)'
+        print(f'{kind:8}: worst slack {worst_s}, 違反経路数 {count_s}  {mark}')
+        summary_count = counts.get(kind)
+        if kind == 'Setup' and summary_count not in (None, n_violated):
+            print(f'          STA 概要の Setup 違反エンドポイント数は {summary_count} '
+                  '（Setup パス表の結果と不一致）')
         if not ok:
             violated = True
             for slack, frm, to in [p for p in plist if p[0] < 0][: args.max_list]:
