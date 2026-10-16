@@ -1,4 +1,18 @@
 {
+  "01220cc2c593298e6245c2520a72b051e9610ace": {
+    "CLS": {
+      "total": 4320,
+      "used": 1607
+    },
+    "Logic": {
+      "total": 8640,
+      "used": 2538
+    },
+    "Register": {
+      "total": 6693,
+      "used": 1217
+    }
+  },
   "2ab59aacd2fc4f5cc9232747aee71c02deb833f8": {
     "CLS": {
       "total": 4320,
