@@ -18,7 +18,7 @@ as=$as_dir/as
 
 make
 make -C $as_dir
-make -C ../cpu sim.exe
+make -C ../cpu/verilator
 
 function test_prog() {
   src="$1"
