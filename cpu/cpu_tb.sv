@@ -21,8 +21,8 @@ initial begin
            cpu.stack0, cpu.stack1, cpu.fp, cpu.ip, last_wr_addr, last_wr_data,
            " phase=%c",
            cpu.signals.phase,
-           " irq=%d pmem_wenh/wenl=%d/%d",
-           cpu.irq, pmem_wenh, pmem_wenl
+           " irq=%d pmem_wenh/wenl=%d/%d cstk0=%04x",
+           cpu.irq, pmem_wenh, pmem_wenl, cpu.cstack0
            );
 
   rst <= 1;
@@ -132,7 +132,7 @@ initial begin
   #10 // rdmem
     dmem_rdata <= 16'h1200;
   @(posedge cpu.load_insn)
-    pmem_rdata <= 18'h300FF; // 03C: PUSH 0xFF
+    pmem_rdata <= 18'h3FACE; // 03C: PUSH 0xFACE
     if (cpu.stack0 !== 16'h0012) $error("stack0 must be 0x0012");
 
   @(posedge cpu.load_insn)
@@ -140,10 +140,14 @@ initial begin
 
   @(posedge cpu.load_insn)
     pmem_rdata <= 18'h1C822; // 03E: POP ISR
+  #11 // decode
+    irq <= 1;
+  #10 // exec
+    irq <= 0;
 
   @(posedge cpu.load_insn)
-    pmem_rdata <= 18'h300FE; // 03F: PUSH 0xFE
-    irq <= 1;
+    // Fetch の開始時点で irq が取り込まれる
+    pmem_rdata <= 18'h3F00D; // 03F: PUSH 0xF00D
 
   #11 // decode
   #10 // exec
@@ -152,8 +156,7 @@ initial begin
     if (~cpu.signals.phase_rdmem) $error("phase_rdmem must be 1");
     if (cpu.ien !== 1'b0) $error("IEN must be 0");
     if (pmem_addr !== `ADDR_WIDTH'h900) $error("pmem_addr must be 0x900");
-    if (cpu.stack0 !== 16'h00FF) $error("stack0 must be 0x00FF");
-    irq <= 0;
+    if (cpu.stack0 !== 16'hFACE) $error("stack0 must be 0xFACE");
 
   @(posedge cpu.load_insn)
   #11 // decode
@@ -161,14 +164,16 @@ initial begin
   #10 // rdmem
     pmem_rdata <= 18'h30123; // 03F: PUSH 0x0123
     if (cpu.ien !== 1'b1) $error("IEN must be 1");
+    // 03F: PUSH 0xF00D は未実行なので再実行されるはず
     if (pmem_addr !== `ADDR_WIDTH'h03F) $error("pmem_addr must be 0x03F");
 
   @(posedge cpu.load_insn)
   #11 // decode
   #10 // exec
   #10 // rdmem
+    // PUSH 0xF00D のかわりに PUSH 0x0123 が実行されているはず
     if (cpu.stack0 !== 16'h0123) $error("stack0 must be 0x0123");
-    if (cpu.stack1 !== 16'h00FF) $error("stack1 must be 0x00FF");
+    if (cpu.stack1 !== 16'hFACE) $error("stack1 must be 0xFACE");
 
   @(posedge cpu.load_insn)
     pmem_rdata <= 18'h30044; // 040: PUSH 0x044
@@ -181,7 +186,7 @@ initial begin
   @(posedge cpu.load_insn)
     pmem_rdata <= 18'h1C824; // 042: SPHA (x0123 to pmem[0x044])
     if (cpu.stack0 !== 16'h0044) $error("stack0 must be 0x0044");
-    if (cpu.stack1 !== 16'h00FF) $error("stack1 must be 0x00FF");
+    if (cpu.stack1 !== 16'hFACE) $error("stack1 must be 0xFACE");
 
   @(posedge cpu.load_insn)
     pmem_rdata <= 18'h05FF0; // 043: ADD FP,-16
@@ -216,12 +221,65 @@ initial begin
     if (cpu.fpmin  !== 16'h3FF0) $error("fpmin must be 0x3FF0");
 
   @(posedge cpu.load_insn)
-    pmem_rdata <= 18'h3CAFE; // 050: PUSH 0xCAFE
+    pmem_rdata <= 18'h3CAFE; // 04A: PUSH 0xCAFE
     if (cpu.stack0 !== 16'hBEEF) $error("stack0 must be 0xBEEF");
     if (cpu.fpmin  !== 16'h3FF8) $error("fpmin must be 0x3FF8");
 
   @(posedge cpu.load_insn)
-    pmem_rdata <= 18'h30123; // 044: PUSH 0x0123
+    pmem_rdata <= 18'h3DEAD; // 04B: PUSH 0xDEAD
+    if (cpu.stack0 !== 16'hCAFE) $error("stack0 must be 0xCAFE");
+    if (cpu.stack1 !== 16'hBEEF) $error("stack1 must be 0xBEEF");
+  #11 // decode
+  #10 // exec
+  #10 // rdmem
+    irq <= 1;
+    pmem_rdata <= 18'h30001; // 04C: PUSH 0x0001
+    if (pmem_addr !== `ADDR_WIDTH'h04C) $error("pmem_addr must be 0x04C");
+
+  // irq が Fetch 開始の直前に 1 になると、割り込みは次のサイクルに持ち越される
+
+  @(posedge cpu.load_insn)
+    irq <= 0;
+    if (cpu.stack0 !== 16'hDEAD) $error("stack0 must be 0xDEAD");
+    if (cpu.stack1 !== 16'hCAFE) $error("stack1 must be 0xCAFE");
+  #11 // decode
+  #10 // exec
+  #10 // rdmem
+    pmem_rdata <= 18'h30002; // 04D: PUSH 0x0002
+    if (pmem_addr !== `ADDR_WIDTH'h04D) $error("pmem_addr must be 0x04D");
+    if (cpu.stack0 !== 16'h0001) $error("stack0 must be 0x0001");
+    if (cpu.stack1 !== 16'hDEAD) $error("stack1 must be 0xDEAD");
+
+  @(posedge cpu.load_insn)
+  #11 // decode
+  #10 // exec
+  #10 // rdmem
+    pmem_rdata <= 18'h1C812; // 900: IRET
+    if (~cpu.signals.phase_rdmem) $error("phase_rdmem must be 1");
+    if (cpu.ien !== 1'b0) $error("IEN must be 0");
+    if (pmem_addr !== `ADDR_WIDTH'h900) $error("pmem_addr must be 0x900");
+    if (cpu.stack0 !== 16'h0001) $error("stack0 must be 0x0001");
+    if (cpu.stack1 !== 16'hDEAD) $error("stack1 must be 0xDEAD");
+
+  @(posedge cpu.load_insn)
+  #11 // decode
+  #10 // exec
+  #10 // rdmem
+    pmem_rdata <= 18'h30002; // 04D: PUSH 0x0002
+    if (pmem_addr !== `ADDR_WIDTH'h04D) $error("pmem_addr must be 0x04D");
+    if (cpu.stack0 !== 16'h0001) $error("stack0 must be 0x0001");
+    if (cpu.stack1 !== 16'hDEAD) $error("stack1 must be 0xDEAD");
+
+  @(posedge cpu.load_insn)
+  #11 // decode
+  #10 // exec
+  #10 // rdmem
+    pmem_rdata <= 18'h30003; // 04E: PUSH 0x0003
+    if (cpu.ien !== 1'b1) $error("IEN must be 1");
+    // 04C: PUSH 0x0001 は実行済みなので、再実行されないはず
+    if (cpu.stack0 !== 16'h0002) $error("stack0 must be 0x0002");
+    if (cpu.stack1 !== 16'h0001) $error("stack1 must be 0x0001");
+
 
   $finish;
 end

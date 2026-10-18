@@ -486,7 +486,7 @@ initial begin
     test_sig_phases(16'hxxxx,  // imm_mask
                     `SRCA_CSTK,// src_a_sel
                     `SRCB_X,   // src_b_sel
-                    `ALU_DEC,  // alu_sel
+                    `ALU_A,    // alu_sel
                     x,         // wr_stk1
                     0,         // pop
                     0,         // push

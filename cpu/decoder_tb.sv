@@ -626,7 +626,7 @@ initial begin
               16'hxxxx, // imm_mask
               `SRCA_CSTK,// src_a
               `SRCB_X,  // src_b
-              `ALU_DEC, // alu
+              `ALU_A,   // alu
               `x,       // wr_stk1
               0,        // pop
               0,        // push
