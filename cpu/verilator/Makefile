@@ -32,6 +32,12 @@ all: $(TARGET)
 run: $(TARGET)
 	./obj_dir/Vsim_top +pmem=../../ucc/testcase.pmem.hex +dmem=../../ucc/testcase.dmem.hex
 
+.PHONY: test-profile
+test-profile: $(TARGET)
+	$(MAKE) -C ../../uas
+	$(MAKE) -C ../../ucc
+	python3 test_profile.py
+
 $(INSN_CPP_INC): $(INSN_DEF) $(INSN_GEN)
 	python3 $(INSN_GEN) cpp $(INSN_DEF) > $@
 
@@ -46,6 +52,7 @@ $(TARGET): $(SV) sim_main.cpp $(INSN_CPP_INC) Makefile
 		-CFLAGS "-std=c++17 -DSIM_CLOCK_HZ=$(CLOCK_HZ) -DVL_VERILATED_INCLUDE=\\\"../verilator_stderr.h\\\"" \
 		-I.. \
 		$(SV) sim_main.cpp
+	touch $(TARGET)
 
 .PHONY: clean
 clean:

@@ -5,3 +5,4 @@
 /cpu/*.exe
 /*/*.pdf
 __pycache__
+.profile/

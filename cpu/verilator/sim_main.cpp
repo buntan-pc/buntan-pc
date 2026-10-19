@@ -31,12 +31,28 @@ constexpr uint32_t IO_WORDS = IO_WORD_END - IO_WORD_START;
 constexpr uint32_t HALT_ADDR = 0x0006;
 constexpr uint32_t CLOCK_HZ = SIM_CLOCK_HZ;
 constexpr uint32_t UART_BAUD = CLOCK_HZ/10; //115'200;
+constexpr uint32_t PROFILE_CLOCK_HZ = 27'000'000;
+
+std::string hardware_time(uint64_t clock_cycles) {
+  double duration = static_cast<double>(clock_cycles) * 1e9 / PROFILE_CLOCK_HZ;
+  const char* units[] = {"ns", "us", "ms", "s"};
+  size_t unit = 0;
+  while (unit < 3 && duration >= 1000.0) {
+    duration /= 1000.0;
+    ++unit;
+  }
+  std::ostringstream out;
+  out << std::fixed << std::setprecision(3) << duration << " " << units[unit];
+  return out.str();
+}
 
 struct Options {
   std::string pmem_file;
   std::string dmem_file;
   std::string uart_in_file;
   std::string uart_out_file;
+  std::string map_file;
+  std::string profile_function;
   uint64_t max_cycles = 1 * CLOCK_HZ; // 1 秒間でタイムアウト
   bool verbose = false;
 };
@@ -61,6 +77,13 @@ Options parse_options(int argc, char** argv) {
       opt.uart_out_file = std::string(arg.substr(10));
     } else if (starts_with(arg, "+max-cycles=")) {
       opt.max_cycles = std::stoull(std::string(arg.substr(12)));
+    } else if (starts_with(arg, "+map=")) {
+      opt.map_file = std::string(arg.substr(5));
+    } else if (starts_with(arg, "+profile=")) {
+      opt.profile_function = std::string(arg.substr(9));
+      if (opt.profile_function.empty()) {
+        throw std::runtime_error("empty +profile=<function>");
+      }
     } else if (arg == "+verbose") {
       opt.verbose = true;
     }
@@ -68,6 +91,9 @@ Options parse_options(int argc, char** argv) {
 
   if (opt.pmem_file.empty()) {
     throw std::runtime_error("missing +pmem=<file>");
+  }
+  if (!opt.profile_function.empty() && opt.map_file.empty()) {
+    throw std::runtime_error("+profile requires +map=<file>");
   }
 
   return opt;
@@ -297,7 +323,102 @@ void maybe_print_monitor(const VerilatedContext& ctx, const Vsim_top& top, bool 
   }
 }
 
-void tick(VerilatedContext& ctx, Vsim_top& top, std::array<uint16_t, IO_WORDS>& io_regs, uint16_t& dmem_addr_d) {
+class FunctionProfile {
+public:
+  explicit FunctionProfile(const Options& opt) : function_(opt.profile_function) {
+    if (function_.empty()) {
+      return;
+    }
+    std::ifstream in(opt.map_file);
+    if (!in) {
+      throw std::runtime_error("failed to open map file: " + opt.map_file);
+    }
+    bool text = false;
+    unsigned matches = 0;
+    std::string line;
+    while (std::getline(in, line)) {
+      std::istringstream row(line);
+      std::string address, name;
+      if (!(row >> address >> name)) {
+        continue;
+      }
+      if (address == "section") {
+        text = name == ".text";
+      } else if (text && name == function_) {
+        size_t used = 0;
+        const auto value = std::stoul(address, &used, 16);
+        if (used != address.size() || value >= PMEM_WORDS) {
+          throw std::runtime_error("invalid profile address: " + address);
+        }
+        address_ = static_cast<uint16_t>(value);
+        ++matches;
+      }
+    }
+    if (in.bad()) {
+      throw std::runtime_error("failed to read map file: " + opt.map_file);
+    }
+    if (matches != 1) {
+      throw std::runtime_error("profile function must appear exactly once in .text: " + function_);
+    }
+  }
+
+  // Sample before the rising edge: E applies control-flow/stack effects;
+  // R completes memory reads. F loads the next instruction from pmem.addr_d.
+  void before_tick(const Vsim_top& top) {
+    if (function_.empty() || top.rst || complete_) {
+      return;
+    }
+    const auto& r = *top.rootp;
+    if (r.sim_top__DOT__mcu__DOT__cpu__DOT__signals__DOT__phase_fetch) {
+      valid_ = !r.sim_top__DOT__mcu__DOT__cpu__DOT__signals__DOT__irq_do;
+      returning_ = false;
+      const auto pc = r.sim_top__DOT__mcu__DOT__pmem__DOT__addr_d;
+      if (!entered_ && valid_ && pc == address_) {
+        entered_ = true;
+        entry_depth_ = depth_;
+      }
+    }
+    if (entered_) {
+      ++clock_cycles_;
+    }
+    if (r.sim_top__DOT__mcu__DOT__cpu__DOT__signals__DOT__phase_exec) {
+      // Observe actual stack controls, including interrupt entry and FP saves.
+      // Pop takes precedence over push, just as in stack.sv.
+      if (r.sim_top__DOT__mcu__DOT__cpu__DOT__cpop) {
+        --depth_;
+      } else if (r.sim_top__DOT__mcu__DOT__cpu__DOT__cpush) {
+        ++depth_;
+      }
+      returning_ = entered_ && valid_ && depth_ < entry_depth_
+        && r.sim_top__DOT__mcu__DOT__cpu__DOT__cpop
+        && r.sim_top__DOT__mcu__DOT__cpu__DOT__load_ip
+        && r.sim_top__DOT__mcu__DOT__cpu__DOT__src_a_cstk;
+    }
+    if (entered_ && valid_ && r.sim_top__DOT__mcu__DOT__cpu__DOT__signals__DOT__phase_rdmem) {
+      ++instructions_;
+      complete_ = returning_;
+    }
+  }
+
+  void report() const {
+    if (!function_.empty()) {
+      std::cerr << "profile_function: " << function_ << "\n"
+                << "profile_status:   " << (complete_ ? "complete" : entered_ ? "incomplete" : "not_entered") << "\n"
+                << "instructions:     " << instructions_ << "\n"
+                << "clock_cycles:     " << clock_cycles_ << "\n"
+                << "hardware_time:    " << hardware_time(clock_cycles_) << " (clock=27MHz)\n";
+    }
+  }
+
+private:
+  std::string function_;
+  uint16_t address_ = 0;
+  int64_t depth_ = 0, entry_depth_ = 0;
+  uint64_t instructions_ = 0, clock_cycles_ = 0;
+  bool entered_ = false, complete_ = false, valid_ = false, returning_ = false;
+};
+
+void tick(VerilatedContext& ctx, Vsim_top& top, std::array<uint16_t, IO_WORDS>& io_regs, uint16_t& dmem_addr_d, FunctionProfile& profile) {
   // クロック変化前の各種の値を記録
   const uint16_t dmem_addr = top.dmem_addr;
   const uint16_t dmem_wdata = top.dmem_wdata;
@@ -311,6 +432,7 @@ void tick(VerilatedContext& ctx, Vsim_top& top, std::array<uint16_t, IO_WORDS>& 
   }
 
   eval_half_cycle(ctx, top, 0);
+  profile.before_tick(top);
   eval_half_cycle(ctx, top, 1);
 
   if (dmem_wen && dmem_addr >= IO_GLOBAL_START && dmem_addr < IO_GLOBAL_END) {
@@ -320,15 +442,15 @@ void tick(VerilatedContext& ctx, Vsim_top& top, std::array<uint16_t, IO_WORDS>& 
   dmem_addr_d = dmem_addr;
 }
 
-void reset(VerilatedContext& ctx, Vsim_top& top, std::array<uint16_t, IO_WORDS>& io_regs, uint16_t& dmem_addr_d) {
+void reset(VerilatedContext& ctx, Vsim_top& top, std::array<uint16_t, IO_WORDS>& io_regs, uint16_t& dmem_addr_d, FunctionProfile& profile) {
   top.rst = 1;
   for (int i = 0; i < 4; ++i) {
-    tick(ctx, top, io_regs, dmem_addr_d);
+    tick(ctx, top, io_regs, dmem_addr_d, profile);
   }
 
   top.rst = 0;
   for (int i = 0; i < 2; ++i) {
-    tick(ctx, top, io_regs, dmem_addr_d);
+    tick(ctx, top, io_regs, dmem_addr_d, profile);
   }
 }
 
@@ -338,6 +460,7 @@ int main(int argc, char** argv) {
     ctx.commandArgs(argc, argv);
 
     auto opt = parse_options(argc, argv);
+    FunctionProfile profile(opt);
 
     Vsim_top top(&ctx);
     std::array<uint16_t, IO_WORDS> io_regs{};
@@ -358,12 +481,12 @@ int main(int argc, char** argv) {
 
     uint16_t dmem_addr_d = 0;
     std::string prev_monitor_line;
-    reset(ctx, top, io_regs, dmem_addr_d);
+    reset(ctx, top, io_regs, dmem_addr_d, profile);
     maybe_print_monitor(ctx, top, opt.verbose, prev_monitor_line);
 
     for (uint64_t cycle = 0; cycle < opt.max_cycles; ++cycle) {
       uart_in.drive(top);
-      tick(ctx, top, io_regs, dmem_addr_d);
+      tick(ctx, top, io_regs, dmem_addr_d, profile);
       maybe_print_monitor(ctx, top, opt.verbose, prev_monitor_line);
       if (top.uart_out_full) {
         if (uart_out.is_open() && top.uart_out_data != 4) {
@@ -371,6 +494,7 @@ int main(int argc, char** argv) {
         } else {
           std::printf("%02x\n", top.uart_out_data);
           top.final();
+          profile.report();
           return 0;
         }
       }
@@ -381,6 +505,7 @@ int main(int argc, char** argv) {
     std::cerr << "timeout: exceeded " << opt.max_cycles << " cycles\n";
     std::cout << "timeout\n";
     top.final();
+    profile.report();
     return 2;
   } catch (const std::exception& e) {
     std::cerr << "error: " << e.what() << "\n";

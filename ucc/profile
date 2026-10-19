@@ -1,0 +1,64 @@
+#!/usr/bin/python3
+"""Build and profile a standalone BuntanPC C program."""
+import argparse
+import pathlib
+import subprocess
+import sys
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+
+
+def run(command, verbose, *, cwd=None, simulation=False):
+    if verbose:
+        print("profile: " + " ".join(map(str, command)), file=sys.stderr)
+        return subprocess.run(command, cwd=cwd, check=True,
+                              stdout=None if simulation else sys.stderr)
+    result = subprocess.run(command, cwd=cwd, capture_output=True, text=True, errors="replace")
+    if result.returncode:
+        print("profile: " + " ".join(map(str, command)), file=sys.stderr)
+        print(result.stdout, end="", file=sys.stdout if simulation else sys.stderr)
+        print(result.stderr, end="", file=sys.stderr)
+        result.check_returncode()
+    return result
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("-v", "--verbose", action="store_true", help="show all command output")
+    parser.add_argument("source", type=pathlib.Path, help="C source file (DOS-independent)")
+    parser.add_argument("function", nargs="?", default="buntan_main", help="function to profile")
+    args = parser.parse_args()
+    source = args.source.resolve()
+    if source.suffix != ".c" or not source.is_file():
+        parser.error(f"not a C source file: {source}")
+    if not args.function:
+        parser.error("function name must not be empty")
+
+    for directory in (ROOT / "ucc", ROOT / "uas", ROOT / "cpu/verilator"):
+        run(["make", "--no-print-directory", "-C", directory], args.verbose)
+
+    run(["make", "--no-print-directory", "-C", source.parent,
+         "-f", ROOT / "cpu/verilator/profile.mk", f"SOURCE={source.name}"], args.verbose)
+    base = source.parent / ".profile" / source.stem
+    images = [base.with_name(base.name + suffix) for suffix in (".pmem.hex", ".dmem.hex", ".map")]
+
+    result = run([ROOT / "cpu/verilator/obj_dir/Vsim_top",
+                  f"+pmem={images[0]}", f"+dmem={images[1]}",
+                  f"+map={images[2]}", f"+profile={args.function}"],
+                 args.verbose, cwd=ROOT, simulation=True)
+    if not args.verbose:
+        print(result.stdout, end="")
+        for line in result.stderr.splitlines():
+            if line.startswith(("profile_function:", "profile_status:", "instructions:", "clock_cycles:", "hardware_time:")):
+                print(line, file=sys.stderr)
+    return result.returncode
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except subprocess.CalledProcessError as error:
+        sys.exit(error.returncode if error.returncode > 0 else 1)
+    except OSError as error:
+        print(f"profile: {error}", file=sys.stderr)
+        sys.exit(1)
