@@ -94,6 +94,7 @@ enum ParsePass {
 struct ParseContext {
   struct Scope *scope;
   int pass;
+  int num_return;
 };
 
 struct Node *NewNode(enum NodeKind kind, struct Token *token);

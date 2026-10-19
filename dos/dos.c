@@ -1185,6 +1185,7 @@ int set_color_theme(char *theme_id) {
     puts("\x1B]10;rgb:00/FF/FF\a");
     puts("\x1B]11;rgb:00/00/66\a");
   }
+  return 0;
 }
 
 void proc_cmd(char *cmd_orig, char *block_buf, int (*app_main)(int *), char *app_dmem) {

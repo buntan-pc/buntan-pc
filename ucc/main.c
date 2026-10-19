@@ -1334,6 +1334,7 @@ int main(int argc, char **argv) {
   struct ParseContext parse_ctx = {
     global_scope,
     kPPInit,
+    0,
   };
 
   Tokenize(src);

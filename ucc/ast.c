@@ -145,6 +145,7 @@ struct Node *FunctionDefinition(struct ParseContext *ctx,
   }
   func_def->cond = params;
 
+  ctx->num_return = 0;
   struct Node *func_body = Block(ctx);
   func_def->rhs = func_body;
 
@@ -161,6 +162,13 @@ struct Node *FunctionDefinition(struct ParseContext *ctx,
     } else {
       func_body->rhs = NewNode(kNodeReturn, NULL);
     }
+  }
+
+  // 非 void 関数で、return が一度も現れなければエラー
+  if (tspec->type->kind != kTypeVoid && ctx->num_return == 0) {
+    fprintf(stderr, "non-void function has no return statement\n");
+    Locate(func_body->token->raw);
+    exit(1);
   }
 
   ctx->scope = ctx->scope->parent;
@@ -342,6 +350,7 @@ struct Node *Statement(struct ParseContext *ctx) {
     struct Node *ret = NewNode(kNodeReturn, token);
     ret->lhs = Expression(ctx);
     Expect(';');
+    ++ctx->num_return;
     return ret;
   }
 

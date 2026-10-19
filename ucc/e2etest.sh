@@ -115,6 +115,25 @@ function test_timeout() {
   fi
 }
 
+function test_compfail() {
+  src="$1"
+  echo "$src" > testcase.c
+  ./cc -o testcase.s testcase.c 2>/dev/null
+  retcode=$?
+
+  if [ $retcode -ge 128 ]
+  then
+    signum=$(($retcode - 128))
+    echo "[FAILED]: Compilation has been stopped due to SIG$(kill -l $signum)" >&2
+    exit
+  elif [ $retcode -ne 0 ]
+  then
+    echo "[  OK  ]: $src failed to compile as expected." >&2
+  else
+    echo "[FAILED]: $src compiled successfully (expected failure)." >&2
+  fi
+}
+
 test_value 1f 'int buntan_main() {return 31;}'
 test_value 04 'int buntan_main() {return 5 - 3 + 2;}'
 test_value 07 'int buntan_main() {return 1+2*3;}'
@@ -214,3 +233,4 @@ test_value 01 'int f(){int i; return &i;} int buntan_main() {__builtin_reset_sr(
 test_value 08 'int add(int n, ...) { int sum=0; va_list ap; va_start(ap, n); for (int i=0; i<n; ++i){sum+=va_arg(ap, int);} return sum;} int buntan_main() {return add(3,1,2,5);}'
 test_value 06 'int f(int a, ...) {va_list ap; va_start(ap, a); {int d=va_arg(ap, int); return d + a;}} int buntan_main() {return f(1, 5);}'
 test_value 33 'int buntan_main() {char *p="1" "2"; char *q="1" "3"; return q[1];}'
+test_compfail 'int f(int *p){*p = 41;} int buntan_main(){int i=0; f(&i); return i+1;}'
