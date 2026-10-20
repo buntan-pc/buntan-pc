@@ -4,11 +4,46 @@ import argparse
 import pathlib
 import subprocess
 import sys
+import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
+def run_with_progress(command, verbose, cwd):
+    """Drain stderr live; spool stdout so a full pipe cannot block the simulator."""
+    if verbose:
+        print("profile: " + " ".join(map(str, command)), file=sys.stderr)
+    messages = []
+    with tempfile.TemporaryFile(mode="w+", encoding="utf-8", errors="replace") as output:
+        with subprocess.Popen(command, cwd=cwd, stdout=None if verbose else output,
+                              stderr=subprocess.PIPE, text=True, errors="replace") as process:
+            try:
+                for line in process.stderr:
+                    if line.startswith("progress: "):
+                        print(line, end="", file=sys.stderr, flush=True)
+                    else:
+                        messages.append(line)
+                        if verbose:
+                            print(line, end="", file=sys.stderr, flush=True)
+                process.wait()
+            except BaseException:
+                process.terminate()
+                process.wait()
+                raise
+        output.seek(0)
+        result = subprocess.CompletedProcess(command, process.returncode, output.read(), "".join(messages))
+    if result.returncode:
+        if not verbose:
+            print("profile: " + " ".join(map(str, command)), file=sys.stderr)
+            print(result.stdout, end="")
+            print(result.stderr, end="", file=sys.stderr)
+        result.check_returncode()
+    return result
+
+
 def run(command, verbose, *, cwd=None, simulation=False):
+    if simulation:
+        return run_with_progress([*command, "+progress"], verbose, cwd)
     if verbose:
         print("profile: " + " ".join(map(str, command)), file=sys.stderr)
         return subprocess.run(command, cwd=cwd, check=True,
@@ -25,9 +60,13 @@ def run(command, verbose, *, cwd=None, simulation=False):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("-v", "--verbose", action="store_true", help="show all command output")
+    parser.add_argument("--max-cycles", type=int, default=10_000_000,
+                        help="simulation cycle limit (default: 10000000)")
     parser.add_argument("source", type=pathlib.Path, help="C source file (DOS-independent)")
     parser.add_argument("function", nargs="?", default="buntan_main", help="function to profile")
     args = parser.parse_args()
+    if not 1 <= args.max_cycles <= 2**64 - 1:
+        parser.error("--max-cycles must be between 1 and 18446744073709551615")
     source = args.source.resolve()
     if source.suffix != ".c" or not source.is_file():
         parser.error(f"not a C source file: {source}")
@@ -42,10 +81,11 @@ def main():
     base = source.parent / ".profile" / source.stem
     images = [base.with_name(base.name + suffix) for suffix in (".pmem.hex", ".dmem.hex", ".map")]
 
-    result = run([ROOT / "cpu/verilator/obj_dir/Vsim_top",
-                  f"+pmem={images[0]}", f"+dmem={images[1]}",
-                  f"+map={images[2]}", f"+profile={args.function}"],
-                 args.verbose, cwd=ROOT, simulation=True)
+    command = [ROOT / "cpu/verilator/obj_dir/Vsim_top",
+               f"+pmem={images[0]}", f"+dmem={images[1]}",
+               f"+map={images[2]}", f"+profile={args.function}"]
+    command.append(f"+max-cycles={args.max_cycles}")
+    result = run(command, args.verbose, cwd=ROOT, simulation=True)
     if not args.verbose:
         print(result.stdout, end="")
         for line in result.stderr.splitlines():

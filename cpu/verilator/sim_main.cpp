@@ -3,6 +3,7 @@
 #include "verilated.h"
 
 #include <cstdint>
+#include <chrono>
 #include <cstdlib>
 #include <fstream>
 #include <iomanip>
@@ -55,6 +56,7 @@ struct Options {
   std::string profile_function;
   uint64_t max_cycles = 1 * CLOCK_HZ; // 1 秒間でタイムアウト
   bool verbose = false;
+  bool progress = false;
 };
 
 bool starts_with(std::string_view s, std::string_view prefix) {
@@ -86,6 +88,8 @@ Options parse_options(int argc, char** argv) {
       }
     } else if (arg == "+verbose") {
       opt.verbose = true;
+    } else if (arg == "+progress") {
+      opt.progress = true;
     }
   }
 
@@ -484,10 +488,18 @@ int main(int argc, char** argv) {
     reset(ctx, top, io_regs, dmem_addr_d, profile);
     maybe_print_monitor(ctx, top, opt.verbose, prev_monitor_line);
 
+    auto last_progress = std::chrono::steady_clock::now();
     for (uint64_t cycle = 0; cycle < opt.max_cycles; ++cycle) {
       uart_in.drive(top);
       tick(ctx, top, io_regs, dmem_addr_d, profile);
       maybe_print_monitor(ctx, top, opt.verbose, prev_monitor_line);
+      if (opt.progress && (cycle & 0xffff) == 0xffff) {
+        auto now = std::chrono::steady_clock::now();
+        if (now - last_progress >= std::chrono::seconds(1)) {
+          std::cerr << "progress: " << cycle + 1 << " cycles\n";
+          last_progress = now;
+        }
+      }
       if (top.uart_out_full) {
         if (uart_out.is_open() && top.uart_out_data != 4) {
           uart_out.write(top.uart_out_data);

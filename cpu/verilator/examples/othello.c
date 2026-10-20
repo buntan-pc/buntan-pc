@@ -1,0 +1,663 @@
+// 先頭 0 の数を返す
+int int2hex(int val, char *s, int n) {
+  int i;
+  for (i = 0; i < n; i++) {
+    int v = val & 0xf;
+    val = val >> 4;
+    if (v >= 10) {
+      v += 'A' - 10;
+    } else {
+      v += '0';
+    }
+    s[n - 1 - i] = v;
+  }
+  for (i = 0; s[i] == '0'; ++i);
+  return i;
+}
+
+/* 整数を長さ n の 10 進数文字列へ変換する。先頭の 0 は空白文字で埋められる。
+ *
+ * @param val 文字列へ変換する整数
+ * @param s   文字列バッファ
+ * @param n   s の文字数
+ * @return 先頭の 0 の数。val=0 の場合は n-1 を返す。
+ */
+int int2dec(int val, char *s, int n) {
+  int i;
+  int dec_arr[6];
+  int digit;
+  dec_arr[0] = 1;
+  for (i = 1; i < n; i++) {
+    dec_arr[i] = dec_arr[i - 1] * 10;
+  }
+
+  for (i = 0; i < n; i++) {
+    int dec = dec_arr[n - i - 1];
+    int digit = 0;
+    while (val >= dec) {
+      val -= dec;
+      digit++;
+    }
+    s[i] = digit + '0';
+  }
+  for (i = 0; i < n - 1 & s[i] == '0'; ++i) {
+    s[i] = ' ';
+  }
+  return i;
+}
+
+int sys_put_string(char *s, int n) {
+  return n;
+}
+
+int sys_get_string(char *s, int n) {
+  s[0] = 'A';
+  s[1] = '\0';
+  return 1;
+}
+
+int sys_open_entry_fatsd(char *filename, char *file_entry) {
+  return -1;
+}
+
+int sys_write_block_fatsd(char *file_entry, char *block_buf, unsigned int off, unsigned int len) {
+  return -1;
+}
+
+int sys_write_entry_fatsd(char *file_entry, unsigned int mode) {
+  return -1;
+}
+
+int sys_int2hex(int val, char *s, int n) {
+  return int2hex(val, s, n);
+}
+
+int sys_int2dec(int val, char *s, int n) {
+  return int2dec(val, s, n);
+}
+
+int sys_getc_i = 0;
+int sys_getc() {
+  return " jh qn"[sys_getc_i++];
+}
+
+unsigned int timer_cnt;
+
+void init_syscall(int *info) {
+}
+
+#include "printf.h"
+
+unsigned int board[8];
+unsigned int board_prev[8];
+int cx;
+int cy;
+int turn = 0; // 0=black 1=none 2=white
+int ai_turn = 2;
+int ai_lastx = -1;
+int ai_lasty = -1;
+char kifu[60];
+unsigned int kifu_len = 0;
+
+void print_board_content() {
+  char line_name[2];
+  sys_put_string("   A B C D E F G H\n", -1);
+  for (int y = 0; y < 8; ++y) {
+    unsigned int line = board[y];
+    line_name[0] = '1' + y;
+    line_name[1] = ' ';
+    sys_put_string(line_name, 2);
+    for (int x = 0; x < 8; ++x) {
+      if (cy == y && cx == x) {
+        sys_put_string(">", 1);
+      } else {
+        sys_put_string(" ", 1);
+      }
+      sys_put_string("*_o?" + (line & 3), 1);
+      line = line >> 2;
+    }
+    sys_put_string("\n", 1);
+  }
+}
+
+void print_board_init() {
+  sys_put_string("\x1B[H", -1);  // カーソルを左上へ
+  sys_put_string("ai_turn: ", -1);
+  sys_put_string("*?o" + ai_turn, 1);
+  sys_put_string("\n", 1);
+  sys_put_string("O/@: AI's last move\n\n", -1);
+
+  sys_put_string("current turn: ", -1);
+  sys_put_string("*?o" + turn, 1);
+  sys_put_string("\n", 1);
+
+  print_board_content();
+}
+
+void print_board(unsigned int *board) {
+  sys_put_string("\x1B[4;15H", -1);  // カーソルを turn: の次へ
+  sys_put_string("*?o" + turn, 1);
+  sys_put_string("\x1B[E", -1); // カーソルを次の行の左端へ
+
+  char line_name[2];
+  sys_put_string("   A B C D E F G H\n", -1);
+  for (int y = 0; y < 8; ++y) {
+    unsigned int line = board[y];
+    line_name[0] = '1' + y;
+    line_name[1] = ' ';
+    sys_put_string(line_name, 2);
+    for (int x = 0; x < 8; ++x) {
+      if (cy == y && cx == x) {
+        sys_put_string(">", 1);
+      } else {
+        sys_put_string(" ", 1);
+      }
+      int st = line & 3;
+      if (st != 1 && ai_lasty == y && ai_lastx == x) {
+        if (ai_turn == 0) {
+          st = '@';
+        } else {
+          st = 'O';
+        }
+      } else {
+        st = "*_o?"[st];
+      }
+      sys_put_string(&st, 1);
+      line = line >> 2;
+    }
+    sys_put_string("\x1B[E", -1); // カーソルを次の行の左端へ
+  }
+}
+
+int get_stone(unsigned int *board, int x, int y) {
+  return (board[y] >> 2*x) & 3;
+}
+
+void put_stone(unsigned int *board, int x, int y, int stone) {
+  board[y] = (board[y] & ~(3 << 2*x)) | (stone << 2*x);
+}
+
+int try_put_stone(unsigned int *board, int cx, int cy, int stone) {
+  if (get_stone(board, cx, cy) != 1) {
+    return -1;
+  }
+
+  int rev_cnt = 0;
+  for (int dir = 0; dir < 8; ++dir) {
+    int dx = 0;
+    if (dir <= 1 || dir == 7) {
+      dx = 1;
+    } else if (3 <= dir && dir <= 5) {
+      dx = -1;
+    }
+    int dy = 0;
+    if (1 <= dir && dir <= 3) {
+      dy = -1;
+    } else if (dir >= 5) {
+      dy = 1;
+    }
+
+    int x = cx + dx;
+    int y = cy + dy;
+    int prev_st = get_stone(board, x, y);
+    if (prev_st == 1 || prev_st == stone) {
+      // 隣に石が無いか、自分の石があるなら、ひっくり返せない
+      continue;
+    }
+
+    x += dx;
+    y += dy;
+
+    int i = 1;
+
+    while (0 <= x && x <= 7 && 0 <= y && y <= 7) {
+      int st = get_stone(board, x, y);
+      if (st == 1) {
+        break;
+      } else if (st == stone) {
+        rev_cnt += i;
+        int putx = x - dx;
+        int puty = y - dy;
+        for (int j = 0; j < i; ++j) {
+          put_stone(board, putx, puty, stone);
+          putx = putx - dx;
+          puty = puty - dy;
+        }
+        break;
+      }
+      x += dx;
+      y += dy;
+      ++i;
+    }
+  }
+
+  if (rev_cnt > 0) {
+    put_stone(board, cx, cy, stone);
+  }
+
+  return rev_cnt;
+}
+
+// いずれかに石を置けるなら真を返す
+int has_valid_moves(unsigned int *board, int stone) {
+  int board_next[8];
+  for (int y = 0; y < 8; ++y) {
+    for (int x = 0; x < 8; ++x) {
+      int st = get_stone(board, x, y);
+      if (st != 1) {
+        continue;
+      }
+      for (int i = 0; i < 8; ++i) {
+        board_next[i] = board[i];
+      }
+      if (try_put_stone(board_next, x, y, stone) > 0) {
+        return 1;
+      }
+    }
+  }
+  return 0; // どこにも石を置けない
+}
+
+// もし AI が黒番 => return black=+1, white=-1
+// もし AI が白番 => return black=-1, white=+1
+int st2ev(int stone) {
+  return (ai_turn - 1) * (stone - 1);
+}
+
+// 黒番から見た盤面評価値を計算
+int eval_board(unsigned int *board) {
+  int eval = 0;
+
+  // 四隅
+  eval += st2ev(get_stone(board, 0, 0)) * 3;
+  eval += st2ev(get_stone(board, 7, 0)) * 3;
+  eval += st2ev(get_stone(board, 0, 7)) * 3;
+  eval += st2ev(get_stone(board, 7, 7)) * 3;
+
+  // 辺
+  for (int i = 1; i < 7; ++i) {
+    eval += st2ev(get_stone(board, i, 0)) * 2;
+    eval += st2ev(get_stone(board, i, 7)) * 2;
+    eval += st2ev(get_stone(board, 0, i)) * 2;
+    eval += st2ev(get_stone(board, 7, i)) * 2;
+  }
+
+  // その他
+  for (int y = 1; y < 7; ++y) {
+    for (int x = 1; x < 7; ++x) {
+      eval += st2ev(get_stone(board, x, y));
+    }
+  }
+
+  return eval;
+}
+
+// (x, y) に打った場合の評価値を計算
+// depth: 探索深さ。あとどれだけ深く探索するか。
+//        0なら、その手を打った際の評価値をそのまま返す。
+int eval_move(unsigned int *board, int x, int y, int stone, int depth) {
+  //fprintf(stderr, "eval_move: %d,%d stone=%d depth=%d\n", x, y, stone, depth);
+
+  if (depth <= 0) {
+    int board_next[8];
+    for (int i = 0; i < 8; ++i) {
+      board_next[i] = board[i];
+    }
+    int rev_cnt = try_put_stone(board_next, x, y, stone);
+    if (rev_cnt <= 0) {
+      return -30000;
+    }
+    int ev = eval_board(board_next);
+    //fprintf(stderr, "eval_move(%d,%d,stone=%d): eval_board -> %d\n", x, y, stone, ev);
+    return ev;
+  } else { // depth > 0
+    int board_next[8];
+    for (int i = 0; i < 8; ++i) {
+      board_next[i] = board[i];
+    }
+    int rev_cnt = try_put_stone(board_next, x, y, stone);
+    if (rev_cnt <= 0) {
+      // ここは石を置けない場所だった
+      return -30000;
+    }
+
+    int board_nn[8];
+
+    // 相手のターン
+    int max_ev = -30000;
+    int min_ev = 30000;
+    for (int oy = 0; oy < 8; ++oy) {
+      for (int ox = 0; ox < 8; ++ox) {
+        for (int i = 0; i < 8; ++i) {
+          board_nn[i] = board_next[i];
+        }
+        int ev = eval_move(board_nn, ox, oy, 2 - stone, depth - 1);
+        if (ev == -30000) {
+          continue;
+        }
+        if (max_ev < ev) {
+          max_ev = ev;
+        }
+        if (min_ev > ev) {
+          min_ev = ev;
+        }
+      }
+    }
+
+    if (max_ev == -30000) {
+      // 自分は石を置けるが相手が石を置けない
+      // そういうときは、現状のボードの評価値を返す
+      return eval_board(board_next);
+      // バグあり。AIが白か黒かによって打つ手が変わっちゃう
+    }
+
+    if (stone == ai_turn && ai_turn == 0) {
+      // AI の手番の評価、かつ AI が黒石
+      // 相手=白 は評価値が最低になるように打つと考える
+      return min_ev;
+    } else {
+      return max_ev;
+    }
+  }
+}
+
+void print_kifu(unsigned char *kifu, unsigned int len) {
+  char s[2];
+  for (int i = 0; i < len; ++i) {
+    s[0] = 'a' + (kifu[i] >> 4);
+    s[1] = '1' + (kifu[i] & 0x0f);
+    sys_put_string(s, 2);
+  }
+}
+
+char *append_str(char *dst, char *src) {
+  while (*src) {
+    *dst++ = *src++;
+  }
+  return dst;
+}
+
+void save_kifu(unsigned char *kifu, unsigned int len) {
+  char player_name[16];
+  int file_entry[16] = {};
+  char block[512] = {};
+  char *p = block;
+
+  sys_put_string("player name: ", -1);
+  int player_name_len = sys_get_string(player_name, 7);
+  if (player_name_len >= 7) {
+    player_name_len = 6;
+    player_name[player_name_len] = 0;
+    sys_put_string("player name is truncated to 6 bytes: ", -1);
+    sys_put_string(player_name, -1);
+    sys_put_string("\n", 1);
+  }
+
+  p = append_str(p, "player_black: ");
+  if (ai_turn == 0) { // AI is black
+    p = append_str(p, "AI\n");
+  } else {
+    p = append_str(p, player_name);
+    p = append_str(p, "\n");
+  }
+
+  p = append_str(p, "player_white: ");
+  if (ai_turn == 2) { // AI is white
+    p = append_str(p, "AI\n");
+  } else {
+    p = append_str(p, player_name);
+    p = append_str(p, "\n");
+  }
+
+  p = append_str(p, "kifu: ");
+  for (int i = 0; i < len; ++i) {
+    *p++ = 'a' + (kifu[i] >> 4);
+    *p++ = '1' + (kifu[i] & 0x0f);
+  }
+  *p++ = '\n';
+
+  sys_put_string("kifu file postfix: ", -1);
+  int postfix_len = sys_get_string(player_name + player_name_len, 2);
+  *append_str(player_name + player_name_len + postfix_len, ".kif") = 0;
+  sys_open_entry_fatsd(player_name, file_entry);
+
+  file_entry[14] = (p - block); // file size low
+  file_entry[15] = 0; // file size high
+
+  if (sys_write_entry_fatsd(file_entry, 3) < 0) {
+    sys_put_string("failed to save file entry: ", -1);
+    sys_put_string(player_name, -1);
+    sys_put_string("\n", 1);
+    return;
+  }
+
+  if (sys_write_block_fatsd(file_entry, block, 0, 1) < 0) {
+    sys_put_string("failed to write file: ", -1);
+    sys_put_string(player_name, -1);
+    sys_put_string("\n", 1);
+    return;
+  }
+}
+
+// 0: 石を置いた
+// 1: パスした
+int proc_ai() {
+  timer_cnt = 10000; // 思考時間を計るためのタイマ初期値
+
+  unsigned int board_ai[8];
+  int max_ev = -30000;
+  int max_x;
+  int max_y;
+
+  for (int y = 0; y < 8; ++y) {
+    for (int x = 0; x < 8; ++x) {
+      int st = get_stone(board, x, y);
+      if (st != 1) {
+        continue;
+      }
+      for (int i = 0; i < 8; ++i) {
+        board_ai[i] = board[i];
+      }
+      int ev = eval_move(board_ai, x, y, turn, 1);
+      if (max_ev < ev) {
+        //fprintf(stderr, "eval_move (max renewed): %d,%d -> %d\n", x, y, ev);
+        max_ev = ev;
+        max_x = x;
+        max_y = y;
+      }
+    }
+  }
+
+  char s[8];
+  int passed = 0;
+  if (max_ev == -30000) {
+    // どこにも石を置けない
+    sys_put_string("AI passed\n", -1);
+    passed = 1;
+  } else {
+    ai_lastx = max_x;
+    ai_lasty = max_y;
+
+    try_put_stone(board, ai_lastx, ai_lasty, turn);
+    kifu[kifu_len++] = (ai_lastx << 4) | ai_lasty;
+
+    sys_put_string("AI's move: ", -1);
+    s[0] = 'A' + ai_lastx;
+    s[1] = '1' + ai_lasty;
+    sys_put_string(s, 2);
+    sys_put_string(" (x=", -1);
+    s[0] = '0' + ai_lastx;
+    s[1] = '0' + ai_lasty;
+    sys_put_string(s + 0, 1);
+    sys_put_string(",y=", -1);
+    sys_put_string(s + 1, 1);
+    sys_put_string(")\n", -1);
+  }
+
+  unsigned int ai_time = 10000 - timer_cnt;
+  sys_int2dec(ai_time, s, 5);
+  sys_put_string("AI's think time: ", -1);
+  sys_put_string(s, 5);
+  sys_put_string("ms\n", -1);
+
+  return passed;
+}
+
+// -1: プログラム終了
+//  0: 石を置いた
+//  1: パスした
+int proc_human() {
+  while (1) {
+    int c = sys_getc();
+    if (c <= 0) {
+      return -1;
+    }
+
+    // ステータスラインを消去
+    sys_put_string("\x1B[14;1H\x1B[K", -1);
+
+    if (!has_valid_moves(board, turn)) {
+      // パス
+      sys_put_string("You must pass. Press [y]", -1);
+      while (sys_getc() != 'y') {
+      }
+      sys_put_string("\x1B[1G\x1B[K", -1); // カーソルを左端に移動し、現在行を消去
+      return 1;
+    }
+
+    if ((0x1C <= c && c <= 0x1F) || c == 'h' || c == 'j' || c == 'k' || c == 'l') {
+      buntan_printf("\x1B[%d;%dH\x1B[X", 6 + cy, (cx << 1) + 3);
+      if (cx > 0 && (c == 'h' || c == 0x1F)) {
+        --cx;
+      } else if (cy < 7 && (c == 'j' || c == 0x1D)) {
+        ++cy;
+      } else if (cy > 0 && (c == 'k' || c == 0x1C)) {
+        --cy;
+      } else if (cx < 7 && (c == 'l' || c == 0x1E)) {
+        ++cx;
+      }
+      buntan_printf("\x1B[%d;%dH>", 6 + cy, (cx << 1) + 3);
+    } else if (c == 'b') {
+      print_board(board_prev);
+      sys_put_string("press any key to continue", -1);
+      sys_getc();
+      sys_put_string("\x1B[1G\x1B[K", -1); // カーソルを左端に移動し、現在行を消去
+      print_board(board);
+    } else if (c == 'v') {
+      sys_put_string("\x1B[14;1H", -1); // ステータスラインの行頭に移動
+      print_kifu(kifu, kifu_len);
+    } else if (c == ' ') {
+      sys_put_string("\x1B[14;1H", -1); // ステータスラインの行頭に移動
+      if (get_stone(board, cx, cy) != 1) {
+        sys_put_string("cannot put a stone\n", -1);
+      } else {
+        if (try_put_stone(board, cx, cy, turn) > 0) {
+          kifu[kifu_len++] = (cx << 4) | cy;
+          return 0;
+        } else {
+          sys_put_string("cannot put a stone\n", -1);
+        }
+      }
+    } else if (c == 'q') {
+      return -1;
+    }
+  }
+}
+
+int buntan_main(int *info) {
+  char s[2];
+
+  init_syscall(info);
+  __builtin_reset_sr(0);
+
+  turn = 0;
+  ai_turn = 2;
+  ai_lastx = -1;
+  ai_lasty = -1;
+
+  int argc = info[2];
+  char **argv = info[3];
+  if (argc >= 2) {
+    int ai_init = argv[1][0];
+    if (ai_init == 'b') {
+      ai_turn = 0;
+    } else if (ai_init == 'w') {
+      ai_turn = 2;
+    }
+  }
+
+  for (int i = 0; i < 8; ++i) {
+    board[i] = 0x5555;
+  }
+  board[3] = 0x5495;
+  board[4] = 0x5615;
+  cx = 3;
+  cy = 2;
+
+  sys_put_string("\x1b[?1049h", -1); // 代替バッファへ切り替え
+  sys_put_string("\x1b[?25l", -1); // カーソル非表示
+  print_board_init();
+
+  int nb = 0;
+  int nw = 0;
+  int stop_game = 0;
+  int ai_passed = 0;
+  int human_passed = 0;
+  while (!stop_game) {
+    print_board(board);
+    if (turn == ai_turn) {
+      for (int i = 0; i < 8; ++i) {
+        board_prev[i] = board[i];
+      }
+      ai_passed = proc_ai();
+    } else {
+      human_passed = proc_human();
+      if (human_passed == -1) {
+        stop_game = 1;
+      }
+    }
+
+    if (ai_passed == 1 && human_passed == 1) {
+      stop_game = 1;
+    }
+
+    nb = nw = 0;
+    for (int y = 0; y < 8; ++y) {
+      for (int x = 0; x < 8; ++x) {
+        int st = get_stone(board, x, y);
+        if (st == 0) {
+          ++nb;
+        } else if (st == 2) {
+          ++nw;
+        }
+      }
+    }
+    if (nb + nw == 64) {
+      // 盤面が全部埋まった
+      stop_game = 1;
+    }
+
+    turn = 2 - turn;
+  }
+
+  sys_put_string("\x1b[?25h", -1); // カーソル表示
+  sys_put_string("\x1b[?1049l", -1); // メインバッファへ戻す
+
+  print_board_content();
+
+  buntan_printf("Game finished: black=%d white=%d\n", nb, nw);
+
+  sys_put_string("kifu:\n", -1);
+  print_kifu(kifu, kifu_len);
+  sys_put_string("\n", 1);
+
+  sys_put_string("write kifu to file? [y/n]", -1);
+  if (sys_getc() == 'y') {
+    save_kifu(kifu, kifu_len);
+  }
+  sys_put_string("\n", 1);
+
+  unsigned int fpmin = __builtin_get_sr(0);
+  buntan_printf("FPMIN=%X\n", fpmin);
+  return 0;
+}

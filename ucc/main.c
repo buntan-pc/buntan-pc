@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 /*
- * Copyright (c) 2024 Kota UCHIDA
+ * Copyright (c) 2026 Kota UCHIDA
  */
 #include <assert.h>
 #include <ctype.h>

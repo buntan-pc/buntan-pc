@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """End-to-end profiling tests using the actual CPU RTL and assembler."""
 import pathlib
+import contextlib
+import io
+import runpy
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -79,6 +83,19 @@ ret
         self.assertEqual(result.returncode, 0)
         self.assertEqual(result.stdout, "07\n")
         self.assertEqual(stats, {})
+
+    def test_progress_preserves_results(self):
+        self.assemble("subject:\npush 7\nret\n")
+        plain, plain_stats = self.simulate(extra=("+max-cycles=1000",))
+        progress, stats = self.simulate(extra=("+max-cycles=1000", "+progress"))
+        self.assertEqual(progress.returncode, plain.returncode)
+        self.assertEqual(progress.stdout, plain.stdout)
+        self.assertEqual(stats, plain_stats)
+        updates = [line for line in progress.stderr.splitlines() if line.startswith("progress: ")]
+        self.assertEqual(updates, [])
+        timeout, _ = self.simulate(extra=("+max-cycles=40", "+progress"))
+        self.assertEqual(timeout.returncode, 2)
+        self.assertNotIn("progress: ", timeout.stderr)
 
     def test_loop(self):
         self.assemble("""subject:
@@ -289,6 +306,40 @@ class ProfileScriptTest(unittest.TestCase):
         self.assertIn("profile: make ", result.stderr)
         self.assertIn("size of .text:", result.stderr)
         self.assertIn("profile: " + str(SIM), result.stderr)
+        self.assertIn("+max-cycles=10000000", result.stderr)
+        self.assertIn("+progress", result.stderr)
+
+    def test_progress_lines_with_redirected_stderr(self):
+        runner = runpy.run_path(str(ROOT / "ucc/profile"))["run_with_progress"]
+        script = ("import sys; print('progress: 123 cycles', file=sys.stderr, flush=True); "
+                  "print('profile_status:   complete', file=sys.stderr); print('07')")
+        for verbose in (False, True):
+            with self.subTest(verbose=verbose):
+                stderr = io.StringIO()
+                with contextlib.redirect_stderr(stderr):
+                    result = runner([sys.executable, "-c", script], verbose, self.work)
+                self.assertEqual(result.returncode, 0)
+                self.assertEqual(stderr.getvalue().splitlines().count("progress: 123 cycles"), 1)
+                self.assertNotIn("\x1b", stderr.getvalue())
+                self.assertNotIn("\r", stderr.getvalue())
+                if not verbose:
+                    self.assertEqual(result.stdout, "07\n")
+                    self.assertEqual(stderr.getvalue(), "progress: 123 cycles\n")
+                    self.assertNotIn("progress:", result.stderr)
+
+    def test_cycle_limit(self):
+        result = self.profile("--max-cycles", "1")
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("timeout: exceeded 1 cycles", result.stderr)
+        self.assert_success(self.profile("--max-cycles", "1000"))
+
+    def test_invalid_cycle_limit(self):
+        for limit in ("0", "-1", "18446744073709551616", "abc"):
+            with self.subTest(limit=limit):
+                result = self.profile("--max-cycles", limit)
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertIn("usage:", result.stderr)
+                self.assertNotIn("profile: make", result.stderr)
 
     def test_source_and_header_changes_rebuild(self):
         self.assert_success(self.profile())
