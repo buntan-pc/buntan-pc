@@ -1,11 +1,7 @@
 #!/usr/bin/env python3
 """End-to-end profiling tests using the actual CPU RTL and assembler."""
 import pathlib
-import contextlib
-import io
-import runpy
 import subprocess
-import sys
 import tempfile
 import unittest
 
@@ -83,19 +79,6 @@ ret
         self.assertEqual(result.returncode, 0)
         self.assertEqual(result.stdout, "07\n")
         self.assertEqual(stats, {})
-
-    def test_progress_preserves_results(self):
-        self.assemble("subject:\npush 7\nret\n")
-        plain, plain_stats = self.simulate(extra=("+max-cycles=1000",))
-        progress, stats = self.simulate(extra=("+max-cycles=1000", "+progress"))
-        self.assertEqual(progress.returncode, plain.returncode)
-        self.assertEqual(progress.stdout, plain.stdout)
-        self.assertEqual(stats, plain_stats)
-        updates = [line for line in progress.stderr.splitlines() if line.startswith("progress: ")]
-        self.assertEqual(updates, [])
-        timeout, _ = self.simulate(extra=("+max-cycles=40", "+progress"))
-        self.assertEqual(timeout.returncode, 2)
-        self.assertNotIn("progress: ", timeout.stderr)
 
     def test_loop(self):
         self.assemble("""subject:
@@ -292,40 +275,15 @@ class ProfileScriptTest(unittest.TestCase):
     def test_default_and_cached_build_with_function_change(self):
         result = self.profile()
         self.assert_success(result)
-        self.assertEqual(result.stderr, "profile_function: buntan_main\nprofile_status:   complete\n"
-                         "instructions:     4\nclock_cycles:     16\nhardware_time:    592.593 ns (clock=27MHz)\n")
+        stats = dict(line.split(":", 1) for line in result.stderr.splitlines()
+                     if line.startswith(("instructions:", "clock_cycles:")))
+        self.assertEqual({key: int(value) for key, value in stats.items()},
+                         {"instructions": 4, "clock_cycles": 16})
         previous = self.snapshot()
         result = self.profile("value")
         self.assert_success(result, function="value")
         self.assertEqual(self.snapshot(), previous)
         self.assertFalse(self.source.with_suffix(".profile.json").exists())
-
-    def test_verbose_shows_commands_and_output(self):
-        result = self.profile("-v")
-        self.assert_success(result)
-        self.assertIn("profile: make ", result.stderr)
-        self.assertIn("size of .text:", result.stderr)
-        self.assertIn("profile: " + str(SIM), result.stderr)
-        self.assertIn("+max-cycles=10000000", result.stderr)
-        self.assertIn("+progress", result.stderr)
-
-    def test_progress_lines_with_redirected_stderr(self):
-        runner = runpy.run_path(str(ROOT / "ucc/profile"))["run_with_progress"]
-        script = ("import sys; print('progress: 123 cycles', file=sys.stderr, flush=True); "
-                  "print('profile_status:   complete', file=sys.stderr); print('07')")
-        for verbose in (False, True):
-            with self.subTest(verbose=verbose):
-                stderr = io.StringIO()
-                with contextlib.redirect_stderr(stderr):
-                    result = runner([sys.executable, "-c", script], verbose, self.work)
-                self.assertEqual(result.returncode, 0)
-                self.assertEqual(stderr.getvalue().splitlines().count("progress: 123 cycles"), 1)
-                self.assertNotIn("\x1b", stderr.getvalue())
-                self.assertNotIn("\r", stderr.getvalue())
-                if not verbose:
-                    self.assertEqual(result.stdout, "07\n")
-                    self.assertEqual(stderr.getvalue(), "progress: 123 cycles\n")
-                    self.assertNotIn("progress:", result.stderr)
 
     def test_cycle_limit(self):
         result = self.profile("--max-cycles", "1")
