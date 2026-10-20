@@ -1,0 +1,310 @@
+#!/usr/bin/python3
+"""Record compiler benchmarks, or show their committed history."""
+import argparse
+import hashlib
+import json
+from pathlib import Path
+import re
+import subprocess
+import sys
+import tempfile
+
+ROOT = Path(__file__).resolve().parents[1]
+HISTORY = "ucc/benchmarks/profile-history.json"
+TARGETS = "ucc/benchmarks/targets.json"
+CACHE = "ucc/benchmarks/.profile/benchmark-state.json"
+
+
+def git(root, *args):
+    return subprocess.check_output(["git", "-C", str(root), *args], stderr=subprocess.PIPE)
+
+
+def revision(root, name):
+    return git(root, "rev-parse", "--verify", "--end-of-options", name + "^{commit}").decode().strip()
+
+
+def watched(name):
+    """Production inputs only; docs, tests and generated outputs do not trigger runs."""
+    path = Path(name)
+    if path.parent.as_posix() in ("ucc", "uas"):
+        return path.suffix in (".c", ".h") or path.name in ("Makefile", "profile", "benchmark")
+    if name.startswith("ucc/benchmarks/"):
+        return path.suffix in (".c", ".h") or name == TARGETS
+    if path.parent.as_posix() == "cpu":
+        return ((path.suffix == ".sv" and not path.stem.endswith("_tb"))
+                or path.name in ("insn_names.def", "gen_insn_names.py", "Makefile"))
+    if path.parent.as_posix() == "cpu/verilator":
+        return path.suffix in (".sv", ".cpp", ".h", ".mk") or path.name == "Makefile"
+    return False
+
+
+def fingerprint(root, commit=None):
+    # Local cache only: commit IDs remain the sole source references in history.
+    if commit:
+        names = git(root, "ls-tree", "-rz", "--name-only", commit).decode().split("\0")
+    else:
+        names = git(root, "ls-files", "-z", "--cached", "--others", "--exclude-standard").decode().split("\0")
+    digest = hashlib.sha256()
+    for name in sorted(set(filter(watched, names))):
+        if commit:
+            content = git(root, "show", f"{commit}:{name}")
+            exists = b"1"
+        else:
+            path = root / name
+            exists = b"1" if path.is_file() else b"0"
+            content = path.read_bytes() if path.is_file() else b""
+        for part in (name.encode(), exists, content):
+            digest.update(len(part).to_bytes(8, "big"))
+            digest.update(part)
+    return digest.hexdigest()
+
+
+def validate_results(results):
+    if not isinstance(results, list) or not results:
+        raise ValueError("Benchmark results must be a nonempty list")
+    seen = set()
+    for row in results:
+        if (not isinstance(row, dict)
+                or set(row) != {"source", "function", "instructions", "clock_cycles"}
+                or not isinstance(row["source"], str) or not row["source"]
+                or not isinstance(row["function"], str) or not row["function"]
+                or any(type(row[key]) is not int or row[key] < 0
+                       for key in ("instructions", "clock_cycles"))):
+            raise ValueError("Invalid benchmark result")
+        key = (row["source"], row["function"])
+        if key in seen:
+            raise ValueError(f"Duplicate benchmark: {key}")
+        seen.add(key)
+    return results
+
+
+def read_history(text):
+    history = json.loads(text)
+    if not isinstance(history, dict):
+        raise ValueError("Benchmark history must be an object")
+    for key, results in history.items():
+        if key != "HEAD" and not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", key):
+            raise ValueError(f"Invalid revision: {key}")
+        if key == "HEAD":
+            if (not isinstance(results, dict) or set(results) != {"base_commit", "results"}
+                    or not isinstance(results["base_commit"], str)
+                    or not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", results["base_commit"])):
+                raise ValueError("Invalid HEAD measurement")
+            results = results["results"]
+        validate_results(results)
+    return history
+
+
+def measurement_commits(root, commit):
+    return git(root, "log", "--first-parent", "--format=%H", commit, "--", HISTORY).decode().splitlines()
+
+
+def committed_results(root, commit):
+    history = read_history(git(root, "show", f"{commit}:{HISTORY}").decode())
+    return history.get("HEAD", {}).get("results")
+
+
+def nearest(root, commit):
+    for measured in measurement_commits(root, commit):
+        # A commit may remove the history file; keep walking in that case.
+        if git(root, "ls-tree", "--name-only", measured, "--", HISTORY).strip():
+            results = committed_results(root, measured)
+            if results is not None:
+                return measured, results
+    return None, None
+
+
+def write_json(path, value):
+    text = json.dumps(value, indent=2, sort_keys=True) + "\n"
+    if path.exists() and path.read_text() == text:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(mode="w", dir=path.parent, delete=False) as temporary:
+        temporary.write(text)
+        temporary_path = Path(temporary.name)
+    try:
+        temporary_path.replace(path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
+
+
+def targets(root):
+    entries = json.loads((root / TARGETS).read_text())
+    if not isinstance(entries, list) or not entries:
+        raise ValueError("targets.json must be a nonempty list")
+    seen = set()
+    for entry in entries:
+        if (not isinstance(entry, dict) or set(entry) != {"source", "function"}
+                or not all(isinstance(value, str) and value for value in entry.values())):
+            raise ValueError("Each target needs source and function strings")
+        source = Path(entry["source"])
+        if source.is_absolute() or ".." in source.parts or source.suffix != ".c":
+            raise ValueError("Target source must be a .c path relative to ucc/benchmarks")
+        if not (root / "ucc/benchmarks" / source).is_file():
+            raise ValueError(f"Missing benchmark: {source}")
+        key = (entry["source"], entry["function"])
+        if key in seen:
+            raise ValueError(f"Duplicate benchmark target: {key}")
+        seen.add(key)
+    return entries
+
+
+def measure(root, target, max_cycles):
+    print(f"Benchmark: {target['source']}:{target['function']}", file=sys.stderr, flush=True)
+    command = [str(root / "ucc/profile"), "--max-cycles", str(max_cycles),
+               str(root / "ucc/benchmarks" / target["source"]), target["function"]]
+    fields = {}
+    with tempfile.TemporaryFile(mode="w+") as output:
+        with subprocess.Popen(command, cwd=root, stdout=output, stderr=subprocess.PIPE,
+                              text=True, errors="replace") as process:
+            try:
+                for line in process.stderr:
+                    print(line, end="", file=sys.stderr, flush=True)
+                    if ":" in line:
+                        key, value = line.split(":", 1)
+                        fields[key] = value.strip()
+                code = process.wait()
+            except BaseException:
+                process.terminate()
+                process.wait()
+                raise
+        if code:
+            output.seek(0)
+            print(output.read(), end="", file=sys.stderr)
+            raise ValueError(f"Benchmark failed (exit {code}): {target['source']}")
+    if fields.get("profile_status") != "complete" or fields.get("profile_function") != target["function"]:
+        raise ValueError(f"Incomplete benchmark: {target['source']}")
+    result = dict(target, instructions=int(fields["instructions"]), clock_cycles=int(fields["clock_cycles"]))
+    validate_results([result])
+    return result
+
+
+def summary(results, previous=None):
+    old = {(row["source"], row["function"]): row for row in previous or []}
+    lines = []
+    for row in results:
+        key = (row["source"], row["function"])
+        before = old.get(key)
+        changes = [f"{row[k] - before[k]:+d}" if before else "N/A"
+                   for k in ("instructions", "clock_cycles")]
+        lines.append(f"{':'.join(key):<32} {row['instructions']:>12} {changes[0]:>10} "
+                     f"{row['clock_cycles']:>12} {changes[1]:>10}")
+    return lines
+
+
+def result_values(results):
+    return {(row["source"], row["function"]): (row["instructions"], row["clock_cycles"])
+            for row in results or []}
+
+
+def print_results(results, previous=None):
+    print(f"{'Benchmark':<32} {'Instructions':>12} {'Delta':>10} {'Cycles':>12} {'Delta':>10}")
+    print("\n".join(summary(results, previous)))
+
+
+def record(root, force=False, max_cycles=10_000_000):
+    entries = targets(root)
+    path = root / HISTORY
+    history = read_history(path.read_text()) if path.exists() else {}
+    commit = revision(root, "HEAD")
+    measured, previous = nearest(root, commit)
+    inputs = fingerprint(root)
+    cache_path = root / CACHE
+    try:
+        cache = json.loads(cache_path.read_text())
+    except (OSError, ValueError):
+        cache = {}
+    current = history.get("HEAD", {}).get("results")
+    cached = (isinstance(cache, dict) and cache.get("inputs") == inputs
+              and cache.get("results") == current and current is not None)
+    committed = (previous is not None and current == previous
+                 and fingerprint(root, measured) == inputs)
+    if not force and (cached or committed):
+        print("Skipped: benchmark inputs unchanged.")
+        print_results(current)
+        return
+    results = [measure(root, target, max_cycles) for target in entries]
+    if inputs != fingerprint(root):
+        raise ValueError("Benchmark inputs changed during measurement; history was not updated")
+    if measured:
+        history[measured] = previous
+    # Changing the parent commit makes a new measurement visible in git log
+    # even when an optimization happens to produce identical counts.
+    history["HEAD"] = {"base_commit": commit, "results": results}
+    write_json(path, history)
+    write_json(cache_path, {"inputs": inputs, "results": results})
+    print_results(results, previous)
+    print(f"Updated {HISTORY}; commit it with the measured sources.")
+
+
+def show(root, name):
+    commit = revision(root, name)
+    measured, results = nearest(root, commit)
+    if measured is None:
+        raise ValueError(f"No committed benchmark results at or before {commit}")
+    print(f"Requested: {commit}")
+    print(f"Measured:  {measured}")
+    print_results(results)
+
+
+def log(root, name, all_commits=False):
+    commit = revision(root, name)
+    updates = set(measurement_commits(root, commit))
+    rows = git(root, "log", "--first-parent", "--reverse", "--format=%H%x09%cs%x09%s", commit).decode().splitlines()
+    active = None
+    printed = False
+    skipped = 0
+    print("* = recorded results, = = inherited results; oldest commit first")
+    for line in rows:
+        sha, date, subject = line.split("\t", 2)
+        previous = active
+        recorded = False
+        if sha in updates and git(root, "ls-tree", "--name-only", sha, "--", HISTORY).strip():
+            results = committed_results(root, sha)
+            if results is not None:
+                active = results
+                recorded = True
+        if active is not None:
+            if result_values(active) == result_values(previous) and not all_commits:
+                skipped += 1
+                continue
+            if skipped:
+                print(f"\n… ({skipped} commits skipped)")
+                skipped = 0
+            print(f"\n{sha[:12]} {date} {'*' if recorded else '='} {subject}")
+            print_results(active, previous)
+            printed = True
+    if skipped:
+        print(f"\n… ({skipped} commits skipped)")
+    if not printed:
+        raise ValueError(f"No committed benchmark results at or before {commit}")
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--show", metavar="COMMIT", help="show nearest committed measurements")
+    mode.add_argument("--log", nargs="?", const="HEAD", metavar="COMMIT", help="show chronological history")
+    parser.add_argument("--all", action="store_true", help="include every commit in --log")
+    parser.add_argument("--force", action="store_true", help="measure even if inputs are unchanged")
+    parser.add_argument("--max-cycles", type=int, default=10_000_000)
+    args = parser.parse_args()
+    if args.all and args.log is None:
+        parser.error("--all requires --log")
+    if not 1 <= args.max_cycles <= 2**64 - 1:
+        parser.error("--max-cycles must be between 1 and 18446744073709551615")
+    try:
+        if args.show:
+            show(ROOT, args.show)
+        elif args.log:
+            log(ROOT, args.log, args.all)
+        else:
+            record(ROOT, args.force, args.max_cycles)
+    except (OSError, ValueError, KeyError, subprocess.CalledProcessError) as error:
+        print(f"benchmark: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -18,6 +18,13 @@ test: cc
 e2etest: cc ../uas/as ../cpu/sim.exe
 	./e2etest.sh
 
+.PHONY: benchmark test-benchmark
+benchmark:
+	./benchmark
+
+test-benchmark:
+	python3 -m unittest discover -s tests -p 'test_benchmark.py'
+
 DEPENDS = $(join $(dir $(OBJS)),$(addprefix .,$(notdir $(OBJS:.o=.d))))
 
 .PHONY: depends
