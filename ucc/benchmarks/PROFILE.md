@@ -1,4 +1,7 @@
-# Verilator シミュレータでの実行命令数計測
+# ベンチマークの実行命令数・サイクル数計測
+
+`ucc/benchmarks/` の C コードを使い、コンパイラが生成するコードの性能を計測します。
+現在の計測バックエンドは Verilator シミュレータです。
 
 `+map=<mapファイル> +profile=<関数名>` を指定すると、その関数の最初の実行について、
 実行を完了した命令数とクロック数を標準エラーに出力します。
@@ -13,8 +16,8 @@
 ./ucc/profile foo.c                 # buntan_main を計測
 ./ucc/profile foo.c func_name       # 指定した関数を計測
 ./ucc/profile -v foo.c              # 各コマンドとその全出力も表示
-./ucc/profile cpu/verilator/examples/fib.c fib
-./ucc/profile --max-cycles 10000000 cpu/verilator/examples/othello.c
+./ucc/profile ucc/benchmarks/fib.c fib
+./ucc/profile ucc/benchmarks/othello.c
 ```
 
 必要なコンパイラ・アセンブラ・シミュレータを Make でビルドした後、
@@ -52,7 +55,7 @@ make -C ucc
 make -C uas
 make -C cpu/verilator
 bench_dir=$(mktemp -d /tmp/buntan-fib.XXXXXX)
-ucc/cc -o "$bench_dir/fib.s" cpu/verilator/examples/fib.c
+ucc/cc -o "$bench_dir/fib.s" ucc/benchmarks/fib.c
 uas/as --pmem "$bench_dir/fib.pmem.hex" --dmem "$bench_dir/fib.dmem.hex" \
   --map "$bench_dir/fib.map" "$bench_dir/fib.s"
 cpu/verilator/obj_dir/Vsim_top \

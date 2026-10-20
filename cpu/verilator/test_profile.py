@@ -247,7 +247,7 @@ iret
         self.assertIn("empty +profile", result.stderr)
 
     def test_fibonacci(self):
-        self.run_tool([CC, "-o", "app.s", ROOT / "cpu/verilator/examples/fib.c"])
+        self.run_tool([CC, "-o", "app.s", ROOT / "ucc/benchmarks/fib.c"])
         self.run_tool([AS, "--pmem", "app.pmem.hex", "--dmem", "app.dmem.hex",
                        "--map", "app.map", "app.s"])
         result, outer = self.simulate("buntan_main")
