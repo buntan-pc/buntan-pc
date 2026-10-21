@@ -15,6 +15,7 @@
 #include "symbol.h"
 #include "token.h"
 #include "type.h"
+#include "opt.h"
 
 #define INDENT "\t"
 #define MAX_STRING 256
@@ -1407,7 +1408,7 @@ int main(int argc, char **argv) {
       Generate(&gen_ctx, n, VC_NO_NEED, 0);
     }
   }
-  //insn_add_fp->operands[1].val_int = global_scope->var_offset;
+  OptimizeAsmJumps(gen_ctx.asm_lines, gen_ctx.num_line);
 
   for (int i = 0; i < gen_ctx.num_strings; i++) {
     struct Token *tk_str = gen_ctx.strings[i];

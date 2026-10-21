@@ -1,6 +1,20 @@
 {
+  "900be53f0b1183d4755ad65666f629baa52e999c": [
+    {
+      "clock_cycles": 764,
+      "function": "fib",
+      "instructions": 191,
+      "source": "fib.c"
+    },
+    {
+      "clock_cycles": 2940548,
+      "function": "buntan_main",
+      "instructions": 735137,
+      "source": "othello.c"
+    }
+  ],
   "HEAD": {
-    "base_commit": "bc573d2a243126778affd9e72cc496e9661b9fb0",
+    "base_commit": "13aa369740776ae4def41a39154a9061d0eefee2",
     "results": [
       {
         "clock_cycles": 764,
@@ -9,9 +23,9 @@
         "source": "fib.c"
       },
       {
-        "clock_cycles": 2940548,
+        "clock_cycles": 2940296,
         "function": "buntan_main",
-        "instructions": 735137,
+        "instructions": 735074,
         "source": "othello.c"
       }
     ]
