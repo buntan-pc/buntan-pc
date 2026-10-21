@@ -80,6 +80,9 @@ def main():
          "-f", ROOT / "cpu/verilator/profile.mk", f"SOURCE={source.name}"], args.verbose)
     base = source.parent / ".profile" / source.stem
     images = [base.with_name(base.name + suffix) for suffix in (".pmem.hex", ".dmem.hex", ".map")]
+    # uas writes exactly one 18-bit instruction word per hex token, without padding.
+    static_instructions = len(images[0].read_text().split())
+    print(f"static_instructions: {static_instructions}", file=sys.stderr, flush=True)
 
     command = [ROOT / "cpu/verilator/obj_dir/Vsim_top",
                f"+pmem={images[0]}", f"+dmem={images[1]}",

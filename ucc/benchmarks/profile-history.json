@@ -4,30 +4,62 @@
       "clock_cycles": 764,
       "function": "fib",
       "instructions": 191,
-      "source": "fib.c"
+      "source": "fib.c",
+      "static_instructions": 26
     },
     {
       "clock_cycles": 2940548,
       "function": "buntan_main",
       "instructions": 735137,
-      "source": "othello.c"
+      "source": "othello.c",
+      "static_instructions": 3421
     }
   ],
   "HEAD": {
-    "base_commit": "13aa369740776ae4def41a39154a9061d0eefee2",
+    "base_commit": "b088917961b13b7fd33bd7badcd080dbfcf17796",
     "results": [
       {
         "clock_cycles": 764,
         "function": "fib",
         "instructions": 191,
-        "source": "fib.c"
+        "source": "fib.c",
+        "static_instructions": 26
       },
       {
         "clock_cycles": 2940296,
         "function": "buntan_main",
         "instructions": 735074,
-        "source": "othello.c"
+        "source": "othello.c",
+        "static_instructions": 3415
       }
     ]
-  }
+  },
+  "b088917961b13b7fd33bd7badcd080dbfcf17796": [
+    {
+      "clock_cycles": 764,
+      "function": "fib",
+      "instructions": 191,
+      "source": "fib.c",
+      "static_instructions": 26
+    },
+    {
+      "clock_cycles": 2940296,
+      "function": "buntan_main",
+      "instructions": 735074,
+      "source": "othello.c",
+      "static_instructions": 3415
+    }
+  ],
+  "bc573d2a243126778affd9e72cc496e9661b9fb0": [
+    {
+      "function": "fib",
+      "source": "fib.c",
+      "static_instructions": 26
+    },
+    {
+      "function": "buntan_main",
+      "source": "othello.c",
+      "static_instructions": 3421
+    }
+  ]
 }

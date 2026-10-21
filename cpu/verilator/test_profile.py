@@ -279,9 +279,12 @@ class ProfileScriptTest(unittest.TestCase):
                      if line.startswith(("instructions:", "clock_cycles:")))
         self.assertEqual({key: int(value) for key, value in stats.items()},
                          {"instructions": 4, "clock_cycles": 16})
+        static = len(self.outputs()[1].read_text().split())
+        self.assertIn(f"static_instructions: {static}\n", result.stderr)
         previous = self.snapshot()
         result = self.profile("value")
         self.assert_success(result, function="value")
+        self.assertIn(f"static_instructions: {static}\n", result.stderr)
         self.assertEqual(self.snapshot(), previous)
         self.assertFalse(self.source.with_suffix(".profile.json").exists())
 

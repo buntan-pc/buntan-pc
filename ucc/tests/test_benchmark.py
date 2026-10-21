@@ -92,6 +92,7 @@ int buntan_main() { return fib(); }
         history = self.history()
         self.assertEqual(history[measured], original)
         self.assertLess(history["HEAD"]["results"][0]["instructions"], original[0]["instructions"])
+        self.assertLess(history["HEAD"]["results"][0]["static_instructions"], original[0]["static_instructions"])
 
     def test_lookup_and_changes_only_log(self):
         self.run_tool()
@@ -130,6 +131,31 @@ int buntan_main() { return fib(); }
         results = self.history()["HEAD"]["results"]
         self.assertEqual([row["function"] for row in results], ["fib", "buntan_main"])
         self.assertGreater(results[1]["instructions"], results[0]["instructions"])
+        static = len((self.root / "ucc/benchmarks/.profile/program.pmem.hex").read_text().split())
+        self.assertEqual([row["static_instructions"] for row in results], [static, static])
+
+    def test_static_only_change_and_legacy_history(self):
+        self.run_tool()
+        history = self.history()
+        for row in history["HEAD"]["results"]:
+            del row["static_instructions"]
+        self.write(HISTORY, json.dumps(history))
+        old = self.commit("Legacy results")
+        self.assertIn("N/A", self.run_tool("show", old)[0])
+        self.run_tool()
+        measured = self.commit("Record static size")
+        original = self.history()["HEAD"]["results"][0]
+        source = self.root / "ucc/benchmarks/program.c"
+        source.write_text(source.read_text() + "int unused() { return 42; }\n")
+        self.run_tool()
+        last = self.commit("Add unexecuted code")
+        current = self.history()["HEAD"]["results"][0]
+        self.assertEqual(current["instructions"], original["instructions"])
+        self.assertEqual(current["clock_cycles"], original["clock_cycles"])
+        self.assertGreater(current["static_instructions"], original["static_instructions"])
+        output, _ = self.run_tool("log", "HEAD")
+        self.assertIn(measured[:12], output)
+        self.assertIn(last[:12], output)
 
     def test_failed_target_preserves_history_and_cache(self):
         self.run_tool()

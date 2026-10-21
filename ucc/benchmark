@@ -65,11 +65,13 @@ def validate_results(results):
     seen = set()
     for row in results:
         if (not isinstance(row, dict)
-                or set(row) != {"source", "function", "instructions", "clock_cycles"}
+                or set(row) not in ({"source", "function", "instructions", "clock_cycles"},
+                                   {"source", "function", "static_instructions"},
+                                   {"source", "function", "instructions", "clock_cycles", "static_instructions"})
                 or not isinstance(row["source"], str) or not row["source"]
                 or not isinstance(row["function"], str) or not row["function"]
                 or any(type(row[key]) is not int or row[key] < 0
-                       for key in ("instructions", "clock_cycles"))):
+                       for key in ("instructions", "clock_cycles", "static_instructions") if key in row)):
             raise ValueError("Invalid benchmark result")
         key = (row["source"], row["function"])
         if key in seen:
@@ -95,22 +97,35 @@ def read_history(text):
     return history
 
 
+def archived_results(root):
+    path = root / HISTORY
+    history = read_history(path.read_text()) if path.exists() else {}
+    return {sha: results for sha, results in history.items() if sha != "HEAD"}
+
+
 def measurement_commits(root, commit):
-    return git(root, "log", "--first-parent", "--format=%H", commit, "--", HISTORY).decode().splitlines()
+    recorded = set(git(root, "log", "--first-parent", "--format=%H", commit, "--", HISTORY).decode().splitlines())
+    recorded.update(archived_results(root))
+    # Filter backfilled records by ancestry, just like original measurements.
+    return [sha for sha in git(root, "rev-list", "--first-parent", commit).decode().splitlines()
+            if sha in recorded]
 
 
 def committed_results(root, commit):
+    archive = archived_results(root)
+    if commit in archive:
+        return archive[commit]
+    if not git(root, "ls-tree", "--name-only", commit, "--", HISTORY).strip():
+        return None
     history = read_history(git(root, "show", f"{commit}:{HISTORY}").decode())
     return history.get("HEAD", {}).get("results")
 
 
 def nearest(root, commit):
     for measured in measurement_commits(root, commit):
-        # A commit may remove the history file; keep walking in that case.
-        if git(root, "ls-tree", "--name-only", measured, "--", HISTORY).strip():
-            results = committed_results(root, measured)
-            if results is not None:
-                return measured, results
+        results = committed_results(root, measured)
+        if results is not None:
+            return measured, results
     return None, None
 
 
@@ -174,7 +189,8 @@ def measure(root, target, max_cycles):
             raise ValueError(f"Benchmark failed (exit {code}): {target['source']}")
     if fields.get("profile_status") != "complete" or fields.get("profile_function") != target["function"]:
         raise ValueError(f"Incomplete benchmark: {target['source']}")
-    result = dict(target, instructions=int(fields["instructions"]), clock_cycles=int(fields["clock_cycles"]))
+    result = dict(target, instructions=int(fields["instructions"]), clock_cycles=int(fields["clock_cycles"]),
+                  static_instructions=int(fields["static_instructions"]))
     validate_results([result])
     return result
 
@@ -185,20 +201,23 @@ def summary(results, previous=None):
     for row in results:
         key = (row["source"], row["function"])
         before = old.get(key)
-        changes = [f"{row[k] - before[k]:+d}" if before else "N/A"
-                   for k in ("instructions", "clock_cycles")]
-        lines.append(f"{':'.join(key):<32} {row['instructions']:>12} {changes[0]:>10} "
-                     f"{row['clock_cycles']:>12} {changes[1]:>10}")
+        changes = [f"{row[k] - before[k]:+d}" if before and k in before and k in row else "N/A"
+                   for k in ("instructions", "clock_cycles", "static_instructions")]
+        static = row.get("static_instructions", "N/A")
+        lines.append(f"{':'.join(key):<32} {row.get('instructions', 'N/A'):>12} {changes[0]:>10} "
+                     f"{row.get('clock_cycles', 'N/A'):>12} {changes[1]:>10} "
+                     f"{static:>8} {changes[2]:>10}")
     return lines
 
 
 def result_values(results):
-    return {(row["source"], row["function"]): (row["instructions"], row["clock_cycles"])
+    return {(row["source"], row["function"]): (row.get("instructions"), row.get("clock_cycles"), row.get("static_instructions"))
             for row in results or []}
 
 
 def print_results(results, previous=None):
-    print(f"{'Benchmark':<32} {'Instructions':>12} {'Delta':>10} {'Cycles':>12} {'Delta':>10}")
+    print(f"{'Benchmark':<32} {'Instructions':>12} {'Delta':>10} {'Cycles':>12} {'Delta':>10} "
+          f"{'Static':>8} {'Delta':>10}")
     print("\n".join(summary(results, previous)))
 
 
@@ -219,7 +238,8 @@ def record(root, force=False, max_cycles=10_000_000):
               and cache.get("results") == current and current is not None)
     committed = (previous is not None and current == previous
                  and fingerprint(root, measured) == inputs)
-    if not force and (cached or committed):
+    has_static = current is not None and all("static_instructions" in row for row in current)
+    if not force and has_static and (cached or committed):
         print("Skipped: benchmark inputs unchanged.")
         print_results(current)
         return
@@ -259,7 +279,7 @@ def log(root, name, all_commits=False):
         sha, date, subject = line.split("\t", 2)
         previous = active
         recorded = False
-        if sha in updates and git(root, "ls-tree", "--name-only", sha, "--", HISTORY).strip():
+        if sha in updates:
             results = committed_results(root, sha)
             if results is not None:
                 active = results
@@ -281,7 +301,17 @@ def log(root, name, all_commits=False):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""表示列の意味:
+  Benchmark     計測対象のソースファイル名と関数名
+  Instructions  対象関数の実行命令数（内部の関数呼び出し・繰り返し実行を含む）
+  Cycles        対象関数の実行にかかったクロック数
+  Static        プログラム全体の静的命令数（1ワード＝1命令、18ビット）
+                起動コード・未実行の関数も含む
+  Delta         左隣の値の前回結果からの増減（マイナスは削減）
+  N/A           未計測、または比較対象がない値
+""")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--show", metavar="COMMIT", help="show nearest committed measurements")
     mode.add_argument("--log", nargs="?", const="HEAD", metavar="COMMIT", help="show chronological history")
