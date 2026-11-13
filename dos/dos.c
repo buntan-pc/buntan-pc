@@ -1341,7 +1341,12 @@ char *cmd_history_latest() {
 }
 
 // latest を確定させて履歴に追加。新たな latest を返す
-char *cmd_history_commit() {
+char *cmd_history_commit(int cmd_len) {
+  if (cmd_len == 0) {
+    cmd_history_i = cmd_history_latest_i;
+    return cmd_history_latest();
+  }
+
   if (cmd_history_latest_i != cmd_history_i) {
     // 履歴をコミットする
     char *history = cmd_history[cmd_history_i];
@@ -1525,10 +1530,12 @@ int buntan_main() {
       }
     } else if (key == '\n') { // Enter
       putc('\n');
-      cmd[cmd_i] = '\0';
-      proc_cmd(cmd, block_buf, app_main, app_dmem);
+      if (cmd_i > 0) {
+        cmd[cmd_i] = '\0';
+        proc_cmd(cmd, block_buf, app_main, app_dmem);
+      }
       walking_cmd_history = 0;
-      cmd = cmd_history_commit();
+      cmd = cmd_history_commit(cmd_i);
       cmd_i = 0;
       puts("> ");
     } else if (key == '\b') {
